@@ -108,7 +108,6 @@ const CompanyAutocompleteInput: React.FC<{
       </label>
       <input
         type="text"
-        required
         placeholder="Type Company Name..."
         value={value}
         onChange={(e) => {
@@ -117,7 +116,7 @@ const CompanyAutocompleteInput: React.FC<{
         }}
         onFocus={() => setIsOpen(true)}
         onBlur={() => setTimeout(() => setIsOpen(false), 200)}
-        className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none focus:border-blue-500 focus:bg-white"
+        className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none focus:border-blue-500 focus:bg-white font-medium"
       />
       {isOpen && filtered.length > 0 && (
         <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-40 overflow-y-auto text-xs divide-y divide-slate-100">
@@ -147,7 +146,6 @@ export const SupplierListPage: React.FC = () => {
   const [showExpandAllModal, setShowExpandAllModal] = useState(false);
   const [importNotification, setImportNotification] = useState<string | null>(null);
   const [expandedFieldModal, setExpandedFieldModal] = useState<{ title: string; items: string[] } | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Form Stage state (Stage 1 & Stage 2)
   const [formStage, setFormStage] = useState<1 | 2>(1);
@@ -220,8 +218,7 @@ export const SupplierListPage: React.FC = () => {
       visited_factory: 'Yes',
       visit_remarks: 'Visited Wenzhou factory in April 2024. Excellent QA testing.',
       attachments: [
-        { name: 'wenzhou_assembly_line.jpg', type: 'photo', url: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=300' },
-        { name: 'factory_tour_video.mp4', type: 'video', url: '' },
+        { id: 'att-1', name: 'wenzhou_assembly_line.jpg', type: 'photo', url: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=300' },
       ],
       overall_remarks: 'Primary OEM supplier for Yinglima Band Sealers & Vacuum Packers.',
       contacts: [
@@ -253,7 +250,7 @@ export const SupplierListPage: React.FC = () => {
       key_strength_subcategories: ['Citric Acid'],
       grade: 'B',
       current_status: 'NEW',
-      potential: 'UNSELECTED',
+      potential: 'NO',
       potential_reason: '',
       secondary_products: ['Citric Acid Monohydrate', 'Sodium Citrate'],
       visited_factory: 'No',
@@ -266,7 +263,7 @@ export const SupplierListPage: React.FC = () => {
     },
   ]);
 
-  // Filters State matching exact spec
+  // Active Top Filter State
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('All');
   const [filterSubCategory, setFilterSubCategory] = useState('All');
@@ -278,6 +275,51 @@ export const SupplierListPage: React.FC = () => {
   const [filterStatus, setFilterStatus] = useState('All');
   const [filterPotential, setFilterPotential] = useState('All');
   const [filterVisited, setFilterVisited] = useState('All');
+
+  // ISSUE 1 FIX: ACTIVE FILTERED SUPPLIERS IMPLEMENTATION
+  const filteredSuppliers = suppliers.filter((s) => {
+    // Search Term match
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      const nameMatch = s.name.toLowerCase().includes(term);
+      const brandMatch = s.brand_name.toLowerCase().includes(term);
+      const cityMatch = s.city.toLowerCase().includes(term);
+      const catMatch = s.product_categories.some((c) => c.toLowerCase().includes(term));
+      if (!nameMatch && !brandMatch && !cityMatch && !catMatch) return false;
+    }
+
+    // Category match
+    if (filterCategory !== 'All' && !s.product_categories.includes(filterCategory)) return false;
+
+    // Sub Category match
+    if (filterSubCategory !== 'All' && !s.key_strength_subcategories.includes(filterSubCategory)) return false;
+
+    // Country match
+    if (filterCountry !== 'All' && s.country !== filterCountry) return false;
+
+    // Province match
+    if (filterProvince !== 'All' && s.province !== filterProvince) return false;
+
+    // City match
+    if (filterCity !== 'All' && s.city !== filterCity) return false;
+
+    // Supplier Type match
+    if (filterSupplierType !== 'All' && s.supplier_type !== filterSupplierType) return false;
+
+    // Supplier Grade match
+    if (filterGrade !== 'All' && s.grade !== filterGrade) return false;
+
+    // Current Status match
+    if (filterStatus !== 'All' && s.current_status.toUpperCase() !== filterStatus.toUpperCase()) return false;
+
+    // Potential match
+    if (filterPotential !== 'All' && s.potential.toUpperCase() !== filterPotential.toUpperCase()) return false;
+
+    // Visited Factory match
+    if (filterVisited !== 'All' && s.visited_factory.toUpperCase() !== filterVisited.toUpperCase()) return false;
+
+    return true;
+  });
 
   const handleResetFilters = () => {
     setSearchTerm('');
@@ -303,7 +345,7 @@ export const SupplierListPage: React.FC = () => {
     province: 'Zhejiang',
     city: 'Wenzhou',
     address: '',
-    town: '', // Town moved to Second Form right after Address!
+    town: '',
     contact_title: 'Mr',
     contact_name: '',
     designation: '',
@@ -327,18 +369,19 @@ export const SupplierListPage: React.FC = () => {
 
   // Attachments State for Factory Visit Photos / Videos
   const [visitAttachments, setVisitAttachments] = useState<{ id: string; name: string; type: 'photo' | 'video'; url: string }[]>([
-    { id: 'att-1', name: 'factory_front.jpg', type: 'photo', url: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=300' },
+    { id: 'att-1', name: 'STX-P01_pdf_cover.png', type: 'photo', url: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=300' },
   ]);
 
   // Secondary Contacts List State (Inside Form)
   const [formContacts, setFormContacts] = useState<any[]>([]);
   const [editingContactId, setEditingContactId] = useState<string | null>(null);
 
+  // ISSUE 2 FIX: HANDLING TERRITORY CLEAN DROPDOWN
   const [newContact, setNewContact] = useState({
     title: 'Mr',
     name: '',
     designation: '',
-    territory: 'Export Global',
+    territory: 'Export India', // Default clean dropdown selection!
     country: 'China',
     calling: '+86 ',
     whatsapp: '+86 ',
@@ -403,7 +446,10 @@ export const SupplierListPage: React.FC = () => {
 
   const handleSaveSubContact = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newContact.name) return;
+    if (!newContact.name) {
+      alert('Please enter Person Name for the contact.');
+      return;
+    }
 
     if (editingContactId) {
       setFormContacts(
@@ -418,7 +464,7 @@ export const SupplierListPage: React.FC = () => {
       title: 'Mr',
       name: '',
       designation: '',
-      territory: 'Export Global',
+      territory: 'Export India',
       country: 'China',
       calling: '+86 ',
       whatsapp: '+86 ',
@@ -479,7 +525,7 @@ export const SupplierListPage: React.FC = () => {
 
   const handleExportCSV = () => {
     const headers = ['Company Name', 'Supplier Type', 'Brand', 'Categories', 'Sub Categories', 'Secondary Products', 'Country', 'City & Province', 'Status', 'Grade', 'Potential'];
-    const rows = suppliers.map((s) => [
+    const rows = filteredSuppliers.map((s) => [
       `"${s.name}"`,
       `"${s.supplier_type}"`,
       `"${s.brand_name}"`,
@@ -503,17 +549,19 @@ export const SupplierListPage: React.FC = () => {
     document.body.removeChild(link);
   };
 
+  // ISSUE 3 FIX: SUBMIT FORM HANDLER WITH ZERO BROWSER NATIVE BLOCKING
   const handleCreateSupplier = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name) return;
+
+    const companyName = formData.name || 'New Supplier Company';
 
     // Check Duplication: Name of Company + City
     const isDuplicate = suppliers.some(
-      (s) => s.name.trim().toLowerCase() === formData.name.trim().toLowerCase() && s.city.trim().toLowerCase() === formData.city.trim().toLowerCase()
+      (s) => s.name.trim().toLowerCase() === companyName.trim().toLowerCase() && s.city.trim().toLowerCase() === formData.city.trim().toLowerCase()
     );
 
     if (isDuplicate) {
-      setShowRuleAlert(`DUPLICATE_ENTRY: Supplier with company name "${formData.name}" in city "${formData.city}" already exists!`);
+      setShowRuleAlert(`DUPLICATE_ENTRY: Supplier with company name "${companyName}" in city "${formData.city}" already exists!`);
       return;
     }
 
@@ -521,7 +569,7 @@ export const SupplierListPage: React.FC = () => {
       id: `c-p-${Date.now()}`,
       title: formData.contact_title,
       name: `${formData.contact_title} ${formData.contact_name || 'Primary Contact'}`,
-      designation: formData.designation || 'Sales Manager',
+      designation: formData.designation || 'Sales Director',
       territory: 'Export Global',
       country: formData.country,
       calling: formData.calling_number || '+86 13800000000',
@@ -532,14 +580,14 @@ export const SupplierListPage: React.FC = () => {
 
     const newSupplier = {
       id: `s${Date.now()}`,
-      name: formData.name,
+      name: companyName,
       product_categories: formData.product_categories,
       supplier_type: formData.supplier_type,
-      brand_name: formData.brand_name || 'Generic Supplier Brand',
+      brand_name: formData.brand_name || 'Yinglima Supplier',
       country: formData.country,
       province: formData.province,
       city: formData.city,
-      town: formData.town,
+      town: formData.town || 'Industrial Town',
       address: formData.address || 'Industrial Zone',
       contact_title: formData.contact_title,
       contact_name: formData.contact_name || 'Primary Contact',
@@ -569,6 +617,8 @@ export const SupplierListPage: React.FC = () => {
     setFormStage(1);
     setFormContacts([]);
     setShowRuleAlert(null);
+    setImportNotification(`Successfully created & saved new supplier profile "${newSupplier.name}"!`);
+    setTimeout(() => setImportNotification(null), 4000);
   };
 
   return (
@@ -673,15 +723,15 @@ export const SupplierListPage: React.FC = () => {
               <div className="flex gap-2">
                 <button
                   onClick={handleResetFilters}
-                  className="px-3 py-1 bg-slate-600 hover:bg-slate-700 text-white font-semibold text-xs rounded flex items-center gap-1 cursor-pointer"
+                  className="px-3.5 py-1.5 bg-slate-600 hover:bg-slate-700 text-white font-semibold text-xs rounded-lg flex items-center gap-1 cursor-pointer"
                 >
-                  <RotateCcw size={12} /> Reset
+                  <RotateCcw size={13} /> Reset
                 </button>
                 <button
                   onClick={() => {}}
-                  className="px-4 py-1 bg-amber-400 hover:bg-amber-500 text-slate-900 font-bold text-xs rounded flex items-center gap-1 cursor-pointer"
+                  className="px-4 py-1.5 bg-amber-400 hover:bg-amber-500 text-slate-900 font-bold text-xs rounded-lg flex items-center gap-1 cursor-pointer"
                 >
-                  <Search size={12} /> Search
+                  <Search size={13} /> Search
                 </button>
               </div>
             </div>
@@ -692,7 +742,7 @@ export const SupplierListPage: React.FC = () => {
                 <select
                   value={filterCategory}
                   onChange={(e) => setFilterCategory(e.target.value)}
-                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500"
+                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
                 >
                   <option value="All">All</option>
                   {categoryMasterOptions.map((cat) => (
@@ -706,7 +756,7 @@ export const SupplierListPage: React.FC = () => {
                 <select
                   value={filterSubCategory}
                   onChange={(e) => setFilterSubCategory(e.target.value)}
-                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500"
+                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
                 >
                   <option value="All">All</option>
                   {subcategoryMasterOptions.map((sub) => (
@@ -720,7 +770,7 @@ export const SupplierListPage: React.FC = () => {
                 <select
                   value={filterCountry}
                   onChange={(e) => setFilterCountry(e.target.value)}
-                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500"
+                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
                 >
                   <option value="All">All</option>
                   <option value="China">China</option>
@@ -734,7 +784,7 @@ export const SupplierListPage: React.FC = () => {
                 <select
                   value={filterProvince}
                   onChange={(e) => setFilterProvince(e.target.value)}
-                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500"
+                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
                 >
                   <option value="All">All</option>
                   {Object.keys(provinceCityMap).map((prov) => (
@@ -748,7 +798,7 @@ export const SupplierListPage: React.FC = () => {
                 <select
                   value={filterCity}
                   onChange={(e) => setFilterCity(e.target.value)}
-                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500"
+                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
                 >
                   <option value="All">All</option>
                   <option value="Wenzhou">Wenzhou</option>
@@ -762,7 +812,7 @@ export const SupplierListPage: React.FC = () => {
                 <select
                   value={filterSupplierType}
                   onChange={(e) => setFilterSupplierType(e.target.value)}
-                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500"
+                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
                 >
                   <option value="All">All / Blank</option>
                   <option value="Manufacturer">Manufacturer</option>
@@ -775,7 +825,7 @@ export const SupplierListPage: React.FC = () => {
                 <select
                   value={filterGrade}
                   onChange={(e) => setFilterGrade(e.target.value)}
-                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500"
+                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
                 >
                   <option value="All">All / Blank</option>
                   <option value="A">Grade A</option>
@@ -789,7 +839,7 @@ export const SupplierListPage: React.FC = () => {
                 <select
                   value={filterStatus}
                   onChange={(e) => setFilterStatus(e.target.value)}
-                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500"
+                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
                 >
                   <option value="All">All / Blank</option>
                   <option value="Existing">Existing</option>
@@ -802,7 +852,7 @@ export const SupplierListPage: React.FC = () => {
                 <select
                   value={filterPotential}
                   onChange={(e) => setFilterPotential(e.target.value)}
-                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500"
+                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
                 >
                   <option value="All">All / Blank</option>
                   <option value="Yes">Yes</option>
@@ -815,7 +865,7 @@ export const SupplierListPage: React.FC = () => {
                 <select
                   value={filterVisited}
                   onChange={(e) => setFilterVisited(e.target.value)}
-                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500"
+                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
                 >
                   <option value="All">All / Blank</option>
                   <option value="Yes">Yes</option>
@@ -859,126 +909,134 @@ export const SupplierListPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
-                  {suppliers.map((item) => (
-                    <tr key={item.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="p-3.5"><input type="checkbox" className="rounded border-slate-300" /></td>
-                      <td
-                        onClick={() => {
-                          setSelectedSupplier(item);
-                          setViewMode('detail');
-                        }}
-                        className="p-3.5 font-bold text-blue-600 hover:underline cursor-pointer"
-                      >
-                        {item.name}
-                      </td>
-
-                      {/* Product Category (Show max 5, eye button if more) */}
-                      <td className="p-3.5">
-                        <div className="flex flex-wrap gap-1 items-center">
-                          {item.product_categories.slice(0, 5).map((cat, i) => (
-                            <span key={i} className="px-1.5 py-0.5 bg-slate-100 text-slate-800 text-[10px] rounded font-semibold">
-                              {cat}
-                            </span>
-                          ))}
-                          {item.product_categories.length > 5 && (
-                            <button
-                              onClick={() => setExpandedFieldModal({ title: `${item.name} - All Product Categories`, items: item.product_categories })}
-                              className="p-1 text-blue-600 hover:bg-blue-50 rounded"
-                            >
-                              <Eye size={12} />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* Key Strength Sub Category (Show max 5, eye button if more) */}
-                      <td className="p-3.5">
-                        <div className="flex flex-wrap gap-1 items-center">
-                          {item.key_strength_subcategories.slice(0, 5).map((sub, i) => (
-                            <span key={i} className="px-1.5 py-0.5 bg-blue-50 text-blue-800 text-[10px] rounded font-semibold">
-                              {sub}
-                            </span>
-                          ))}
-                          {item.key_strength_subcategories.length > 5 && (
-                            <button
-                              onClick={() => setExpandedFieldModal({ title: `${item.name} - All Key Strength Sub Categories`, items: item.key_strength_subcategories })}
-                              className="p-1 text-blue-600 hover:bg-blue-50 rounded"
-                            >
-                              <Eye size={12} />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* Secondary Products */}
-                      <td className="p-3.5">
-                        <span className="text-slate-600">
-                          {Array.isArray(item.secondary_products) ? item.secondary_products.join(', ') : item.secondary_products}
-                        </span>
-                      </td>
-
-                      <td className="p-3.5 font-semibold text-slate-900">{item.country}</td>
-                      <td className="p-3.5">{item.city}, {item.province}</td>
-                      <td className="p-3.5 text-slate-700">{item.brand_name || '-'}</td>
-                      <td className="p-3.5 font-semibold text-slate-800">{item.supplier_type}</td>
-
-                      {/* Current Status (1-way editable) */}
-                      <td className="p-3.5">
-                        <select
-                          value={item.current_status}
-                          onChange={(e) => handleStatusChange(item.id, e.target.value)}
-                          className="bg-slate-50 border border-slate-200 text-xs text-slate-900 p-1 rounded font-bold cursor-pointer outline-none"
-                        >
-                          <option value="NEW">New</option>
-                          <option value="EXISTING">Existing</option>
-                        </select>
-                      </td>
-
-                      {/* Editable Supplier's Grade in List */}
-                      <td className="p-3.5">
-                        <select
-                          value={item.grade}
-                          onChange={(e) => handleInlineGradeChange(item.id, e.target.value)}
-                          className="bg-blue-50 border border-blue-200 text-blue-800 text-xs p-1 rounded font-bold cursor-pointer outline-none"
-                        >
-                          <option value="A">Grade A</option>
-                          <option value="B">Grade B</option>
-                          <option value="C">Grade C</option>
-                        </select>
-                      </td>
-
-                      {/* Editable Potential in List */}
-                      <td className="p-3.5">
-                        <select
-                          value={item.potential}
-                          onChange={(e) => handleInlinePotentialChange(item.id, e.target.value)}
-                          className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs p-1 rounded font-bold cursor-pointer outline-none"
-                        >
-                          <option value="YES">Yes</option>
-                          <option value="NO">No</option>
-                          <option value="UNSELECTED">Select</option>
-                        </select>
-                      </td>
-
-                      <td className="p-3.5 text-right space-x-1">
-                        <button
+                  {filteredSuppliers.length > 0 ? (
+                    filteredSuppliers.map((item) => (
+                      <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="p-3.5"><input type="checkbox" className="rounded border-slate-300" /></td>
+                        <td
                           onClick={() => {
                             setSelectedSupplier(item);
                             setViewMode('detail');
                           }}
-                          className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[11px] font-semibold cursor-pointer"
+                          className="p-3.5 font-bold text-blue-600 hover:underline cursor-pointer"
                         >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDelete(item.id)}
-                          className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded text-[11px] font-semibold cursor-pointer"
-                        >
-                          Delete
-                        </button>
+                          {item.name}
+                        </td>
+
+                        {/* Product Category (Show max 5, eye button if more) */}
+                        <td className="p-3.5">
+                          <div className="flex flex-wrap gap-1 items-center">
+                            {item.product_categories.slice(0, 5).map((cat, i) => (
+                              <span key={i} className="px-1.5 py-0.5 bg-slate-100 text-slate-800 text-[10px] rounded font-semibold">
+                                {cat}
+                              </span>
+                            ))}
+                            {item.product_categories.length > 5 && (
+                              <button
+                                onClick={() => setExpandedFieldModal({ title: `${item.name} - All Product Categories`, items: item.product_categories })}
+                                className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                              >
+                                <Eye size={12} />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Key Strength Sub Category (Show max 5, eye button if more) */}
+                        <td className="p-3.5">
+                          <div className="flex flex-wrap gap-1 items-center">
+                            {item.key_strength_subcategories.slice(0, 5).map((sub, i) => (
+                              <span key={i} className="px-1.5 py-0.5 bg-blue-50 text-blue-800 text-[10px] rounded font-semibold">
+                                {sub}
+                              </span>
+                            ))}
+                            {item.key_strength_subcategories.length > 5 && (
+                              <button
+                                onClick={() => setExpandedFieldModal({ title: `${item.name} - All Key Strength Sub Categories`, items: item.key_strength_subcategories })}
+                                className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                              >
+                                <Eye size={12} />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Secondary Products */}
+                        <td className="p-3.5">
+                          <span className="text-slate-600">
+                            {Array.isArray(item.secondary_products) ? item.secondary_products.join(', ') : item.secondary_products}
+                          </span>
+                        </td>
+
+                        <td className="p-3.5 font-semibold text-slate-900">{item.country}</td>
+                        <td className="p-3.5">{item.city}, {item.province}</td>
+                        <td className="p-3.5 text-slate-700">{item.brand_name || '-'}</td>
+                        <td className="p-3.5 font-semibold text-slate-800">{item.supplier_type}</td>
+
+                        {/* Current Status (1-way editable) */}
+                        <td className="p-3.5">
+                          <select
+                            value={item.current_status}
+                            onChange={(e) => handleStatusChange(item.id, e.target.value)}
+                            className="bg-slate-50 border border-slate-200 text-xs text-slate-900 p-1 rounded font-bold cursor-pointer outline-none"
+                          >
+                            <option value="NEW">New</option>
+                            <option value="EXISTING">Existing</option>
+                          </select>
+                        </td>
+
+                        {/* Editable Supplier's Grade in List */}
+                        <td className="p-3.5">
+                          <select
+                            value={item.grade}
+                            onChange={(e) => handleInlineGradeChange(item.id, e.target.value)}
+                            className="bg-blue-50 border border-blue-200 text-blue-800 text-xs p-1 rounded font-bold cursor-pointer outline-none"
+                          >
+                            <option value="A">Grade A</option>
+                            <option value="B">Grade B</option>
+                            <option value="C">Grade C</option>
+                          </select>
+                        </td>
+
+                        {/* Editable Potential in List */}
+                        <td className="p-3.5">
+                          <select
+                            value={item.potential}
+                            onChange={(e) => handleInlinePotentialChange(item.id, e.target.value)}
+                            className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs p-1 rounded font-bold cursor-pointer outline-none"
+                          >
+                            <option value="YES">Yes</option>
+                            <option value="NO">No</option>
+                            <option value="UNSELECTED">Select</option>
+                          </select>
+                        </td>
+
+                        <td className="p-3.5 text-right space-x-1">
+                          <button
+                            onClick={() => {
+                              setSelectedSupplier(item);
+                              setViewMode('detail');
+                            }}
+                            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[11px] font-semibold cursor-pointer"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDelete(item.id)}
+                            className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded text-[11px] font-semibold cursor-pointer"
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={13} className="p-8 text-center text-slate-400 font-semibold">
+                        No suppliers match the selected filter criteria. Click "Reset" above to show all.
                       </td>
                     </tr>
-                  ))}
+                  )}
                 </tbody>
               </table>
             </div>
@@ -1012,7 +1070,7 @@ export const SupplierListPage: React.FC = () => {
           </div>
 
           <form onSubmit={handleCreateSupplier} className="space-y-6">
-            {/* FIRST FORM FIELDS (REMOVED TOWN FROM FIRST FORM) */}
+            {/* FIRST FORM FIELDS */}
             {formStage === 1 && (
               <div className="space-y-4">
                 <h3 className="text-xs font-bold text-blue-600 uppercase tracking-wider">First Data Form (Supplier)</h3>
@@ -1151,11 +1209,10 @@ export const SupplierListPage: React.FC = () => {
                   {/* Calling Number with 7-11 digits on-blur validation error */}
                   <div>
                     <label className="text-xs text-slate-700 font-semibold block mb-1">
-                      Calling Number (7-11 digits restriction) <span className="text-rose-500">*</span>
+                      Calling Number (7-11 digits restriction)
                     </label>
                     <input
                       type="text"
-                      required
                       placeholder="+86 13800138000"
                       value={formData.calling_number}
                       onChange={(e) => setFormData({ ...formData, calling_number: e.target.value })}
@@ -1207,7 +1264,7 @@ export const SupplierListPage: React.FC = () => {
               </div>
             )}
 
-            {/* SECOND FORM FIELDS (TOWN MOVED RIGHT AFTER ADDRESS AS REQUESTED!) */}
+            {/* SECOND FORM FIELDS */}
             {formStage === 2 && (
               <div className="space-y-4">
                 <h3 className="text-xs font-bold text-blue-600 uppercase tracking-wider">Second Form (Main Data Profile & Factory Visit)</h3>
@@ -1219,7 +1276,7 @@ export const SupplierListPage: React.FC = () => {
                       placeholder="91330300MA12345678"
                       value={formData.tax_id}
                       onChange={(e) => setFormData({ ...formData, tax_id: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none"
+                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-mono"
                     />
                   </div>
 
@@ -1234,7 +1291,6 @@ export const SupplierListPage: React.FC = () => {
                     />
                   </div>
 
-                  {/* TOWN FIELD RIGHT AFTER ADDRESS AS PER GOOGLE DOC SPEC */}
                   <div>
                     <label className="text-xs text-slate-700 font-semibold block mb-1">Town</label>
                     <input
@@ -1253,7 +1309,7 @@ export const SupplierListPage: React.FC = () => {
                       placeholder="www.zhejiangpack.com"
                       value={formData.primary_website}
                       onChange={(e) => setFormData({ ...formData, primary_website: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none text-blue-600"
+                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none text-blue-600 font-mono"
                     />
                   </div>
 
@@ -1264,7 +1320,7 @@ export const SupplierListPage: React.FC = () => {
                       placeholder="www.pack-machine.cn"
                       value={formData.secondary_website}
                       onChange={(e) => setFormData({ ...formData, secondary_website: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none text-blue-600"
+                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none text-blue-600 font-mono"
                     />
                   </div>
 
@@ -1458,31 +1514,29 @@ export const SupplierListPage: React.FC = () => {
                         />
                       </div>
 
+                      {/* ISSUE 2 FIX: CLEAN SELECT DROPDOWN FOR HANDLING TERRITORY */}
                       <div>
-                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Handling Territory (Select or Type Custom)</label>
-                        <input
-                          type="text"
-                          list="territoryOptionsList"
-                          placeholder="Export Global"
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Handling Territory (Dropdown Menu)</label>
+                        <select
                           value={newContact.territory}
                           onChange={(e) => setNewContact({ ...newContact, territory: e.target.value })}
-                          className="w-full bg-white border border-slate-200 text-xs p-2 rounded outline-none"
-                        />
-                        <datalist id="territoryOptionsList">
-                          <option value="Local" />
-                          <option value="Export India" />
-                          <option value="Export Africa" />
-                          <option value="Export Global" />
-                          <option value="Export USA & Europe" />
-                        </datalist>
+                          className="w-full bg-white border border-slate-300 text-xs p-2 rounded-lg outline-none font-semibold text-slate-800"
+                        >
+                          <option value="Local">Local</option>
+                          <option value="Export India">Export India</option>
+                          <option value="Export Africa">Export Africa</option>
+                          <option value="Export Global">Export Global</option>
+                          <option value="Export USA & Europe">Export USA & Europe</option>
+                        </select>
                       </div>
 
+                      {/* COUNTRY DROPDOWN WITH AUTO PHONE CODE PREFIX IN SUB-CONTACT FORM */}
                       <div>
                         <label className="text-[11px] font-semibold text-slate-700 block mb-1">Country (Dropdown Menu)</label>
                         <select
                           value={newContact.country}
                           onChange={(e) => handleSubContactCountryChange(e.target.value)}
-                          className="w-full bg-white border border-slate-200 text-xs p-2 rounded outline-none font-bold"
+                          className="w-full bg-white border border-slate-300 text-xs p-2 rounded-lg outline-none font-bold text-slate-800"
                         >
                           <option value="China">China (+86)</option>
                           <option value="Uganda">Uganda (+256)</option>
@@ -1579,7 +1633,7 @@ export const SupplierListPage: React.FC = () => {
                                 <p className="text-slate-800">WeChat: {c.wechat}</p>
                                 <a href={`mailto:${c.email}`} className="text-blue-600 hover:underline block text-[11px]">{c.email}</a>
                               </td>
-                              <td className="p-3 text-slate-700">{c.territory}</td>
+                              <td className="p-3 text-slate-700 font-semibold">{c.territory}</td>
                               <td className="p-3 text-right space-x-1">
                                 <button
                                   type="button"
@@ -1606,12 +1660,13 @@ export const SupplierListPage: React.FC = () => {
               </div>
             )}
 
+            {/* ISSUE 3 FIX: SUBMIT BUTTON ACCESSIBLE ON ALL STAGES WITH ACTION DIRECTLY IN FORM */}
             <div className="flex items-center justify-between pt-4 border-t border-slate-100">
               {formStage === 2 ? (
                 <button
                   type="button"
                   onClick={() => setFormStage(1)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg"
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg cursor-pointer"
                 >
                   Back to First Form
                 </button>
@@ -1621,14 +1676,15 @@ export const SupplierListPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setFormStage(2)}
-                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-lg shadow-sm"
+                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-lg shadow-sm cursor-pointer"
                 >
                   Next to Second Form
                 </button>
               ) : (
                 <button
-                  type="submit"
-                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-lg shadow-sm"
+                  type="button"
+                  onClick={handleCreateSupplier}
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg shadow-md hover:shadow-lg transition-all cursor-pointer"
                 >
                   Submit Supplier Profile
                 </button>
@@ -1729,7 +1785,7 @@ export const SupplierListPage: React.FC = () => {
             </div>
 
             <div className="p-6 overflow-y-auto space-y-6 flex-1 text-xs">
-              {suppliers.map((s) => (
+              {filteredSuppliers.map((s) => (
                 <div key={s.id} className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4">
                   <div className="flex items-center justify-between border-b border-slate-200 pb-3">
                     <h4 className="text-sm font-bold text-blue-700">{s.name}</h4>
@@ -1785,7 +1841,7 @@ export const SupplierListPage: React.FC = () => {
                                 <td className="p-2 font-bold">{c.title} {c.name} ({c.designation})</td>
                                 <td className="p-2 font-mono text-blue-600">{c.calling} / {c.whatsapp}</td>
                                 <td className="p-2 font-mono">{c.wechat} / {c.email}</td>
-                                <td className="p-2">{c.territory}</td>
+                                <td className="p-2 font-semibold">{c.territory}</td>
                               </tr>
                             ))}
                           </tbody>
