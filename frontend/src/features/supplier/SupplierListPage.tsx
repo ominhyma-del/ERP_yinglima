@@ -319,7 +319,7 @@ export const SupplierListPage: React.FC = () => {
   // Initial Form Data reset state
   const initialFormData = {
     name: '',
-    product_categories: ['Machines'] as string[],
+    product_categories: [] as string[],
     supplier_type: 'Manufacturer',
     brand_name: '',
     country: 'China',
@@ -337,7 +337,7 @@ export const SupplierListPage: React.FC = () => {
     tax_id: '',
     primary_website: '',
     secondary_website: '',
-    key_strength_subcategories: ['Band Sealer'] as string[],
+    key_strength_subcategories: [] as string[],
     grade: 'Select',
     current_status: 'Select',
     potential: 'Select',
@@ -351,10 +351,8 @@ export const SupplierListPage: React.FC = () => {
   // Form Data state
   const [formData, setFormData] = useState({ ...initialFormData });
 
-  // Attachments State for Factory Visit Photos / Videos
-  const [visitAttachments, setVisitAttachments] = useState<{ id: string; name: string; type: 'photo' | 'video'; url: string }[]>([
-    { id: 'att-1', name: 'STX-P01_pdf_cover.png', type: 'photo', url: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=300' },
-  ]);
+  // Attachments State for Factory Visit Photos / Videos (Empty by default for new entry)
+  const [visitAttachments, setVisitAttachments] = useState<{ id: string; name: string; type: 'photo' | 'video'; url: string }[]>([]);
 
   // Secondary Contacts List State (Inside Form)
   const [formContacts, setFormContacts] = useState<any[]>([]);
@@ -689,6 +687,8 @@ export const SupplierListPage: React.FC = () => {
               onClick={() => {
                 setEditingSupplierId(null);
                 setFormData({ ...initialFormData });
+                setVisitAttachments([]);
+                setFormContacts([]);
                 setViewMode('add');
                 setFormStage(1);
               }}
