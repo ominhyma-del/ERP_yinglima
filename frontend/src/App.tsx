@@ -7,6 +7,8 @@ import { BuyerListPage } from './features/buyer/BuyerListPage';
 import { ProductCatalogPage } from './features/product/ProductCatalogPage';
 import { InquiryPlanningPage } from './features/inquiry/InquiryPlanningPage';
 import { MastersPage } from './features/masters/MastersPage';
+import { TeamMembersPage } from './features/team/TeamMembersPage';
+import { RolesPermissionsPage } from './features/team/RolesPermissionsPage';
 
 export function App() {
   const [activeModule, setActiveModule] = useState<string>('suppliers');
@@ -27,7 +29,9 @@ export function App() {
           {(activeModule === 'buyers' || activeModule === 'quotation') && <BuyerListPage />}
           {(activeModule === 'products' || activeModule === 'stock_trans' || activeModule === 'reorder') && <ProductCatalogPage />}
           {activeModule === 'inquiries' && <InquiryPlanningPage />}
-          {(activeModule === 'masters' || activeModule === 'team' || activeModule === 'roles') && <MastersPage />}
+          {activeModule === 'masters' && <MastersPage />}
+          {activeModule === 'team' && <TeamMembersPage />}
+          {activeModule === 'roles' && <RolesPermissionsPage />}
         </main>
       </div>
     </div>
