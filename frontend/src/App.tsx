@@ -10,10 +10,17 @@ import { InquiryPlanningPage } from './features/inquiry/InquiryPlanningPage';
 import { MastersPage } from './features/masters/MastersPage';
 import { TeamMembersPage } from './features/team/TeamMembersPage';
 import { RolesPermissionsPage } from './features/team/RolesPermissionsPage';
+import { LoginPage } from './features/auth/LoginPage';
+import { useAuth } from './features/auth/AuthContext';
 
 export function App() {
   const [activeModule, setActiveModule] = useState<string>('suppliers');
   const [currentCompany, setCompany] = useState<string>('c1');
+  const { isAuthenticated } = useAuth();
+
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-800 flex">
