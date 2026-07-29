@@ -42,7 +42,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeModule, setActiveModule 
     {
       title: 'PRODUCTS & STOCK',
       items: [
-        { id: 'products', label: 'Product Catalog', icon: Package },
+        { id: 'products', label: 'Product Master', icon: Package },
         { id: 'stock_trans', label: 'Stock Transactions', icon: RefreshCw },
         { id: 'reorder', label: 'Re-Order Reports', icon: BarChart3 },
       ],
