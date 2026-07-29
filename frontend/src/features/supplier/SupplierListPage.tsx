@@ -1,15 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Truck, Plus, Filter, ShieldAlert, ArrowLeft, Download, Upload, FileSpreadsheet, X, CheckCircle, Eye, Trash2, Camera, Phone, Mail, MessageSquare, AlertCircle, Link as LinkIcon, Check, ChevronDown, UserPlus, Edit, Maximize2, FileText, Image as ImageIcon, Video } from 'lucide-react';
-
-// Country Phone Dial Code Map
-const countryPhoneCodeMap: Record<string, string> = {
-  China: '+86 ',
-  Uganda: '+256 ',
-  India: '+91 ',
-  Kenya: '+254 ',
-  UAE: '+971 ',
-  'United States': '+1 ',
-};
+import { Truck, Plus, Filter, ShieldAlert, ArrowLeft, Download, Upload, FileSpreadsheet, X, CheckCircle, Eye, Trash2, Camera, Phone, Mail, MessageSquare, AlertCircle, Link, Check, ChevronDown, UserPlus } from 'lucide-react';
 
 // MULTI-SELECT DROPDOWN COMPONENT WITH CHECKBOXES & TAGS
 const MultiSelectDropdown: React.FC<{
@@ -77,9 +67,8 @@ const MultiSelectDropdown: React.FC<{
               <div
                 key={option}
                 onClick={() => toggleOption(option)}
-                className={`p-2 rounded flex items-center justify-between cursor-pointer transition-colors ${
-                  isSelected ? 'bg-blue-50 text-blue-800 font-bold' : 'hover:bg-slate-50 text-slate-700'
-                }`}
+                className={`p-2 rounded flex items-center justify-between cursor-pointer transition-colors ${isSelected ? 'bg-blue-50 text-blue-800 font-bold' : 'hover:bg-slate-50 text-slate-700'
+                  }`}
               >
                 <span>{option}</span>
                 {isSelected && <Check size={14} className="text-blue-600" />}
@@ -144,7 +133,6 @@ export const SupplierListPage: React.FC = () => {
   const [selectedSupplier, setSelectedSupplier] = useState<any>(null);
   const [showRuleAlert, setShowRuleAlert] = useState<string | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
-  const [showExpandAllModal, setShowExpandAllModal] = useState(false);
   const [importNotification, setImportNotification] = useState<string | null>(null);
   const [expandedFieldModal, setExpandedFieldModal] = useState<{ title: string; items: string[] } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -219,14 +207,11 @@ export const SupplierListPage: React.FC = () => {
       secondary_products: ['Teflon Belts', 'Heating Blocks', 'Silicone Strips'],
       visited_factory: 'Yes',
       visit_remarks: 'Visited Wenzhou factory in April 2024. Excellent QA testing.',
-      attachments: [
-        { name: 'wenzhou_assembly_line.jpg', type: 'photo', url: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=300' },
-        { name: 'factory_tour_video.mp4', type: 'video', url: '' },
-      ],
+      attachments: ['factory_visit_photo1.jpg'],
       overall_remarks: 'Primary OEM supplier for Yinglima Band Sealers & Vacuum Packers.',
       contacts: [
-        { id: 'c1', title: 'Mr', name: 'John Zhang', designation: 'Export Director', territory: 'Export Africa & India', country: 'China', calling: '+86 13800138000', whatsapp: '+86 13800138000', wechat: '+86 13800138000', email: 'john@zhejiangpack.com' },
-        { id: 'c2', title: 'Ms', name: 'Lisa Chen', designation: 'Technical Engineer', territory: 'China Local', country: 'China', calling: '+86 13911223344', whatsapp: '+86 13911223344', wechat: '+86 13911223344', email: 'lisa@zhejiangpack.com' },
+        { title: 'Mr', name: 'John Zhang', designation: 'Export Director', territory: 'Export Africa & India', country: 'China', calling: '+86 13800138000', whatsapp: '+86 13800138000', wechat: '+86 13800138000', email: 'john@zhejiangpack.com' },
+        { title: 'Ms', name: 'Lisa Chen', designation: 'Technical Engineer', territory: 'China & Overseas', country: 'China', calling: '+86 13911223344', whatsapp: '+86 13911223344', wechat: '+86 13911223344', email: 'lisa@zhejiangpack.com' },
       ],
     },
     {
@@ -261,7 +246,7 @@ export const SupplierListPage: React.FC = () => {
       attachments: [],
       overall_remarks: 'Food grade Citric Acid Anhydrous 30-100 mesh supplier.',
       contacts: [
-        { id: 'c3', title: 'Mr', name: 'Li Wei', designation: 'Sales Manager', territory: 'Export Global', country: 'China', calling: '+86 13900139000', whatsapp: '+86 13900139000', wechat: '+86 13900139000', email: 'liwei@citric.cn' },
+        { title: 'Mr', name: 'Li Wei', designation: 'Sales Manager', territory: 'Export Global', country: 'China', calling: '+86 13900139000', whatsapp: '+86 13900139000', wechat: '+86 13900139000', email: 'liwei@citric.cn' },
       ],
     },
   ]);
@@ -292,9 +277,9 @@ export const SupplierListPage: React.FC = () => {
     contact_title: 'Mr',
     contact_name: '',
     designation: '',
-    calling_number: '+86 ',
-    whatsapp_number: '+86 ',
-    wechat_number: '+86 ',
+    calling_number: '',
+    whatsapp_number: '',
+    wechat_number: '',
     email: '',
     tax_id: '',
     primary_website: '',
@@ -310,67 +295,19 @@ export const SupplierListPage: React.FC = () => {
     overall_remarks: '',
   });
 
-  // Attachments State for Factory Visit Photos / Videos
-  const [visitAttachments, setVisitAttachments] = useState<{ id: string; name: string; type: 'photo' | 'video'; url: string }[]>([
-    { id: 'att-1', name: 'factory_front.jpg', type: 'photo', url: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=300' },
-  ]);
-
   // Secondary Contacts List State (Inside Form)
   const [formContacts, setFormContacts] = useState<any[]>([]);
-  const [editingContactId, setEditingContactId] = useState<string | null>(null);
-
   const [newContact, setNewContact] = useState({
     title: 'Mr',
     name: '',
     designation: '',
     territory: 'Export Global',
     country: 'China',
-    calling: '+86 ',
-    whatsapp: '+86 ',
-    wechat: '+86 ',
+    calling: '',
+    whatsapp: '',
+    wechat: '',
     email: '',
   });
-
-  // Country Auto-Prefix Phone Code Handler
-  const handleFirstFormCountryChange = (newCountry: string) => {
-    const prefix = countryPhoneCodeMap[newCountry] || '+86 ';
-    setFormData((prev) => ({
-      ...prev,
-      country: newCountry,
-      calling_number: prefix + prev.calling_number.replace(/^\+\d+\s?/, ''),
-      whatsapp_number: prefix + prev.whatsapp_number.replace(/^\+\d+\s?/, ''),
-      wechat_number: prefix + prev.wechat_number.replace(/^\+\d+\s?/, ''),
-    }));
-  };
-
-  const handleSubContactCountryChange = (newCountry: string) => {
-    const prefix = countryPhoneCodeMap[newCountry] || '+86 ';
-    setNewContact((prev) => ({
-      ...prev,
-      country: newCountry,
-      calling: prefix + prev.calling.replace(/^\+\d+\s?/, ''),
-      whatsapp: prefix + prev.whatsapp.replace(/^\+\d+\s?/, ''),
-      wechat: prefix + prev.wechat.replace(/^\+\d+\s?/, ''),
-    }));
-  };
-
-  // Attachments Handler
-  const handleAddAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files) {
-      const newAtts = Array.from(files).map((f) => ({
-        id: `att-${Date.now()}-${Math.random()}`,
-        name: f.name,
-        type: (f.type.includes('video') ? 'video' : 'photo') as 'photo' | 'video',
-        url: URL.createObjectURL(f),
-      }));
-      setVisitAttachments([...visitAttachments, ...newAtts]);
-    }
-  };
-
-  const handleRemoveAttachment = (attId: string) => {
-    setVisitAttachments(visitAttachments.filter((a) => a.id !== attId));
-  };
 
   // Validation function on blur (7 to 11 digits requirement)
   const validatePhone = (field: 'calling' | 'whatsapp' | 'wechat', value: string) => {
@@ -386,39 +323,21 @@ export const SupplierListPage: React.FC = () => {
     }
   };
 
-  const handleSaveSubContact = (e: React.FormEvent) => {
+  const handleAddSecondaryContact = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newContact.name) return;
-
-    if (editingContactId) {
-      setFormContacts(
-        formContacts.map((c) => (c.id === editingContactId ? { ...newContact, id: editingContactId } : c)),
-      );
-      setEditingContactId(null);
-    } else {
-      setFormContacts([...formContacts, { ...newContact, id: `c-${Date.now()}` }]);
-    }
-
+    setFormContacts([...formContacts, { ...newContact }]);
     setNewContact({
       title: 'Mr',
       name: '',
       designation: '',
       territory: 'Export Global',
       country: 'China',
-      calling: '+86 ',
-      whatsapp: '+86 ',
-      wechat: '+86 ',
+      calling: '',
+      whatsapp: '',
+      wechat: '',
       email: '',
     });
-  };
-
-  const handleEditFormContact = (contact: any) => {
-    setNewContact({ ...contact });
-    setEditingContactId(contact.id);
-  };
-
-  const handleDeleteFormContact = (contactId: string) => {
-    setFormContacts(formContacts.filter((c) => c.id !== contactId));
   };
 
   // Inline Grade Change in Table
@@ -550,7 +469,6 @@ export const SupplierListPage: React.FC = () => {
     }
 
     const primaryContactObj = {
-      id: `c-p-${Date.now()}`,
       title: formData.contact_title,
       name: `${formData.contact_title} ${formData.contact_name || 'Primary Contact'}`,
       designation: formData.designation || 'Sales Manager',
@@ -591,9 +509,9 @@ export const SupplierListPage: React.FC = () => {
       secondary_products: formData.secondary_products ? formData.secondary_products.split(',') : [],
       visited_factory: formData.visited_factory,
       visit_remarks: formData.visit_remarks,
-      attachments: visitAttachments,
+      attachments: [],
       overall_remarks: formData.overall_remarks,
-      contacts: [primaryContactObj, ...formContacts],
+      contacts: [primaryContactObj, ...formContacts], // First form contact + secondary contacts!
     };
 
     setSuppliers([newSupplier, ...suppliers]);
@@ -612,19 +530,12 @@ export const SupplierListPage: React.FC = () => {
             {viewMode === 'add' ? `Add Supplier Profile (Stage ${formStage} of 2)` : viewMode === 'detail' ? 'Supplier Details' : 'Suppliers'}
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Yinglima China Procurement & Supplier Directory
+            Yinglima China Procurement & Supplier Directory (Full Interactive UI)
           </p>
         </div>
 
         {viewMode === 'list' ? (
           <div className="flex items-center gap-2">
-            {/* FEATURE 2: EXPAND ALL FILTERED DATA MASTER BUTTON */}
-            <button
-              onClick={() => setShowExpandAllModal(true)}
-              className="px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
-            >
-              <Maximize2 size={15} /> Expand All Filtered Data
-            </button>
             <button
               onClick={() => setShowImportModal(true)}
               className="px-3.5 py-2.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium text-xs rounded-lg flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
@@ -732,7 +643,6 @@ export const SupplierListPage: React.FC = () => {
               <select value={filterCountry} onChange={(e) => setFilterCountry(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 p-2 rounded-lg outline-none">
                 <option value="">Country (All)</option>
                 <option value="China">China</option>
-                <option value="Uganda">Uganda</option>
                 <option value="India">India</option>
               </select>
               <select value={filterProvince} onChange={(e) => setFilterProvince(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 p-2 rounded-lg outline-none">
@@ -928,18 +838,16 @@ export const SupplierListPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setFormStage(1)}
-              className={`text-xs font-bold px-4 py-2 rounded-lg transition-colors cursor-pointer ${
-                formStage === 1 ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
-              }`}
+              className={`text-xs font-bold px-4 py-2 rounded-lg transition-colors cursor-pointer ${formStage === 1 ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
+                }`}
             >
               First Data Form (Basic Supplier & Contact Info)
             </button>
             <button
               type="button"
               onClick={() => setFormStage(2)}
-              className={`text-xs font-bold px-4 py-2 rounded-lg transition-colors cursor-pointer ${
-                formStage === 2 ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
-              }`}
+              className={`text-xs font-bold px-4 py-2 rounded-lg transition-colors cursor-pointer ${formStage === 2 ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
+                }`}
             >
               Second Form (Main Data Profile & Factory Visit)
             </button>
@@ -995,22 +903,17 @@ export const SupplierListPage: React.FC = () => {
                     />
                   </div>
 
-                  {/* COUNTRY DROPDOWN WITH AUTO PHONE CODE PREFIX */}
                   <div>
                     <label className="text-xs text-slate-700 font-semibold block mb-1">
-                      Country <span className="text-rose-500">*</span> (Dropdown - Auto-Prefixes Phone Codes)
+                      Country <span className="text-rose-500">*</span> (Default China)
                     </label>
-                    <select
+                    <input
+                      type="text"
+                      required
                       value={formData.country}
-                      onChange={(e) => handleFirstFormCountryChange(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-bold"
-                    >
-                      <option value="China">China (+86)</option>
-                      <option value="Uganda">Uganda (+256)</option>
-                      <option value="India">India (+91)</option>
-                      <option value="Kenya">Kenya (+254)</option>
-                      <option value="UAE">UAE (+971)</option>
-                    </select>
+                      onChange={(e) => setFormData({ ...formData, country: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none"
+                    />
                   </div>
 
                   {/* DYNAMIC PROVINCE DROPDOWN */}
@@ -1105,7 +1008,7 @@ export const SupplierListPage: React.FC = () => {
                       value={formData.calling_number}
                       onChange={(e) => setFormData({ ...formData, calling_number: e.target.value })}
                       onBlur={(e) => validatePhone('calling', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-mono"
+                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none"
                     />
                     {phoneErrors.calling && <p className="text-[10px] text-rose-600 font-bold mt-1">{phoneErrors.calling}</p>}
                   </div>
@@ -1119,7 +1022,7 @@ export const SupplierListPage: React.FC = () => {
                       value={formData.whatsapp_number}
                       onChange={(e) => setFormData({ ...formData, whatsapp_number: e.target.value })}
                       onBlur={(e) => validatePhone('whatsapp', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-mono"
+                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none"
                     />
                     {phoneErrors.whatsapp && <p className="text-[10px] text-rose-600 font-bold mt-1">{phoneErrors.whatsapp}</p>}
                   </div>
@@ -1133,7 +1036,7 @@ export const SupplierListPage: React.FC = () => {
                       value={formData.wechat_number}
                       onChange={(e) => setFormData({ ...formData, wechat_number: e.target.value })}
                       onBlur={(e) => validatePhone('wechat', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-mono"
+                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none"
                     />
                     {phoneErrors.wechat && <p className="text-[10px] text-rose-600 font-bold mt-1">{phoneErrors.wechat}</p>}
                   </div>
@@ -1299,41 +1202,12 @@ export const SupplierListPage: React.FC = () => {
                     </div>
                   )}
 
-                  {/* ISSUE 1 FIX: FULL INTERACTIVE ATTACHMENTS MANAGER FOR VISIT PHOTOS / VIDEOS */}
                   {formData.visited_factory === 'Yes' && (
-                    <div className="md:col-span-4 bg-slate-50 p-5 rounded-xl border border-slate-200 space-y-3">
-                      <div className="flex justify-between items-center">
-                        <label className="text-xs font-bold text-slate-900 flex items-center gap-1.5 uppercase tracking-wider">
-                          <Camera size={16} className="text-blue-600" /> Visit Photos / Videos Attachments (Upload & Manage)
-                        </label>
-                        <label className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg cursor-pointer flex items-center gap-1">
-                          <Upload size={14} /> Upload File
-                          <input type="file" multiple accept="image/*, video/*" onChange={handleAddAttachment} className="hidden" />
-                        </label>
-                      </div>
-
-                      {/* File Thumbnails List */}
-                      {visitAttachments.length > 0 ? (
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2">
-                          {visitAttachments.map((att) => (
-                            <div key={att.id} className="bg-white p-2.5 rounded-lg border border-slate-200 flex items-center justify-between shadow-2xs">
-                              <div className="flex items-center gap-2 overflow-hidden">
-                                {att.type === 'video' ? <Video size={16} className="text-amber-500 shrink-0" /> : <ImageIcon size={16} className="text-blue-500 shrink-0" />}
-                                <span className="text-xs font-semibold text-slate-800 truncate max-w-[120px]">{att.name}</span>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveAttachment(att.id)}
-                                className="p-1 text-slate-400 hover:text-rose-600 rounded"
-                              >
-                                <X size={14} />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-slate-400 italic">No factory photos or videos attached yet.</p>
-                      )}
+                    <div className="md:col-span-4 bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2">
+                      <label className="text-xs text-slate-700 font-semibold flex items-center gap-1.5">
+                        <Camera size={15} className="text-blue-600" /> Visit Photos / Videos Attachment Provision
+                      </label>
+                      <input type="file" multiple accept="image/*, video/*" className="text-xs text-slate-600 cursor-pointer" />
                     </div>
                   )}
 
@@ -1353,14 +1227,14 @@ export const SupplierListPage: React.FC = () => {
                 <div className="pt-6 border-t border-slate-200 space-y-4">
                   <div className="flex items-center justify-between">
                     <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                      <UserPlus size={15} className="text-blue-600" /> Add Contacts Form
+                      <UserPlus size={15} className="text-blue-600" /> Add Secondary Contacts Form
                     </h4>
                   </div>
 
                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                       <div>
-                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Mr. / Mrs / Ms - Person Name</label>
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Person Name</label>
                         <div className="flex gap-1">
                           <select
                             value={newContact.title}
@@ -1392,40 +1266,25 @@ export const SupplierListPage: React.FC = () => {
                         />
                       </div>
 
-                      {/* ISSUE 2 FIX: HANDLING TERRITORY COMBOBOX / WRITE-IN DROPDOWN */}
                       <div>
-                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Handling Territory (Select or Type Custom)</label>
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Handling Territory</label>
                         <input
                           type="text"
-                          list="territoryOptionsList"
-                          placeholder="Export Global"
+                          placeholder="e.g. Export Africa"
                           value={newContact.territory}
                           onChange={(e) => setNewContact({ ...newContact, territory: e.target.value })}
                           className="w-full bg-white border border-slate-200 text-xs p-2 rounded outline-none"
                         />
-                        <datalist id="territoryOptionsList">
-                          <option value="Local" />
-                          <option value="Export India" />
-                          <option value="Export Africa" />
-                          <option value="Export Global" />
-                          <option value="Export USA & Europe" />
-                        </datalist>
                       </div>
 
-                      {/* ISSUE 3 FIX: COUNTRY DROPDOWN WITH AUTO PHONE CODE PREFIX IN SUB-CONTACT FORM */}
                       <div>
-                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Country (Dropdown Menu)</label>
-                        <select
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Country</label>
+                        <input
+                          type="text"
                           value={newContact.country}
-                          onChange={(e) => handleSubContactCountryChange(e.target.value)}
-                          className="w-full bg-white border border-slate-200 text-xs p-2 rounded outline-none font-bold"
-                        >
-                          <option value="China">China (+86)</option>
-                          <option value="Uganda">Uganda (+256)</option>
-                          <option value="India">India (+91)</option>
-                          <option value="Kenya">Kenya (+254)</option>
-                          <option value="UAE">UAE (+971)</option>
-                        </select>
+                          onChange={(e) => setNewContact({ ...newContact, country: e.target.value })}
+                          className="w-full bg-white border border-slate-200 text-xs p-2 rounded outline-none"
+                        />
                       </div>
 
                       <div>
@@ -1435,7 +1294,7 @@ export const SupplierListPage: React.FC = () => {
                           placeholder="+86 13900000000"
                           value={newContact.calling}
                           onChange={(e) => setNewContact({ ...newContact, calling: e.target.value })}
-                          className="w-full bg-white border border-slate-200 text-xs p-2 rounded outline-none font-mono"
+                          className="w-full bg-white border border-slate-200 text-xs p-2 rounded outline-none"
                         />
                       </div>
 
@@ -1446,7 +1305,7 @@ export const SupplierListPage: React.FC = () => {
                           placeholder="+86 13900000000"
                           value={newContact.whatsapp}
                           onChange={(e) => setNewContact({ ...newContact, whatsapp: e.target.value })}
-                          className="w-full bg-white border border-slate-200 text-xs p-2 rounded outline-none font-mono"
+                          className="w-full bg-white border border-slate-200 text-xs p-2 rounded outline-none"
                         />
                       </div>
 
@@ -1454,10 +1313,10 @@ export const SupplierListPage: React.FC = () => {
                         <label className="text-[11px] font-semibold text-slate-700 block mb-1">WeChat Number</label>
                         <input
                           type="text"
-                          placeholder="+86 13900000000"
+                          placeholder="wxid_contact"
                           value={newContact.wechat}
                           onChange={(e) => setNewContact({ ...newContact, wechat: e.target.value })}
-                          className="w-full bg-white border border-slate-200 text-xs p-2 rounded outline-none font-mono"
+                          className="w-full bg-white border border-slate-200 text-xs p-2 rounded outline-none"
                         />
                       </div>
 
@@ -1476,60 +1335,41 @@ export const SupplierListPage: React.FC = () => {
                     <div className="flex justify-end pt-1">
                       <button
                         type="button"
-                        onClick={handleSaveSubContact}
+                        onClick={handleAddSecondaryContact}
                         className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-lg flex items-center gap-1 cursor-pointer"
                       >
-                        <Plus size={13} /> {editingContactId ? 'Update Contact in Table' : 'Add Contact to Table'}
+                        <Plus size={13} /> Add Contact to Table
                       </button>
                     </div>
                   </div>
 
-                  {/* ISSUE 4 FIX: ADD CONTACTS LIST TABLE WITH EXACT SPEC HEADINGS & HYPERLINKS */}
+                  {/* FORM SECONDARY CONTACTS TABLE */}
                   {formContacts.length > 0 && (
-                    <div className="bg-white border border-slate-200 rounded-lg overflow-hidden text-xs space-y-2">
-                      <h4 className="p-3 bg-slate-100 font-bold uppercase text-[11px] text-slate-700 border-b border-slate-200">
-                        Add Contacts List
-                      </h4>
+                    <div className="bg-white border border-slate-200 rounded-lg overflow-hidden text-xs">
                       <table className="w-full text-left">
-                        <thead className="bg-slate-50 font-bold uppercase text-[10px] text-slate-600">
+                        <thead className="bg-slate-100 font-bold uppercase text-[10px]">
                           <tr>
-                            <th className="p-3">Mr. / Mrs / Ms - Person Name / Designation</th>
-                            <th className="p-3">Calling Number / Whatsapp Number</th>
-                            <th className="p-3">Wechat / Email</th>
-                            <th className="p-3">Handling Territory</th>
-                            <th className="p-3 text-right">Action</th>
+                            <th className="p-2">Name / Designation</th>
+                            <th className="p-2">Calling / Whatsapp</th>
+                            <th className="p-2">Wechat / Email</th>
+                            <th className="p-2">Handling Territory</th>
+                            <th className="p-2 text-right">Action</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100 font-medium">
-                          {formContacts.map((c) => (
-                            <tr key={c.id} className="hover:bg-slate-50">
-                              <td className="p-3">
-                                <p className="font-bold text-slate-900">{c.title} {c.name}</p>
-                                <p className="text-[11px] text-slate-500">{c.designation}</p>
-                              </td>
-                              <td className="p-3 font-mono">
-                                <a href={`tel:${c.calling}`} className="text-blue-600 hover:underline block">Call: {c.calling}</a>
-                                <a href={`https://wa.me/${c.whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="text-emerald-600 hover:underline block text-[11px]">WA: {c.whatsapp}</a>
-                              </td>
-                              <td className="p-3 font-mono">
-                                <p className="text-slate-800">WeChat: {c.wechat}</p>
-                                <a href={`mailto:${c.email}`} className="text-blue-600 hover:underline block text-[11px]">{c.email}</a>
-                              </td>
-                              <td className="p-3 text-slate-700">{c.territory}</td>
-                              <td className="p-3 text-right space-x-1">
+                        <tbody className="divide-y divide-slate-100">
+                          {formContacts.map((c, i) => (
+                            <tr key={i}>
+                              <td className="p-2 font-bold">{c.title} {c.name} ({c.designation})</td>
+                              <td className="p-2 font-mono text-blue-600">{c.calling} / {c.whatsapp}</td>
+                              <td className="p-2 font-mono">{c.wechat} / {c.email}</td>
+                              <td className="p-2">{c.territory}</td>
+                              <td className="p-2 text-right">
                                 <button
                                   type="button"
-                                  onClick={() => handleEditFormContact(c)}
-                                  className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[10px] font-semibold"
+                                  onClick={() => setFormContacts(formContacts.filter((_, idx) => idx !== i))}
+                                  className="text-rose-600 hover:underline text-[10px]"
                                 >
-                                  Edit
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteFormContact(c.id)}
-                                  className="px-2 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded text-[10px] font-semibold"
-                                >
-                                  Delete
+                                  Remove
                                 </button>
                               </td>
                             </tr>
@@ -1626,13 +1466,13 @@ export const SupplierListPage: React.FC = () => {
                         <p className="font-bold text-slate-900">{c.title} {c.name}</p>
                         <p className="text-[11px] text-slate-500">{c.designation}</p>
                       </td>
-                      <td className="p-3 font-mono">
-                        <a href={`tel:${c.calling}`} className="text-blue-600 hover:underline block">Call: {c.calling}</a>
-                        <a href={`https://wa.me/${c.whatsapp?.replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="text-emerald-600 hover:underline block text-[11px]">WA: {c.whatsapp}</a>
+                      <td className="p-3 font-mono text-blue-600">
+                        <p>Call: {c.calling}</p>
+                        <p className="text-[11px] text-emerald-600">WA: {c.whatsapp}</p>
                       </td>
                       <td className="p-3 font-mono">
                         <p className="text-slate-800">WeChat: {c.wechat}</p>
-                        <a href={`mailto:${c.email}`} className="text-blue-600 hover:underline block text-[11px]">{c.email}</a>
+                        <p className="text-blue-600 text-[11px]">{c.email}</p>
                       </td>
                       <td className="p-3 text-slate-700">{c.territory}</td>
                       <td className="p-3 text-right space-x-1">
@@ -1643,94 +1483,6 @@ export const SupplierListPage: React.FC = () => {
                   ))}
                 </tbody>
               </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ISSUE 5 FIX: EXPAND ALL FILTERED DATA MASTER MODAL */}
-      {showExpandAllModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-6">
-          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-6xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
-            <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
-              <div>
-                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                  <Maximize2 size={18} className="text-indigo-600" /> Expanded Filtered View (All Master Data)
-                </h3>
-                <p className="text-xs text-slate-500">Full un-truncated categories, sub-categories, secondary products, contacts, and visit attachments</p>
-              </div>
-              <button onClick={() => setShowExpandAllModal(false)} className="p-1.5 text-slate-500 hover:text-slate-900 bg-slate-200 rounded-lg">
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="p-6 overflow-y-auto space-y-6 flex-1 text-xs">
-              {suppliers.map((s) => (
-                <div key={s.id} className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4">
-                  <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-                    <h4 className="text-sm font-bold text-blue-700">{s.name}</h4>
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 bg-blue-100 text-blue-800 font-bold rounded">Grade {s.grade}</span>
-                      <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-bold rounded">{s.current_status}</span>
-                      <span className="px-2 py-0.5 bg-slate-200 text-slate-800 font-bold rounded">Potential: {s.potential}</span>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <span className="font-bold text-slate-900 block mb-1">All Product Categories:</span>
-                      <div className="flex flex-wrap gap-1">
-                        {s.product_categories.map((c, i) => (
-                          <span key={i} className="px-2 py-0.5 bg-white border border-slate-200 font-semibold rounded text-[11px]">{c}</span>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <span className="font-bold text-slate-900 block mb-1">Key Strength Sub-Categories:</span>
-                      <div className="flex flex-wrap gap-1">
-                        {s.key_strength_subcategories.map((sc, i) => (
-                          <span key={i} className="px-2 py-0.5 bg-blue-50 text-blue-900 font-semibold rounded text-[11px]">{sc}</span>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <span className="font-bold text-slate-900 block mb-1">Secondary Products:</span>
-                      <p className="text-slate-700">{Array.isArray(s.secondary_products) ? s.secondary_products.join(', ') : s.secondary_products}</p>
-                    </div>
-                  </div>
-
-                  {/* Associated Contacts in Expanded View */}
-                  {s.contacts && s.contacts.length > 0 && (
-                    <div className="space-y-2 pt-2 border-t border-slate-200">
-                      <span className="font-bold text-slate-900 block">Associated Contacts List:</span>
-                      <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-                        <table className="w-full text-left text-[11px]">
-                          <thead className="bg-slate-100 font-bold uppercase">
-                            <tr>
-                              <th className="p-2">Name / Designation</th>
-                              <th className="p-2">Calling / Whatsapp</th>
-                              <th className="p-2">Wechat / Email</th>
-                              <th className="p-2">Handling Territory</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {s.contacts.map((c: any, i: number) => (
-                              <tr key={i}>
-                                <td className="p-2 font-bold">{c.title} {c.name} ({c.designation})</td>
-                                <td className="p-2 font-mono text-blue-600">{c.calling} / {c.whatsapp}</td>
-                                <td className="p-2 font-mono">{c.wechat} / {c.email}</td>
-                                <td className="p-2">{c.territory}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
             </div>
           </div>
         </div>
