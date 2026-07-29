@@ -1,5 +1,133 @@
-import React, { useState, useRef } from 'react';
-import { Truck, Plus, Filter, ShieldAlert, ArrowLeft, Download, Upload, FileSpreadsheet, X, CheckCircle, Eye, Trash2, Camera, Phone, Mail, MessageSquare, AlertCircle, Link } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Truck, Plus, Filter, ShieldAlert, ArrowLeft, Download, Upload, FileSpreadsheet, X, CheckCircle, Eye, Trash2, Camera, Phone, Mail, MessageSquare, AlertCircle, Link, Check, ChevronDown, UserPlus } from 'lucide-react';
+
+// MULTI-SELECT DROPDOWN COMPONENT WITH CHECKBOXES & TAGS
+const MultiSelectDropdown: React.FC<{
+  label: string;
+  options: string[];
+  selected: string[];
+  onChange: (newSelected: string[]) => void;
+  placeholder?: string;
+}> = ({ label, options, selected, onChange, placeholder = 'Select multiple...' }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const toggleOption = (opt: string) => {
+    if (selected.includes(opt)) {
+      onChange(selected.filter((item) => item !== opt));
+    } else {
+      onChange([...selected, opt]);
+    }
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <label className="text-xs text-slate-700 font-semibold block mb-1">{label}</label>
+      <div
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg cursor-pointer flex items-center justify-between min-h-[38px] hover:border-blue-500 transition-colors"
+      >
+        <div className="flex flex-wrap gap-1 items-center overflow-hidden">
+          {selected.length > 0 ? (
+            selected.map((item) => (
+              <span key={item} className="bg-blue-100 text-blue-900 text-[11px] font-bold px-2 py-0.5 rounded flex items-center gap-1">
+                {item}
+                <X
+                  size={12}
+                  className="hover:text-rose-600"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleOption(item);
+                  }}
+                />
+              </span>
+            ))
+          ) : (
+            <span className="text-slate-400">{placeholder}</span>
+          )}
+        </div>
+        <ChevronDown size={14} className={`text-slate-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </div>
+
+      {isOpen && (
+        <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto p-1 text-xs space-y-0.5">
+          {options.map((option) => {
+            const isSelected = selected.includes(option);
+            return (
+              <div
+                key={option}
+                onClick={() => toggleOption(option)}
+                className={`p-2 rounded flex items-center justify-between cursor-pointer transition-colors ${
+                  isSelected ? 'bg-blue-50 text-blue-800 font-bold' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <span>{option}</span>
+                {isSelected && <Check size={14} className="text-blue-600" />}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// AUTO-COMPLETE KEYWORD SUGGESTION INPUT FOR COMPANY NAME
+const CompanyAutocompleteInput: React.FC<{
+  value: string;
+  onChange: (val: string) => void;
+  suggestions: string[];
+}> = ({ value, onChange, suggestions }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const filtered = suggestions.filter((s) => s.toLowerCase().includes(value.toLowerCase()) && s !== value);
+
+  return (
+    <div className="relative">
+      <label className="text-xs text-slate-700 font-semibold block mb-1">
+        Name Of Company <span className="text-rose-500">*</span> (Keyword Suggestion - Matches Any Part)
+      </label>
+      <input
+        type="text"
+        required
+        placeholder="Type Company Name..."
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value);
+          setIsOpen(true);
+        }}
+        onFocus={() => setIsOpen(true)}
+        onBlur={() => setTimeout(() => setIsOpen(false), 200)}
+        className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none focus:border-blue-500 focus:bg-white"
+      />
+      {isOpen && filtered.length > 0 && (
+        <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-40 overflow-y-auto text-xs divide-y divide-slate-100">
+          {filtered.map((item, idx) => (
+            <div
+              key={idx}
+              onClick={() => {
+                onChange(item);
+                setIsOpen(false);
+              }}
+              className="p-2.5 hover:bg-blue-50 text-slate-800 cursor-pointer font-semibold"
+            >
+              {item}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const SupplierListPage: React.FC = () => {
   const [viewMode, setViewMode] = useState<'list' | 'add' | 'detail'>('list');
@@ -16,12 +144,45 @@ export const SupplierListPage: React.FC = () => {
   // On-blur Phone Error states (7 to 11 digits requirement)
   const [phoneErrors, setPhoneErrors] = useState<{ calling?: string; whatsapp?: string; wechat?: string }>({});
 
-  // Initial Suppliers state matching full spec
+  // Province and City Master Mapping
+  const provinceCityMap: Record<string, string[]> = {
+    Zhejiang: ['Wenzhou', 'Ruian', 'Ningbo', 'Hangzhou', 'Jiaxing'],
+    Shandong: ['Weifang', 'Anqiu', 'Qingdao', 'Jinan', 'Zibo'],
+    Guangdong: ['Guangzhou', 'Shenzhen', 'Foshan', 'Dongguan'],
+    Jiangsu: ['Suzhou', 'Wuxi', 'Nanjing', 'Changzhou'],
+    Shanghai: ['Shanghai City'],
+  };
+
+  // Master Categories & Subcategories
+  const categoryMasterOptions = [
+    'Food Ingredients',
+    'Chemicals',
+    'Tech/Feed Grade Ingredients',
+    'Machines',
+    'Filteration',
+    'Pumps',
+    'Spare Parts',
+    'Packaging Equipment',
+  ];
+
+  const subcategoryMasterOptions = [
+    'Citric Acid',
+    'Caustic Soda',
+    'Band Sealer',
+    'Spares for Band Sealer',
+    'Vacuum Packers',
+    'Shrink Wrappers',
+    'Carton Sealers',
+    'Teflon Belts',
+    'Temperature Controllers',
+  ];
+
+  // Initial Suppliers state
   const [suppliers, setSuppliers] = useState([
     {
       id: 's1',
       name: 'Zhejiang Packaging Machinery Ltd',
-      product_categories: ['Machines', 'Spare Parts', 'Electrical Components', 'Packaging Equipment', 'Vacuum Sealers', 'Heating Elements'],
+      product_categories: ['Machines', 'Spare Parts', 'Packaging Equipment'],
       supplier_type: 'Manufacturer',
       brand_name: 'Yinglima Machinery',
       country: 'China',
@@ -39,19 +200,19 @@ export const SupplierListPage: React.FC = () => {
       tax_id: '91330300MA12345678',
       primary_website: 'www.zhejiangpack.com',
       secondary_website: 'www.pack-machine.cn',
-      key_strength_subcategories: ['Band Sealer', 'Vacuum Packers', 'Shrink Wrappers', 'Spares for Band Sealer', 'Carton Sealers', 'Form Fill Sealers'],
+      key_strength_subcategories: ['Band Sealer', 'Vacuum Packers', 'Spares for Band Sealer'],
       grade: 'A',
       current_status: 'EXISTING',
       potential: 'YES',
       potential_reason: 'High manufacturing capacity & 4 automated production lines',
-      secondary_products: ['Teflon Belts', 'Heating Blocks', 'Silicone Strips', 'Motor Drives', 'Relays', 'Temperature Controllers'],
+      secondary_products: ['Teflon Belts', 'Heating Blocks', 'Silicone Strips'],
       visited_factory: 'Yes',
       visit_remarks: 'Visited Wenzhou factory in April 2024. Excellent QA testing.',
-      attachments: ['factory_visit_photo1.jpg', 'production_line_video.mp4'],
+      attachments: ['factory_visit_photo1.jpg'],
       overall_remarks: 'Primary OEM supplier for Yinglima Band Sealers & Vacuum Packers.',
       contacts: [
-        { title: 'Mr', name: 'John Zhang', designation: 'Export Director', territory: 'Export Africa & India', country: 'China', calling: '+86 13800138000', whatsapp: '+86 13800138000', wechat: 'wxid_john88', email: 'john@zhejiangpack.com' },
-        { title: 'Ms', name: 'Lisa Chen', designation: 'Technical Engineer', territory: 'China & Overseas', country: 'China', calling: '+86 13911223344', whatsapp: '+86 13911223344', wechat: 'wxid_lisa99', email: 'lisa@zhejiangpack.com' },
+        { title: 'Mr', name: 'John Zhang', designation: 'Export Director', territory: 'Export Africa & India', country: 'China', calling: '+86 13800138000', whatsapp: '+86 13800138000', wechat: '+86 13800138000', email: 'john@zhejiangpack.com' },
+        { title: 'Ms', name: 'Lisa Chen', designation: 'Technical Engineer', territory: 'China & Overseas', country: 'China', calling: '+86 13911223344', whatsapp: '+86 13911223344', wechat: '+86 13911223344', email: 'lisa@zhejiangpack.com' },
       ],
     },
     {
@@ -86,7 +247,7 @@ export const SupplierListPage: React.FC = () => {
       attachments: [],
       overall_remarks: 'Food grade Citric Acid Anhydrous 30-100 mesh supplier.',
       contacts: [
-        { title: 'Mr', name: 'Li Wei', designation: 'Sales Manager', territory: 'Export Global', country: 'China', calling: '+86 13900139000', whatsapp: '+86 13900139000', wechat: 'wxid_liwei99', email: 'liwei@citric.cn' },
+        { title: 'Mr', name: 'Li Wei', designation: 'Sales Manager', territory: 'Export Global', country: 'China', calling: '+86 13900139000', whatsapp: '+86 13900139000', wechat: '+86 13900139000', email: 'liwei@citric.cn' },
       ],
     },
   ]);
@@ -106,7 +267,7 @@ export const SupplierListPage: React.FC = () => {
   // Form Data state
   const [formData, setFormData] = useState({
     name: '',
-    product_categories: ['Machines'],
+    product_categories: ['Machines'] as string[],
     supplier_type: 'Manufacturer',
     brand_name: '',
     country: 'China',
@@ -124,7 +285,7 @@ export const SupplierListPage: React.FC = () => {
     tax_id: '',
     primary_website: '',
     secondary_website: '',
-    key_strength_subcategories: ['Band Sealer'],
+    key_strength_subcategories: ['Band Sealer'] as string[],
     grade: 'Select',
     current_status: 'Select',
     potential: 'Select',
@@ -135,7 +296,8 @@ export const SupplierListPage: React.FC = () => {
     overall_remarks: '',
   });
 
-  // Secondary Contact Form State
+  // Secondary Contacts List State (Inside Form)
+  const [formContacts, setFormContacts] = useState<any[]>([]);
   const [newContact, setNewContact] = useState({
     title: 'Mr',
     name: '',
@@ -162,14 +324,31 @@ export const SupplierListPage: React.FC = () => {
     }
   };
 
-  // Inline Grade Change
+  const handleAddSecondaryContact = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newContact.name) return;
+    setFormContacts([...formContacts, { ...newContact }]);
+    setNewContact({
+      title: 'Mr',
+      name: '',
+      designation: '',
+      territory: 'Export Global',
+      country: 'China',
+      calling: '',
+      whatsapp: '',
+      wechat: '',
+      email: '',
+    });
+  };
+
+  // Inline Grade Change in Table
   const handleInlineGradeChange = (id: string, newGrade: string) => {
     setSuppliers((prev) =>
       prev.map((s) => (s.id === id ? { ...s, grade: newGrade } : s)),
     );
   };
 
-  // Inline Potential Change
+  // Inline Potential Change in Table
   const handleInlinePotentialChange = (id: string, newPotential: string) => {
     setSuppliers((prev) =>
       prev.map((s) => (s.id === id ? { ...s, potential: newPotential } : s)),
@@ -192,7 +371,6 @@ export const SupplierListPage: React.FC = () => {
   // Delete Guard Rule Enforced
   const handleDelete = (id: string) => {
     const target = suppliers.find((s) => s.id === id);
-    // Rule: Allow delete ONLY IF (Status == 'NEW' or 'Select') AND (Potential == 'NO' or 'Select')
     const canDeleteStatus = target?.current_status === 'NEW' || target?.current_status === 'Select';
     const canDeletePotential = target?.potential === 'NO' || target?.potential === 'Select' || target?.potential === 'UNSELECTED';
 
@@ -334,12 +512,13 @@ export const SupplierListPage: React.FC = () => {
       visit_remarks: formData.visit_remarks,
       attachments: [],
       overall_remarks: formData.overall_remarks,
-      contacts: [primaryContactObj], // Automatic sync of 1st form contact into contact list!
+      contacts: [primaryContactObj, ...formContacts], // First form contact + secondary contacts!
     };
 
     setSuppliers([newSupplier, ...suppliers]);
     setViewMode('list');
     setFormStage(1);
+    setFormContacts([]);
     setShowRuleAlert(null);
   };
 
@@ -352,7 +531,7 @@ export const SupplierListPage: React.FC = () => {
             {viewMode === 'add' ? `Add Supplier Profile (Stage ${formStage} of 2)` : viewMode === 'detail' ? 'Supplier Details' : 'Suppliers'}
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Yinglima China Procurement & Supplier Directory (Full Specification)
+            Yinglima China Procurement & Supplier Directory (Full Interactive UI)
           </p>
         </div>
 
@@ -452,20 +631,32 @@ export const SupplierListPage: React.FC = () => {
               />
               <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 p-2 rounded-lg outline-none">
                 <option value="">Product Category (All)</option>
-                <option value="Machines">Machines</option>
-                <option value="Food Ingredients">Food Ingredients</option>
-                <option value="Chemicals">Chemicals</option>
+                {categoryMasterOptions.map((cat) => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
               </select>
               <select value={filterSubCategory} onChange={(e) => setFilterSubCategory(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 p-2 rounded-lg outline-none">
                 <option value="">Key Strength Sub Category (All)</option>
-                <option value="Band Sealer">Band Sealer</option>
-                <option value="Citric Acid">Citric Acid</option>
-                <option value="Caustic Soda">Caustic Soda</option>
+                {subcategoryMasterOptions.map((sub) => (
+                  <option key={sub} value={sub}>{sub}</option>
+                ))}
               </select>
               <select value={filterCountry} onChange={(e) => setFilterCountry(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 p-2 rounded-lg outline-none">
                 <option value="">Country (All)</option>
                 <option value="China">China</option>
                 <option value="India">India</option>
+              </select>
+              <select value={filterProvince} onChange={(e) => setFilterProvince(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 p-2 rounded-lg outline-none">
+                <option value="">Province (All)</option>
+                {Object.keys(provinceCityMap).map((prov) => (
+                  <option key={prov} value={prov}>{prov}</option>
+                ))}
+              </select>
+              <select value={filterCity} onChange={(e) => setFilterCity(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 p-2 rounded-lg outline-none">
+                <option value="">City (All)</option>
+                <option value="Wenzhou">Wenzhou</option>
+                <option value="Weifang">Weifang</option>
+                <option value="Qingdao">Qingdao</option>
               </select>
               <select value={filterSupplierType} onChange={(e) => setFilterSupplierType(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 p-2 rounded-lg outline-none">
                 <option value="">Supplier Type (All / Blank)</option>
@@ -485,11 +676,6 @@ export const SupplierListPage: React.FC = () => {
               </select>
               <select value={filterPotential} onChange={(e) => setFilterPotential(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 p-2 rounded-lg outline-none">
                 <option value="">Potential (All / Blank)</option>
-                <option value="Yes">Yes</option>
-                <option value="No">No</option>
-              </select>
-              <select value={filterVisited} onChange={(e) => setFilterVisited(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 p-2 rounded-lg outline-none">
-                <option value="">Visited Factory/Office? (All)</option>
                 <option value="Yes">Yes</option>
                 <option value="No">No</option>
               </select>
@@ -645,7 +831,7 @@ export const SupplierListPage: React.FC = () => {
         </div>
       )}
 
-      {/* VIEW MODE 2: 2-STAGE FORM ENTRY MATCHING EXACT DOCUMENT SPEC */}
+      {/* VIEW MODE 2: 2-STAGE FORM ENTRY WITH MULTI-SELECT DROPDOWNS & AUTO-COMPLETE */}
       {viewMode === 'add' && (
         <div className="bg-white border border-slate-200 p-8 rounded-xl shadow-2xs space-y-6">
           {/* Stage Switcher */}
@@ -676,17 +862,23 @@ export const SupplierListPage: React.FC = () => {
               <div className="space-y-4">
                 <h3 className="text-xs font-bold text-blue-600 uppercase tracking-wider">First Data Form (Supplier)</h3>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  {/* AUTO-COMPLETE KEYWORD SUGGESTION COMPANY NAME */}
                   <div className="md:col-span-2">
-                    <label className="text-xs text-slate-700 font-semibold block mb-1">
-                      Name Of Company <span className="text-rose-500">*</span> (Keyword Suggestion Supported)
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Zhejiang Packaging Machinery Ltd"
+                    <CompanyAutocompleteInput
                       value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none focus:border-blue-500 focus:bg-white"
+                      onChange={(val) => setFormData({ ...formData, name: val })}
+                      suggestions={suppliers.map((s) => s.name)}
+                    />
+                  </div>
+
+                  {/* MULTI-SELECT PRODUCT CATEGORY DROPDOWN */}
+                  <div>
+                    <MultiSelectDropdown
+                      label="Product Category (Multi-Select Dropdown)"
+                      options={categoryMasterOptions}
+                      selected={formData.product_categories}
+                      onChange={(newSel) => setFormData({ ...formData, product_categories: newSel })}
+                      placeholder="Select Categories..."
                     />
                   </div>
 
@@ -727,32 +919,40 @@ export const SupplierListPage: React.FC = () => {
                     />
                   </div>
 
+                  {/* DYNAMIC PROVINCE DROPDOWN */}
                   <div>
                     <label className="text-xs text-slate-700 font-semibold block mb-1">
                       Province <span className="text-rose-500">*</span>
                     </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Zhejiang"
+                    <select
                       value={formData.province}
-                      onChange={(e) => setFormData({ ...formData, province: e.target.value })}
+                      onChange={(e) => {
+                        const newProv = e.target.value;
+                        const defaultCity = provinceCityMap[newProv]?.[0] || 'Wenzhou';
+                        setFormData({ ...formData, province: newProv, city: defaultCity });
+                      }}
                       className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none"
-                    />
+                    >
+                      {Object.keys(provinceCityMap).map((prov) => (
+                        <option key={prov} value={prov}>{prov}</option>
+                      ))}
+                    </select>
                   </div>
 
+                  {/* DYNAMIC CITY DROPDOWN BASED ON PROVINCE */}
                   <div>
                     <label className="text-xs text-slate-700 font-semibold block mb-1">
                       City <span className="text-rose-500">*</span>
                     </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Wenzhou"
+                    <select
                       value={formData.city}
                       onChange={(e) => setFormData({ ...formData, city: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none"
-                    />
+                    >
+                      {(provinceCityMap[formData.province] || ['Wenzhou', 'Ruian']).map((city) => (
+                        <option key={city} value={city}>{city}</option>
+                      ))}
+                    </select>
                   </div>
 
                   <div>
@@ -907,6 +1107,17 @@ export const SupplierListPage: React.FC = () => {
                     />
                   </div>
 
+                  {/* MULTI-SELECT KEY STRENGTH SUB-CATEGORY DROPDOWN */}
+                  <div className="md:col-span-2">
+                    <MultiSelectDropdown
+                      label="Suppliers Key Strength Product Sub Category (Multi-Select)"
+                      options={subcategoryMasterOptions}
+                      selected={formData.key_strength_subcategories}
+                      onChange={(newSel) => setFormData({ ...formData, key_strength_subcategories: newSel })}
+                      placeholder="Select Sub Categories..."
+                    />
+                  </div>
+
                   <div>
                     <label className="text-xs text-slate-700 font-semibold block mb-1">Supplier's Grade</label>
                     <select
@@ -947,7 +1158,7 @@ export const SupplierListPage: React.FC = () => {
                     </select>
                   </div>
 
-                  <div className="md:col-span-3">
+                  <div className="md:col-span-4">
                     <label className="text-xs text-slate-700 font-semibold block mb-1">Key Reason for Potential / Not Potential</label>
                     <input
                       type="text"
@@ -1013,6 +1224,163 @@ export const SupplierListPage: React.FC = () => {
                       className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-3 rounded-lg outline-none"
                     />
                   </div>
+                </div>
+
+                {/* ADD SECONDARY CONTACTS FORM SECTION INSIDE FORM */}
+                <div className="pt-6 border-t border-slate-200 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                      <UserPlus size={15} className="text-blue-600" /> Add Secondary Contacts Form
+                    </h4>
+                  </div>
+
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Person Name</label>
+                        <div className="flex gap-1">
+                          <select
+                            value={newContact.title}
+                            onChange={(e) => setNewContact({ ...newContact, title: e.target.value })}
+                            className="w-16 bg-white border border-slate-200 text-xs p-2 rounded outline-none"
+                          >
+                            <option value="Mr">Mr</option>
+                            <option value="Mrs">Mrs</option>
+                            <option value="Ms">Ms</option>
+                          </select>
+                          <input
+                            type="text"
+                            placeholder="Full Name"
+                            value={newContact.name}
+                            onChange={(e) => setNewContact({ ...newContact, name: e.target.value })}
+                            className="flex-1 bg-white border border-slate-200 text-xs p-2 rounded outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Designation</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Technical Engineer"
+                          value={newContact.designation}
+                          onChange={(e) => setNewContact({ ...newContact, designation: e.target.value })}
+                          className="w-full bg-white border border-slate-200 text-xs p-2 rounded outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Handling Territory</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Export Africa"
+                          value={newContact.territory}
+                          onChange={(e) => setNewContact({ ...newContact, territory: e.target.value })}
+                          className="w-full bg-white border border-slate-200 text-xs p-2 rounded outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Country</label>
+                        <input
+                          type="text"
+                          value={newContact.country}
+                          onChange={(e) => setNewContact({ ...newContact, country: e.target.value })}
+                          className="w-full bg-white border border-slate-200 text-xs p-2 rounded outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Calling Number</label>
+                        <input
+                          type="text"
+                          placeholder="+86 13900000000"
+                          value={newContact.calling}
+                          onChange={(e) => setNewContact({ ...newContact, calling: e.target.value })}
+                          className="w-full bg-white border border-slate-200 text-xs p-2 rounded outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Whatsapp Number</label>
+                        <input
+                          type="text"
+                          placeholder="+86 13900000000"
+                          value={newContact.whatsapp}
+                          onChange={(e) => setNewContact({ ...newContact, whatsapp: e.target.value })}
+                          className="w-full bg-white border border-slate-200 text-xs p-2 rounded outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">WeChat Number</label>
+                        <input
+                          type="text"
+                          placeholder="wxid_contact"
+                          value={newContact.wechat}
+                          onChange={(e) => setNewContact({ ...newContact, wechat: e.target.value })}
+                          className="w-full bg-white border border-slate-200 text-xs p-2 rounded outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Email</label>
+                        <input
+                          type="email"
+                          placeholder="email@supplier.com"
+                          value={newContact.email}
+                          onChange={(e) => setNewContact({ ...newContact, email: e.target.value })}
+                          className="w-full bg-white border border-slate-200 text-xs p-2 rounded outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end pt-1">
+                      <button
+                        type="button"
+                        onClick={handleAddSecondaryContact}
+                        className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-lg flex items-center gap-1 cursor-pointer"
+                      >
+                        <Plus size={13} /> Add Contact to Table
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* FORM SECONDARY CONTACTS TABLE */}
+                  {formContacts.length > 0 && (
+                    <div className="bg-white border border-slate-200 rounded-lg overflow-hidden text-xs">
+                      <table className="w-full text-left">
+                        <thead className="bg-slate-100 font-bold uppercase text-[10px]">
+                          <tr>
+                            <th className="p-2">Name / Designation</th>
+                            <th className="p-2">Calling / Whatsapp</th>
+                            <th className="p-2">Wechat / Email</th>
+                            <th className="p-2">Handling Territory</th>
+                            <th className="p-2 text-right">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {formContacts.map((c, i) => (
+                            <tr key={i}>
+                              <td className="p-2 font-bold">{c.title} {c.name} ({c.designation})</td>
+                              <td className="p-2 font-mono text-blue-600">{c.calling} / {c.whatsapp}</td>
+                              <td className="p-2 font-mono">{c.wechat} / {c.email}</td>
+                              <td className="p-2">{c.territory}</td>
+                              <td className="p-2 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => setFormContacts(formContacts.filter((_, idx) => idx !== i))}
+                                  className="text-rose-600 hover:underline text-[10px]"
+                                >
+                                  Remove
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
