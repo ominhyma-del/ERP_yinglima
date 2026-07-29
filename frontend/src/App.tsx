@@ -4,7 +4,7 @@ import { Sidebar } from './components/layout/Sidebar';
 import { DashboardPage } from './features/dashboard/DashboardPage';
 import { SupplierListPage } from './features/supplier/SupplierListPage';
 import { BuyerListPage } from './features/buyer/BuyerListPage';
-import { ProductCatalogPage } from './features/product/ProductCatalogPage';
+import { ProductMasterPage } from './features/product-master/ProductMasterPage';
 import { ProductStockPage } from './features/product/ProductStockPage';
 import { InquiryPlanningPage } from './features/inquiry/InquiryPlanningPage';
 import { MastersPage } from './features/masters/MastersPage';
@@ -28,7 +28,7 @@ export function App() {
           {activeModule === 'dashboard' && <DashboardPage />}
           {(activeModule === 'suppliers' || activeModule === 'import_purchase') && <SupplierListPage />}
           {(activeModule === 'buyers' || activeModule === 'quotation') && <BuyerListPage />}
-          {(activeModule === 'products' || activeModule === 'reorder') && <ProductCatalogPage />}
+          {(activeModule === 'products' || activeModule === 'reorder') && <ProductMasterPage />}
           {activeModule === 'stock_trans' && <ProductStockPage />}
           {activeModule === 'inquiries' && <InquiryPlanningPage />}
           {activeModule === 'masters' && <MastersPage />}
