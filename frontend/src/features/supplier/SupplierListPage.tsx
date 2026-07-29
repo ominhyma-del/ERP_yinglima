@@ -276,7 +276,7 @@ export const SupplierListPage: React.FC = () => {
   const [filterPotential, setFilterPotential] = useState('All');
   const [filterVisited, setFilterVisited] = useState('All');
 
-  // ISSUE 1 FIX: ACTIVE FILTERED SUPPLIERS IMPLEMENTATION
+  // ACTIVE FILTERED SUPPLIERS IMPLEMENTATION
   const filteredSuppliers = suppliers.filter((s) => {
     // Search Term match
     if (searchTerm) {
@@ -335,8 +335,8 @@ export const SupplierListPage: React.FC = () => {
     setFilterVisited('All');
   };
 
-  // Form Data state
-  const [formData, setFormData] = useState({
+  // Initial Form Data reset state
+  const initialFormData = {
     name: '',
     product_categories: ['Machines'] as string[],
     supplier_type: 'Manufacturer',
@@ -365,7 +365,10 @@ export const SupplierListPage: React.FC = () => {
     visited_factory: 'No',
     visit_remarks: '',
     overall_remarks: '',
-  });
+  };
+
+  // Form Data state
+  const [formData, setFormData] = useState({ ...initialFormData });
 
   // Attachments State for Factory Visit Photos / Videos
   const [visitAttachments, setVisitAttachments] = useState<{ id: string; name: string; type: 'photo' | 'video'; url: string }[]>([
@@ -376,12 +379,12 @@ export const SupplierListPage: React.FC = () => {
   const [formContacts, setFormContacts] = useState<any[]>([]);
   const [editingContactId, setEditingContactId] = useState<string | null>(null);
 
-  // ISSUE 2 FIX: HANDLING TERRITORY CLEAN DROPDOWN
+  // HANDLING TERRITORY CLEAN DROPDOWN
   const [newContact, setNewContact] = useState({
     title: 'Mr',
     name: '',
     designation: '',
-    territory: 'Export India', // Default clean dropdown selection!
+    territory: 'Export India',
     country: 'China',
     calling: '+86 ',
     whatsapp: '+86 ',
@@ -549,15 +552,17 @@ export const SupplierListPage: React.FC = () => {
     document.body.removeChild(link);
   };
 
-  // ISSUE 3 FIX: SUBMIT FORM HANDLER WITH ZERO BROWSER NATIVE BLOCKING
-  const handleCreateSupplier = (e: React.FormEvent) => {
-    e.preventDefault();
+  // FAIL-SAFE SUBMIT HANDLER WORKS 100% REGARDLESS OF EVENT TYPE OR STAGE
+  const handleCreateSupplier = (e?: any) => {
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+    }
 
-    const companyName = formData.name || 'New Supplier Company';
+    const companyName = formData.name.trim() || 'Yinglima New Supplier Co.';
 
     // Check Duplication: Name of Company + City
     const isDuplicate = suppliers.some(
-      (s) => s.name.trim().toLowerCase() === companyName.trim().toLowerCase() && s.city.trim().toLowerCase() === formData.city.trim().toLowerCase()
+      (s) => s.name.trim().toLowerCase() === companyName.toLowerCase() && s.city.trim().toLowerCase() === formData.city.trim().toLowerCase()
     );
 
     if (isDuplicate) {
@@ -581,7 +586,7 @@ export const SupplierListPage: React.FC = () => {
     const newSupplier = {
       id: `s${Date.now()}`,
       name: companyName,
-      product_categories: formData.product_categories,
+      product_categories: formData.product_categories.length > 0 ? formData.product_categories : ['Machines'],
       supplier_type: formData.supplier_type,
       brand_name: formData.brand_name || 'Yinglima Supplier',
       country: formData.country,
@@ -599,26 +604,29 @@ export const SupplierListPage: React.FC = () => {
       tax_id: formData.tax_id || 'TAX-99887766',
       primary_website: formData.primary_website || 'www.supplier.com',
       secondary_website: formData.secondary_website,
-      key_strength_subcategories: formData.key_strength_subcategories,
+      key_strength_subcategories: formData.key_strength_subcategories.length > 0 ? formData.key_strength_subcategories : ['Band Sealer'],
       grade: formData.grade === 'Select' ? 'A' : formData.grade,
       current_status: formData.current_status === 'Select' ? 'NEW' : formData.current_status,
       potential: formData.potential === 'Select' ? 'YES' : formData.potential,
       potential_reason: formData.potential_reason,
-      secondary_products: formData.secondary_products ? formData.secondary_products.split(',') : [],
+      secondary_products: formData.secondary_products ? formData.secondary_products.split(',') : ['Spare Parts'],
       visited_factory: formData.visited_factory,
       visit_remarks: formData.visit_remarks,
       attachments: visitAttachments,
-      overall_remarks: formData.overall_remarks,
+      overall_remarks: formData.overall_remarks || 'Supplier Profile Submitted',
       contacts: [primaryContactObj, ...formContacts],
     };
 
+    // Save & Switch View Mode immediately!
     setSuppliers([newSupplier, ...suppliers]);
     setViewMode('list');
     setFormStage(1);
     setFormContacts([]);
+    setFormData({ ...initialFormData });
     setShowRuleAlert(null);
     setImportNotification(`Successfully created & saved new supplier profile "${newSupplier.name}"!`);
-    setTimeout(() => setImportNotification(null), 4000);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setTimeout(() => setImportNotification(null), 5000);
   };
 
   return (
@@ -675,7 +683,7 @@ export const SupplierListPage: React.FC = () => {
         )}
       </div>
 
-      {/* IMPORT TOAST */}
+      {/* IMPORT / CREATE TOAST */}
       {importNotification && (
         <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-4 rounded-xl flex items-center justify-between text-xs shadow-2xs">
           <div className="flex items-center gap-2">
@@ -706,6 +714,16 @@ export const SupplierListPage: React.FC = () => {
             <span>
               <strong>Deletion Blocked by Rule:</strong> Delete is allowed ONLY if Current Status is "New/Select" AND Potential is "No/Select". Since Status is "Existing" or Potential is "Yes", this supplier cannot be deleted. You can mark it as "Inactive".
             </span>
+          </div>
+          <button onClick={() => setShowRuleAlert(null)} className="font-bold underline text-rose-900">Dismiss</button>
+        </div>
+      )}
+
+      {showRuleAlert?.startsWith('DUPLICATE_ENTRY') && (
+        <div className="bg-rose-50 border border-rose-200 text-rose-800 p-4 rounded-xl flex items-center justify-between text-xs shadow-2xs">
+          <div className="flex items-center gap-2">
+            <AlertCircle size={18} className="text-rose-600" />
+            <span><strong>{showRuleAlert}</strong></span>
           </div>
           <button onClick={() => setShowRuleAlert(null)} className="font-bold underline text-rose-900">Dismiss</button>
         </div>
@@ -1514,7 +1532,6 @@ export const SupplierListPage: React.FC = () => {
                         />
                       </div>
 
-                      {/* ISSUE 2 FIX: CLEAN SELECT DROPDOWN FOR HANDLING TERRITORY */}
                       <div>
                         <label className="text-[11px] font-semibold text-slate-700 block mb-1">Handling Territory (Dropdown Menu)</label>
                         <select
@@ -1530,7 +1547,6 @@ export const SupplierListPage: React.FC = () => {
                         </select>
                       </div>
 
-                      {/* COUNTRY DROPDOWN WITH AUTO PHONE CODE PREFIX IN SUB-CONTACT FORM */}
                       <div>
                         <label className="text-[11px] font-semibold text-slate-700 block mb-1">Country (Dropdown Menu)</label>
                         <select
@@ -1660,7 +1676,7 @@ export const SupplierListPage: React.FC = () => {
               </div>
             )}
 
-            {/* ISSUE 3 FIX: SUBMIT BUTTON ACCESSIBLE ON ALL STAGES WITH ACTION DIRECTLY IN FORM */}
+            {/* DIRECT ACCESSIBLE SUBMIT BUTTON ON ALL STAGES */}
             <div className="flex items-center justify-between pt-4 border-t border-slate-100">
               {formStage === 2 ? (
                 <button
@@ -1672,23 +1688,26 @@ export const SupplierListPage: React.FC = () => {
                 </button>
               ) : <div />}
 
-              {formStage === 1 ? (
+              <div className="flex gap-2">
+                {formStage === 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setFormStage(2)}
+                    className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-lg shadow-sm cursor-pointer"
+                  >
+                    Next to Second Form
+                  </button>
+                )}
+
+                {/* PROMINENT SUBMIT BUTTON THAT DIRECTLY CALLS HANDLER */}
                 <button
                   type="button"
-                  onClick={() => setFormStage(2)}
-                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-lg shadow-sm cursor-pointer"
+                  onClick={() => handleCreateSupplier()}
+                  className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-md hover:shadow-lg transition-all cursor-pointer flex items-center gap-1.5"
                 >
-                  Next to Second Form
+                  <CheckCircle size={15} /> Submit Supplier Profile
                 </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleCreateSupplier}
-                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg shadow-md hover:shadow-lg transition-all cursor-pointer"
-                >
-                  Submit Supplier Profile
-                </button>
-              )}
+              </div>
             </div>
           </form>
         </div>
