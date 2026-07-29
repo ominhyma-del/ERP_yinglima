@@ -141,6 +141,7 @@ const CompanyAutocompleteInput: React.FC<{
 export const SupplierListPage: React.FC = () => {
   const [viewMode, setViewMode] = useState<'list' | 'add' | 'detail'>('list');
   const [selectedSupplier, setSelectedSupplier] = useState<any>(null);
+  const [editingSupplierId, setEditingSupplierId] = useState<string | null>(null); // EDIT SUPPLIER STATE
   const [showRuleAlert, setShowRuleAlert] = useState<string | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showExpandAllModal, setShowExpandAllModal] = useState(false);
@@ -278,7 +279,6 @@ export const SupplierListPage: React.FC = () => {
 
   // ACTIVE FILTERED SUPPLIERS IMPLEMENTATION
   const filteredSuppliers = suppliers.filter((s) => {
-    // Search Term match
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       const nameMatch = s.name.toLowerCase().includes(term);
@@ -288,34 +288,15 @@ export const SupplierListPage: React.FC = () => {
       if (!nameMatch && !brandMatch && !cityMatch && !catMatch) return false;
     }
 
-    // Category match
     if (filterCategory !== 'All' && !s.product_categories.includes(filterCategory)) return false;
-
-    // Sub Category match
     if (filterSubCategory !== 'All' && !s.key_strength_subcategories.includes(filterSubCategory)) return false;
-
-    // Country match
     if (filterCountry !== 'All' && s.country !== filterCountry) return false;
-
-    // Province match
     if (filterProvince !== 'All' && s.province !== filterProvince) return false;
-
-    // City match
     if (filterCity !== 'All' && s.city !== filterCity) return false;
-
-    // Supplier Type match
     if (filterSupplierType !== 'All' && s.supplier_type !== filterSupplierType) return false;
-
-    // Supplier Grade match
     if (filterGrade !== 'All' && s.grade !== filterGrade) return false;
-
-    // Current Status match
     if (filterStatus !== 'All' && s.current_status.toUpperCase() !== filterStatus.toUpperCase()) return false;
-
-    // Potential match
     if (filterPotential !== 'All' && s.potential.toUpperCase() !== filterPotential.toUpperCase()) return false;
-
-    // Visited Factory match
     if (filterVisited !== 'All' && s.visited_factory.toUpperCase() !== filterVisited.toUpperCase()) return false;
 
     return true;
@@ -391,6 +372,46 @@ export const SupplierListPage: React.FC = () => {
     wechat: '+86 ',
     email: '',
   });
+
+  // EDIT SUPPLIER ACTION (LOAD DATA & OPEN FORM)
+  const handleOpenEditSupplier = (supplier: any) => {
+    setEditingSupplierId(supplier.id);
+    setFormData({
+      name: supplier.name,
+      product_categories: supplier.product_categories || ['Machines'],
+      supplier_type: supplier.supplier_type || 'Manufacturer',
+      brand_name: supplier.brand_name || '',
+      country: supplier.country || 'China',
+      province: supplier.province || 'Zhejiang',
+      city: supplier.city || 'Wenzhou',
+      address: supplier.address || '',
+      town: supplier.town || '',
+      contact_title: supplier.contact_title || 'Mr',
+      contact_name: supplier.contact_name || '',
+      designation: supplier.designation || '',
+      calling_number: supplier.calling_number || '+86 ',
+      whatsapp_number: supplier.whatsapp_number || '+86 ',
+      wechat_number: supplier.wechat_number || '+86 ',
+      email: supplier.emails?.[0] || '',
+      tax_id: supplier.tax_id || '',
+      primary_website: supplier.primary_website || '',
+      secondary_website: supplier.secondary_website || '',
+      key_strength_subcategories: supplier.key_strength_subcategories || ['Band Sealer'],
+      grade: supplier.grade || 'Select',
+      current_status: supplier.current_status || 'Select',
+      potential: supplier.potential || 'Select',
+      potential_reason: supplier.potential_reason || '',
+      secondary_products: Array.isArray(supplier.secondary_products) ? supplier.secondary_products.join(', ') : supplier.secondary_products || '',
+      visited_factory: supplier.visited_factory || 'No',
+      visit_remarks: supplier.visit_remarks || '',
+      overall_remarks: supplier.overall_remarks || '',
+    });
+    setFormContacts(supplier.contacts ? supplier.contacts.slice(1) : []); // Load secondary contacts
+    setVisitAttachments(supplier.attachments || []);
+    setViewMode('add');
+    setFormStage(1);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   // Country Auto-Prefix Phone Code Handler
   const handleFirstFormCountryChange = (newCountry: string) => {
@@ -552,22 +573,24 @@ export const SupplierListPage: React.FC = () => {
     document.body.removeChild(link);
   };
 
-  // FAIL-SAFE SUBMIT HANDLER WORKS 100% REGARDLESS OF EVENT TYPE OR STAGE
+  // CREATE OR UPDATE SUPPLIER PROFILE HANDLER
   const handleCreateSupplier = (e?: any) => {
     if (e && typeof e.preventDefault === 'function') {
       e.preventDefault();
     }
 
-    const companyName = formData.name.trim() || 'Yinglima New Supplier Co.';
+    const companyName = formData.name.trim() || 'Yinglima Supplier Co.';
 
-    // Check Duplication: Name of Company + City
-    const isDuplicate = suppliers.some(
-      (s) => s.name.trim().toLowerCase() === companyName.toLowerCase() && s.city.trim().toLowerCase() === formData.city.trim().toLowerCase()
-    );
+    // Check Duplication if creating new supplier
+    if (!editingSupplierId) {
+      const isDuplicate = suppliers.some(
+        (s) => s.name.trim().toLowerCase() === companyName.toLowerCase() && s.city.trim().toLowerCase() === formData.city.trim().toLowerCase()
+      );
 
-    if (isDuplicate) {
-      setShowRuleAlert(`DUPLICATE_ENTRY: Supplier with company name "${companyName}" in city "${formData.city}" already exists!`);
-      return;
+      if (isDuplicate) {
+        setShowRuleAlert(`DUPLICATE_ENTRY: Supplier with company name "${companyName}" in city "${formData.city}" already exists!`);
+        return;
+      }
     }
 
     const primaryContactObj = {
@@ -583,8 +606,8 @@ export const SupplierListPage: React.FC = () => {
       email: formData.email || 'info@supplier.com',
     };
 
-    const newSupplier = {
-      id: `s${Date.now()}`,
+    const updatedSupplierObj = {
+      id: editingSupplierId || `s${Date.now()}`,
       name: companyName,
       product_categories: formData.product_categories.length > 0 ? formData.product_categories : ['Machines'],
       supplier_type: formData.supplier_type,
@@ -613,18 +636,24 @@ export const SupplierListPage: React.FC = () => {
       visited_factory: formData.visited_factory,
       visit_remarks: formData.visit_remarks,
       attachments: visitAttachments,
-      overall_remarks: formData.overall_remarks || 'Supplier Profile Submitted',
+      overall_remarks: formData.overall_remarks || 'Supplier Profile Updated',
       contacts: [primaryContactObj, ...formContacts],
     };
 
-    // Save & Switch View Mode immediately!
-    setSuppliers([newSupplier, ...suppliers]);
+    if (editingSupplierId) {
+      setSuppliers(suppliers.map((s) => (s.id === editingSupplierId ? updatedSupplierObj : s)));
+      setImportNotification(`Successfully updated supplier profile for "${companyName}"!`);
+    } else {
+      setSuppliers([updatedSupplierObj, ...suppliers]);
+      setImportNotification(`Successfully created & saved new supplier profile "${companyName}"!`);
+    }
+
     setViewMode('list');
+    setEditingSupplierId(null);
     setFormStage(1);
     setFormContacts([]);
     setFormData({ ...initialFormData });
     setShowRuleAlert(null);
-    setImportNotification(`Successfully created & saved new supplier profile "${newSupplier.name}"!`);
     window.scrollTo({ top: 0, behavior: 'smooth' });
     setTimeout(() => setImportNotification(null), 5000);
   };
@@ -635,7 +664,7 @@ export const SupplierListPage: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-slate-900 tracking-tight">
-            {viewMode === 'add' ? `Add Supplier Profile (Stage ${formStage} of 2)` : viewMode === 'detail' ? 'Supplier Details' : 'Suppliers'}
+            {viewMode === 'add' ? (editingSupplierId ? `Edit Supplier Profile (${formData.name})` : `Add Supplier Profile (Stage ${formStage} of 2)`) : viewMode === 'detail' ? 'Supplier Details' : 'Suppliers'}
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
             Yinglima China Procurement & Supplier Directory
@@ -665,6 +694,8 @@ export const SupplierListPage: React.FC = () => {
             </button>
             <button
               onClick={() => {
+                setEditingSupplierId(null);
+                setFormData({ ...initialFormData });
                 setViewMode('add');
                 setFormStage(1);
               }}
@@ -675,7 +706,10 @@ export const SupplierListPage: React.FC = () => {
           </div>
         ) : (
           <button
-            onClick={() => setViewMode('list')}
+            onClick={() => {
+              setViewMode('list');
+              setEditingSupplierId(null);
+            }}
             className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium text-xs rounded-lg flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
           >
             <ArrowLeft size={15} /> BACK TO LIST
@@ -1030,12 +1064,10 @@ export const SupplierListPage: React.FC = () => {
                         </td>
 
                         <td className="p-3.5 text-right space-x-1">
+                          {/* EDIT BUTTON LOADS FULL SUPPLIER FORM FOR EDITING (DARSH IMPEX EXACT BEHAVIOR) */}
                           <button
-                            onClick={() => {
-                              setSelectedSupplier(item);
-                              setViewMode('detail');
-                            }}
-                            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[11px] font-semibold cursor-pointer"
+                            onClick={() => handleOpenEditSupplier(item)}
+                            className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-[11px] font-bold cursor-pointer"
                           >
                             Edit
                           </button>
@@ -1062,7 +1094,7 @@ export const SupplierListPage: React.FC = () => {
         </div>
       )}
 
-      {/* VIEW MODE 2: 2-STAGE FORM ENTRY WITH MULTI-SELECT DROPDOWNS & AUTO-COMPLETE */}
+      {/* VIEW MODE 2: EDIT / ADD SUPPLIER FORM (STAGE 1 & STAGE 2) */}
       {viewMode === 'add' && (
         <div className="bg-white border border-slate-200 p-8 rounded-xl shadow-2xs space-y-6">
           {/* Stage Switcher */}
@@ -1118,7 +1150,7 @@ export const SupplierListPage: React.FC = () => {
                     <select
                       value={formData.supplier_type}
                       onChange={(e) => setFormData({ ...formData, supplier_type: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none"
+                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-medium"
                     >
                       <option value="Manufacturer">Manufacturer</option>
                       <option value="Trader">Trader</option>
@@ -1133,7 +1165,7 @@ export const SupplierListPage: React.FC = () => {
                       placeholder="e.g. Yinglima Machinery"
                       value={formData.brand_name}
                       onChange={(e) => setFormData({ ...formData, brand_name: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none"
+                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-medium"
                     />
                   </div>
 
@@ -1167,7 +1199,7 @@ export const SupplierListPage: React.FC = () => {
                         const defaultCity = provinceCityMap[newProv]?.[0] || 'Wenzhou';
                         setFormData({ ...formData, province: newProv, city: defaultCity });
                       }}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none"
+                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-medium"
                     >
                       {Object.keys(provinceCityMap).map((prov) => (
                         <option key={prov} value={prov}>{prov}</option>
@@ -1183,7 +1215,7 @@ export const SupplierListPage: React.FC = () => {
                     <select
                       value={formData.city}
                       onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none"
+                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-medium"
                     >
                       {(provinceCityMap[formData.province] || ['Wenzhou', 'Ruian']).map((city) => (
                         <option key={city} value={city}>{city}</option>
@@ -1197,7 +1229,7 @@ export const SupplierListPage: React.FC = () => {
                       <select
                         value={formData.contact_title}
                         onChange={(e) => setFormData({ ...formData, contact_title: e.target.value })}
-                        className="w-20 bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none"
+                        className="w-20 bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-medium"
                       >
                         <option value="Mr">Mr</option>
                         <option value="Mrs">Mrs</option>
@@ -1208,7 +1240,7 @@ export const SupplierListPage: React.FC = () => {
                         placeholder="Full Name"
                         value={formData.contact_name}
                         onChange={(e) => setFormData({ ...formData, contact_name: e.target.value })}
-                        className="flex-1 bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none focus:border-blue-500 focus:bg-white"
+                        className="flex-1 bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none focus:border-blue-500 focus:bg-white font-medium"
                       />
                     </div>
                   </div>
@@ -1220,7 +1252,7 @@ export const SupplierListPage: React.FC = () => {
                       placeholder="e.g. Export Director"
                       value={formData.designation}
                       onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none"
+                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-medium"
                     />
                   </div>
 
@@ -1275,7 +1307,7 @@ export const SupplierListPage: React.FC = () => {
                       placeholder="john@zhejiangpack.com"
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none"
+                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-medium"
                     />
                   </div>
                 </div>
@@ -1305,7 +1337,7 @@ export const SupplierListPage: React.FC = () => {
                       placeholder="No. 888 Industrial Zone"
                       value={formData.address}
                       onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none"
+                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-medium"
                     />
                   </div>
 
@@ -1358,7 +1390,7 @@ export const SupplierListPage: React.FC = () => {
                     <select
                       value={formData.grade}
                       onChange={(e) => setFormData({ ...formData, grade: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none"
+                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-medium"
                     >
                       <option value="Select">Select</option>
                       <option value="A">Grade A</option>
@@ -1372,7 +1404,7 @@ export const SupplierListPage: React.FC = () => {
                     <select
                       value={formData.current_status}
                       onChange={(e) => setFormData({ ...formData, current_status: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none"
+                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-medium"
                     >
                       <option value="Select">Select</option>
                       <option value="NEW">New</option>
@@ -1385,7 +1417,7 @@ export const SupplierListPage: React.FC = () => {
                     <select
                       value={formData.potential}
                       onChange={(e) => setFormData({ ...formData, potential: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none"
+                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-medium"
                     >
                       <option value="Select">Select</option>
                       <option value="YES">Yes</option>
@@ -1400,7 +1432,7 @@ export const SupplierListPage: React.FC = () => {
                       placeholder="e.g. High manufacturing capacity & 4 automated lines"
                       value={formData.potential_reason}
                       onChange={(e) => setFormData({ ...formData, potential_reason: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none"
+                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-medium"
                     />
                   </div>
 
@@ -1411,7 +1443,7 @@ export const SupplierListPage: React.FC = () => {
                       placeholder="e.g. Teflon Belts, Heating Blocks, Silicone Strips, Motor Drives"
                       value={formData.secondary_products}
                       onChange={(e) => setFormData({ ...formData, secondary_products: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none"
+                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-medium"
                     />
                   </div>
 
@@ -1420,7 +1452,7 @@ export const SupplierListPage: React.FC = () => {
                     <select
                       value={formData.visited_factory}
                       onChange={(e) => setFormData({ ...formData, visited_factory: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none"
+                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-medium"
                     >
                       <option value="No">No (Default)</option>
                       <option value="Yes">Yes</option>
@@ -1437,7 +1469,7 @@ export const SupplierListPage: React.FC = () => {
                       placeholder="e.g. Visited Wenzhou factory in April 2024. Excellent QA testing."
                       value={formData.visit_remarks}
                       onChange={(e) => setFormData({ ...formData, visit_remarks: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none disabled:bg-slate-100 disabled:text-slate-400"
+                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none disabled:bg-slate-100 disabled:text-slate-400 font-medium"
                     />
                   </div>
 
@@ -1484,7 +1516,7 @@ export const SupplierListPage: React.FC = () => {
                       placeholder="Primary OEM supplier details..."
                       value={formData.overall_remarks}
                       onChange={(e) => setFormData({ ...formData, overall_remarks: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-3 rounded-lg outline-none"
+                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-3 rounded-lg outline-none font-medium"
                     />
                   </div>
                 </div>
@@ -1676,7 +1708,7 @@ export const SupplierListPage: React.FC = () => {
               </div>
             )}
 
-            {/* DIRECT ACCESSIBLE SUBMIT BUTTON ON ALL STAGES */}
+            {/* DIRECT ACCESSIBLE SUBMIT / UPDATE BUTTON ON ALL STAGES */}
             <div className="flex items-center justify-between pt-4 border-t border-slate-100">
               {formStage === 2 ? (
                 <button
@@ -1699,13 +1731,13 @@ export const SupplierListPage: React.FC = () => {
                   </button>
                 )}
 
-                {/* PROMINENT SUBMIT BUTTON THAT DIRECTLY CALLS HANDLER */}
+                {/* PROMINENT SUBMIT / UPDATE BUTTON */}
                 <button
                   type="button"
                   onClick={() => handleCreateSupplier()}
                   className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-md hover:shadow-lg transition-all cursor-pointer flex items-center gap-1.5"
                 >
-                  <CheckCircle size={15} /> Submit Supplier Profile
+                  <CheckCircle size={15} /> {editingSupplierId ? 'Update Supplier Profile' : 'Submit Supplier Profile'}
                 </button>
               </div>
             </div>
