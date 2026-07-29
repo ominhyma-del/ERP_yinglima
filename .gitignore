@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+backend/node_modules/
+ai-service/__pycache__/
+ai-service/.venv/
+*.pyc
+
+# Builds & Outputs
+dist/
+build/
+frontend/dist/
+backend/dist/
+
+# Logs & IDE
+*.log
+.vscode/
+.idea/
+.system_generated/
+.tempmediaStorage/
+
+# Environment Variables
+.env
+backend/.env
+ai-service/.env
