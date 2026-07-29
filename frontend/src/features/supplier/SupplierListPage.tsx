@@ -674,13 +674,6 @@ export const SupplierListPage: React.FC = () => {
         {viewMode === 'list' ? (
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setShowExpandAllModal(true)}
-              className="px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
-            >
-              <Maximize2 size={15} /> Expand All Filtered Data
-            </button>
-
-            <button
               onClick={() => setShowImportModal(true)}
               className="px-3.5 py-2.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium text-xs rounded-lg flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
             >
