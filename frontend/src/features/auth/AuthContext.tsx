@@ -96,7 +96,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const stored = readStoredSession();
         if (stored) {
           const latestMembers = await teamApi.getMembers();
-          const member = latestMembers.find((m) => m.id === stored.memberId);
+          let member = latestMembers.find((m) => m.id === stored.memberId);
+          if (!member) {
+            member = SEED_MEMBERS.find((m) => m.id === stored.memberId);
+          }
           if (member) {
             setUser(toAuthUser(member));
             setSessionId(stored.sessionId);
@@ -112,22 +115,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     restore();
   }, []);
 
-  // Keep the logged-in user's permissions/account type live if an admin
-  // changes them elsewhere while logged in.
+  // Keep the logged-in user's permissions/account type live if an admin changes them
   useEffect(() => {
     if (!user) return;
-    
-    // Only validate once actual database members have loaded (to avoid logging out database-only users on mount)
-    const isMockList = members.length === SEED_MEMBERS.length && members.every((m, idx) => m.id === SEED_MEMBERS[idx].id);
-    if (isMockList) return;
-
-    const fresh = members.find((m) => m.id === user.id);
+    const fresh = members.find((m) => m.id === user.id || m.email.toLowerCase() === user.email.toLowerCase());
     if (fresh) {
       setUser(toAuthUser(fresh));
-    } else {
-      logout();
     }
-  }, [members, user?.id]);
+  }, [members, user?.id, user?.email]);
 
   const login = async (email: string, password: string, remember: boolean) => {
     let latestMembers = await teamApi.getMembers();
