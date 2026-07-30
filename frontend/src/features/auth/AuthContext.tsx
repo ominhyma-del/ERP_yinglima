@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { findMemberByEmail, TeamMember, AccountType, PermissionSet, useTeamStore } from '../team/teamStore';
 
 /**
@@ -83,6 +84,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<AuthUser | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [rememberMe, setRememberMe] = useState(false);
+  const navigate = useNavigate();
 
   // Restore session on load
   useEffect(() => {
@@ -149,6 +151,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     localStorage.setItem('yinglima_audit_logs', JSON.stringify([newLog, ...auditLogs]));
 
+    // Always land on a clean, permission-safe screen for the newly signed-in
+    // session, instead of whatever route was left in the address bar from a
+    // previous user's session.
+    navigate('/dashboard', { replace: true });
+
     return { ok: true };
   };
 
@@ -170,11 +177,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.setItem('yinglima_audit_logs', JSON.stringify([newLog, ...auditLogs]));
     }
 
+    // Clear every trace of the session — both storage locations (regardless
+    // of which one "remember me" used), and all in-memory auth state — so
+    // the sign-out is complete rather than leaving a session half-active.
     localStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(SESSION_KEY);
     setUser(null);
     setSessionId(null);
     setRememberMe(false);
+
+    // Reset the URL back to root so a stale, permission-gated route isn't
+    // left in the address bar for whoever signs in next on this device.
+    navigate('/', { replace: true });
   };
 
   const refreshUser = () => {
