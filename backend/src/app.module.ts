@@ -1,29 +1,49 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { DatabaseModule } from './core/database/database.module';
-import { SupplierModule } from './modules/supplier/supplier.module';
-import { BuyerModule } from './modules/buyer/buyer.module';
-import { ProductModule } from './modules/product/product.module';
-import { InquiryModule } from './modules/inquiry/inquiry.module';
-import { MastersModule } from './modules/masters/masters.module';
-import { CompanyModule } from './modules/company/company.module';
-import { AuthModule } from './modules/auth/auth.module';
-import { AuditModule } from './modules/audit/audit.module';
+import { PrismaService } from './core/database/prisma.service';
+import { SupplierService } from './modules/supplier/supplier.service';
+import { SupplierController } from './modules/supplier/supplier.controller';
+import { BuyerService } from './modules/buyer/buyer.service';
+import { BuyerController } from './modules/buyer/buyer.controller';
+import { ProductService } from './modules/product/product.service';
+import { ProductController } from './modules/product/product.controller';
+import { InquiryService } from './modules/inquiry/inquiry.service';
+import { InquiryController } from './modules/inquiry/inquiry.controller';
+import { MastersService } from './modules/masters/masters.service';
+import { MastersController } from './modules/masters/masters.controller';
+import { CompanyService } from './modules/company/company.service';
+import { CompanyController } from './modules/company/company.controller';
+import { AuthController } from './modules/auth/auth.controller';
+import { AuthService } from './modules/auth/auth.service';
+import { AuditController } from './modules/audit/audit.controller';
+import { AuditService } from './modules/audit/audit.service';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
-    DatabaseModule,
-    SupplierModule,
-    BuyerModule,
-    ProductModule,
-    InquiryModule,
-    MastersModule,
-    CompanyModule,
-    AuthModule,
-    AuditModule,
+  ],
+  controllers: [
+    SupplierController,
+    BuyerController,
+    ProductController,
+    InquiryController,
+    MastersController,
+    CompanyController,
+    AuthController,
+    AuditController,
+  ],
+  providers: [
+    PrismaService,
+    SupplierService,
+    BuyerService,
+    ProductService,
+    InquiryService,
+    MastersService,
+    CompanyService,
+    AuthService,
+    AuditService,
   ],
 })
 export class AppModule {}
