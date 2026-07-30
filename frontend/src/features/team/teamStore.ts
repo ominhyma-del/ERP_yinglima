@@ -176,10 +176,24 @@ function persistStore(members: TeamMember[]) {
 }
 
 // Simple pub/sub so multiple components using useTeamStore stay in sync
-// within the same tab (localStorage alone only notifies other tabs).
+// within the same tab. The browser's 'storage' event only fires in OTHER
+// tabs/windows when localStorage changes (never the tab that made the
+// change) — without listening for it, a login screen already open in one
+// tab would never see an employee an admin just created in another tab,
+// and every login attempt for that employee would fail with "Invalid email
+// or password" even though the credentials were entered correctly.
 type Listener = (members: TeamMember[]) => void;
 const listeners = new Set<Listener>();
 let cache: TeamMember[] = loadStore();
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key === STORAGE_KEY) {
+      cache = loadStore();
+      listeners.forEach((l) => l(cache));
+    }
+  });
+}
 
 function setCache(next: TeamMember[]) {
   cache = next;
@@ -201,6 +215,8 @@ export function useTeamStore() {
   const addMember = useCallback((member: Omit<TeamMember, 'id' | 'createdDate'>) => {
     const newMember: TeamMember = {
       ...member,
+      name: member.name.trim(),
+      email: member.email.trim(),
       id: `t${Date.now()}`,
       createdDate: new Date().toISOString().split('T')[0],
     };
@@ -209,7 +225,12 @@ export function useTeamStore() {
   }, []);
 
   const updateMember = useCallback((id: string, patch: Partial<TeamMember>) => {
-    setCache(cache.map((m) => (m.id === id ? { ...m, ...patch } : m)));
+    const normalizedPatch = {
+      ...patch,
+      ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
+      ...(patch.email !== undefined ? { email: patch.email.trim() } : {}),
+    };
+    setCache(cache.map((m) => (m.id === id ? { ...m, ...normalizedPatch } : m)));
   }, []);
 
   const removeMember = useCallback((id: string) => {
