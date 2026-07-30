@@ -1,23 +1,28 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { findMemberByEmail, TeamMember, AccountType, PermissionSet } from '../team/teamStore';
 
 /**
  * ── Mock Authentication ───────────────────────────────────────────────────
  *
- * This is a frontend-only mock auth layer. It behaves like a real login
- * system (session id, remember-me persistence, logout) but does not call a
- * real backend yet — the database schema already expects Supabase Auth
- * (see backend/prisma/schema.prisma -> User.supabase_id), so when that's
- * wired up, only the `login()` function below needs to be replaced with a
- * real Supabase call. Everything else (session storage, remember-me,
- * routing) can stay as-is.
+ * Frontend-only mock auth layer (session id, remember-me persistence,
+ * logout) that authenticates against the shared team store in
+ * `features/team/teamStore.ts` — the same data Team Members and Roles &
+ * Permissions read/write. That means promoting someone to Admin there is
+ * immediately reflected here the next time they log in.
+ *
+ * Not wired to a real backend yet. When real auth is added, only the
+ * `login()` function below needs replacing — everything else (session
+ * storage, remember-me, routing) can stay as-is.
  */
 
 export interface AuthUser {
   id: string;
   name: string;
   email: string;
-  role: string;
+  accountType: AccountType;
+  department: string;
   avatarInitials: string;
+  permissions: PermissionSet;
 }
 
 interface AuthContextValue {
@@ -27,6 +32,7 @@ interface AuthContextValue {
   rememberMe: boolean;
   login: (email: string, password: string, remember: boolean) => { ok: boolean; error?: string };
   logout: () => void;
+  refreshUser: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -35,32 +41,33 @@ const SESSION_KEY = 'yinglima_session_v1';
 
 interface StoredSession {
   sessionId: string;
-  user: AuthUser;
+  memberId: string;
   createdAt: string;
 }
 
-// Demo credential store. In a real system this lives server-side (Supabase).
-// Kept here only so the mock login has something to check against.
-const DEMO_ACCOUNTS: { email: string; password: string; user: AuthUser }[] = [
-  {
-    email: 'admin@yinglima.com',
-    password: 'Admin@123',
-    user: { id: 't1', name: 'Yinglima Admin', email: 'admin@yinglima.com', role: 'Super Admin', avatarInitials: 'YA' },
-  },
-  {
-    email: 'david@fb-uganda.com',
-    password: 'David@123',
-    user: { id: 't2', name: 'David Musoke', email: 'david@fb-uganda.com', role: 'Uganda Procurement Manager', avatarInitials: 'DM' },
-  },
-  {
-    email: 'zhang@yinglima.cn',
-    password: 'Zhang@123',
-    user: { id: 't3', name: 'John Zhang', email: 'zhang@yinglima.cn', role: 'China Sourcing Specialist', avatarInitials: 'JZ' },
-  },
-];
-
 function genSessionId() {
   return 'sess_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+}
+
+function initials(name: string) {
+  return name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase())
+    .join('') || '??';
+}
+
+function toAuthUser(member: TeamMember): AuthUser {
+  return {
+    id: member.id,
+    name: member.name,
+    email: member.email,
+    accountType: member.accountType,
+    department: member.department,
+    avatarInitials: initials(member.name),
+    permissions: member.permissions,
+  };
 }
 
 function readStoredSession(): StoredSession | null {
@@ -75,7 +82,13 @@ function readStoredSession(): StoredSession | null {
   return null;
 }
 
+// Look a member up by id via the same store the rest of the app uses.
+// (Kept as a plain import-time function rather than the hook, since this
+// runs outside React component render.)
+import { useTeamStore } from '../team/teamStore';
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { members } = useTeamStore();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [rememberMe, setRememberMe] = useState(false);
@@ -84,21 +97,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const stored = readStoredSession();
     if (stored) {
-      setUser(stored.user);
-      setSessionId(stored.sessionId);
-      setRememberMe(!!localStorage.getItem(SESSION_KEY));
+      const member = members.find((m) => m.id === stored.memberId);
+      if (member) {
+        setUser(toAuthUser(member));
+        setSessionId(stored.sessionId);
+        setRememberMe(!!localStorage.getItem(SESSION_KEY));
+      }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Keep the logged-in user's permissions/account type live if an admin
+  // changes them elsewhere (e.g. promotes them, or edits their permissions)
+  // while they're logged in, without requiring a re-login.
+  useEffect(() => {
+    if (!user) return;
+    const fresh = members.find((m) => m.id === user.id);
+    if (fresh) setUser(toAuthUser(fresh));
+    else {
+      // Member was deleted while logged in -> force logout
+      logout();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [members]);
+
   const login = (email: string, password: string, remember: boolean) => {
-    const match = DEMO_ACCOUNTS.find(
-      (a) => a.email.toLowerCase() === email.trim().toLowerCase() && a.password === password,
-    );
-    if (!match) {
+    const member = findMemberByEmail(email);
+    if (!member || member.password !== password) {
       return { ok: false, error: 'Invalid email or password.' };
     }
+    if (member.status === 'INACTIVE') {
+      return { ok: false, error: 'This account has been deactivated. Contact your administrator.' };
+    }
     const newSessionId = genSessionId();
-    const session: StoredSession = { sessionId: newSessionId, user: match.user, createdAt: new Date().toISOString() };
+    const session: StoredSession = { sessionId: newSessionId, memberId: member.id, createdAt: new Date().toISOString() };
 
     // Remember me -> persists across browser restarts (localStorage).
     // Otherwise -> cleared when the browser tab/session ends (sessionStorage).
@@ -110,7 +142,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.removeItem(SESSION_KEY);
     }
 
-    setUser(match.user);
+    setUser(toAuthUser(member));
     setSessionId(newSessionId);
     setRememberMe(remember);
     return { ok: true };
@@ -124,8 +156,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setRememberMe(false);
   };
 
+  const refreshUser = () => {
+    if (!user) return;
+    const fresh = members.find((m) => m.id === user.id);
+    if (fresh) setUser(toAuthUser(fresh));
+  };
+
   return (
-    <AuthContext.Provider value={{ user, sessionId, isAuthenticated: !!user, rememberMe, login, logout }}>
+    <AuthContext.Provider value={{ user, sessionId, isAuthenticated: !!user, rememberMe, login, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );
@@ -136,5 +174,3 @@ export function useAuth() {
   if (!ctx) throw new Error('useAuth must be used within AuthProvider');
   return ctx;
 }
-
-export { DEMO_ACCOUNTS };
