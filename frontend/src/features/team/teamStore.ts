@@ -86,9 +86,9 @@ const STORAGE_KEY = 'yinglima_team_store_v1';
 const DEFAULT_ADMIN: TeamMember = {
   id: 'admin-default',
   name: 'Yinglima Admin',
-  email: 'admin.yinglima@gmail.com',
-  phone: '',
-  password: 'yinglima@2026',
+  email: 'admin@yinglima.com',
+  phone: '+86 13800000000',
+  password: 'admin123',
   accountType: 'ADMIN',
   department: 'Management',
   branch: BRANCHES[0],
@@ -100,6 +100,19 @@ const DEFAULT_ADMIN: TeamMember = {
 
 const SEED_MEMBERS: TeamMember[] = [
   DEFAULT_ADMIN,
+  {
+    id: 'user-default',
+    name: 'Yinglima User',
+    email: 'user@yinglima.com',
+    phone: '+256 700000000',
+    password: 'user123',
+    accountType: 'EMPLOYEE',
+    department: 'Purchase / Procurement',
+    branch: 'F&B Uganda Ingredients Ltd',
+    status: 'ACTIVE',
+    permissions: fullPermissionSet(),
+    createdDate: '2025-01-02',
+  },
   {
     id: 't2',
     name: 'David Musoke',
