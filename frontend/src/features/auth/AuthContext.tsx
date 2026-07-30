@@ -28,6 +28,7 @@ interface AuthContextValue {
   sessionId: string | null;
   isAuthenticated: boolean;
   rememberMe: boolean;
+  isInitializing: boolean;
   login: (email: string, password: string, remember: boolean) => Promise<{ ok: boolean; error?: string }>;
   logout: () => void;
   refreshUser: () => void;
@@ -85,22 +86,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<AuthUser | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [rememberMe, setRememberMe] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
   const navigate = useNavigate();
 
   // Restore session when members are loaded from backend
   useEffect(() => {
-    if (!user && members.length > 0) {
-      const stored = readStoredSession();
-      if (stored) {
-        const member = members.find((m) => m.id === stored.memberId);
-        if (member) {
-          setUser(toAuthUser(member));
-          setSessionId(stored.sessionId);
-          setRememberMe(!!localStorage.getItem(SESSION_KEY));
+    async function restore() {
+      try {
+        const stored = readStoredSession();
+        if (stored) {
+          const latestMembers = await teamApi.getMembers();
+          const member = latestMembers.find((m) => m.id === stored.memberId);
+          if (member) {
+            setUser(toAuthUser(member));
+            setSessionId(stored.sessionId);
+            setRememberMe(!!localStorage.getItem(SESSION_KEY));
+          }
         }
+      } catch (err) {
+        console.error('Session restore failed:', err);
+      } finally {
+        setIsInitializing(false);
       }
     }
-  }, [members, user]);
+    restore();
+  }, []);
 
   // Keep the logged-in user's permissions/account type live if an admin
   // changes them elsewhere while logged in.
@@ -174,13 +184,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         id: `log-${Date.now()}`,
         timestamp: new Date().toISOString(),
         user_email: user.email,
-        action: 'LOGOUT',
+        action: 'LOGOUT_SUCCESS',
         entity: 'USER_AUTH',
         entity_id: user.id,
         role: user.accountType,
         ip_address: '127.0.0.1 (Local Session)',
         status: 'SUCCESS',
-        description: `User "${user.email}" logged out`,
+        description: `User "${user.email}" signed out successfully`,
       };
       localStorage.setItem('yinglima_audit_logs', JSON.stringify([newLog, ...auditLogs]));
     }
@@ -206,7 +216,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, sessionId, isAuthenticated: !!user, rememberMe, login, logout, refreshUser }}>
+    <AuthContext.Provider value={{ user, sessionId, isAuthenticated: !!user, rememberMe, isInitializing, login, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

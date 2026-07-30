@@ -32,8 +32,22 @@ function ProtectedRoute({ path, children }: { path: string; children: React.Reac
 }
 
 export function App() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isInitializing } = useAuth();
   const [currentCompany, setCompany] = useState<string>('c1');
+
+  if (isInitializing) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center font-sans text-white">
+        <div className="relative w-16 h-16 mb-4">
+          <div className="absolute inset-0 rounded-full border-4 border-t-blue-500 border-r-transparent border-b-transparent border-l-transparent animate-spin"></div>
+          <div className="absolute inset-2 rounded-full border-4 border-r-indigo-500 border-t-transparent border-b-transparent border-l-transparent animate-spin [animation-duration:1.5s] [animation-direction:reverse]"></div>
+          <div className="absolute inset-4 rounded-full border-4 border-b-purple-500 border-t-transparent border-r-transparent border-l-transparent animate-spin [animation-duration:1s]"></div>
+        </div>
+        <h2 className="text-lg font-bold tracking-widest text-slate-200">YINGLIMA</h2>
+        <p className="text-xs text-slate-500 mt-1">Initializing secure ERP environment...</p>
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     return <LoginPage />;
