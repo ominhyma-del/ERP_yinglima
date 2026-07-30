@@ -211,9 +211,9 @@ export const InquiryPlanningPage: React.FC = () => {
   const [formData, setFormData] = useState({
     company: loggedInCompany,
     consignment_code: 'FB1',
-    product_name: masterProductOptions[0].name,
-    product_code: masterProductOptions[0].code,
-    uom: masterProductOptions[0].uom,
+    product_name: '',
+    product_code: '',
+    uom: '',
     quantity: 100,
     brand_preference: 'TTCA Brand Preferred',
     product_specs: 'Standard export packaging',
@@ -222,6 +222,15 @@ export const InquiryPlanningPage: React.FC = () => {
 
   // Calculate UOM automatically when product name changes
   const handleProductNameChange = (selectedProdName: string) => {
+    if (!selectedProdName) {
+      setFormData((prev) => ({
+        ...prev,
+        product_name: '',
+        product_code: '',
+        uom: '',
+      }));
+      return;
+    }
     const matched = masterProductOptions.find((p) => p.name === selectedProdName);
     setFormData((prev) => ({
       ...prev,
@@ -234,6 +243,10 @@ export const InquiryPlanningPage: React.FC = () => {
   // Quick or Main Form Submit Handler
   const handleSaveInquiry = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.product_name) {
+      alert('Please select a Product Name from the dropdown menu.');
+      return;
+    }
     const matched = masterProductOptions.find((p) => p.name === formData.product_name);
     const requiresLic = matched ? matched.requiresLicense : false;
     const licRem = matched ? matched.licenseRemark : '';
@@ -922,7 +935,9 @@ export const InquiryPlanningPage: React.FC = () => {
                   value={formData.product_name}
                   onChange={(e) => handleProductNameChange(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-medium"
+                  required
                 >
+                  <option value="">-- Select Product Name --</option>
                   {masterProductOptions.map((p) => (
                     <option key={p.code} value={p.name}>{p.name}</option>
                   ))}
