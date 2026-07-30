@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { findMemberByEmail, TeamMember, AccountType, PermissionSet, useTeamStore } from '../team/teamStore';
+import { findMemberByEmail, TeamMember, AccountType, PermissionSet, useTeamStore, SEED_MEMBERS } from '../team/teamStore';
 import { teamApi } from '../../api/teamApi';
 
 /**
@@ -87,31 +87,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [rememberMe, setRememberMe] = useState(false);
   const navigate = useNavigate();
 
-  // Restore session on load
+  // Restore session when members are loaded from backend
   useEffect(() => {
-    const stored = readStoredSession();
-    if (stored) {
-      const member = members.find((m) => m.id === stored.memberId);
-      if (member) {
-        setUser(toAuthUser(member));
-        setSessionId(stored.sessionId);
-        setRememberMe(!!localStorage.getItem(SESSION_KEY));
+    if (!user && members.length > 0) {
+      const stored = readStoredSession();
+      if (stored) {
+        const member = members.find((m) => m.id === stored.memberId);
+        if (member) {
+          setUser(toAuthUser(member));
+          setSessionId(stored.sessionId);
+          setRememberMe(!!localStorage.getItem(SESSION_KEY));
+        }
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [members, user]);
 
   // Keep the logged-in user's permissions/account type live if an admin
   // changes them elsewhere while logged in.
   useEffect(() => {
     if (!user) return;
+    
+    // Only validate once actual database members have loaded (to avoid logging out database-only users on mount)
+    const isMockList = members.length === SEED_MEMBERS.length && members.every((m, idx) => m.id === SEED_MEMBERS[idx].id);
+    if (isMockList) return;
+
     const fresh = members.find((m) => m.id === user.id);
-    if (fresh) setUser(toAuthUser(fresh));
-    else {
+    if (fresh) {
+      setUser(toAuthUser(fresh));
+    } else {
       logout();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [members]);
+  }, [members, user?.id]);
 
   const login = async (email: string, password: string, remember: boolean) => {
     const latestMembers = await teamApi.getMembers();

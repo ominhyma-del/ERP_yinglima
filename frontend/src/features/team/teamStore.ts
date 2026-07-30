@@ -98,7 +98,7 @@ const DEFAULT_ADMIN: TeamMember = {
   isDefaultAdmin: true,
 };
 
-const SEED_MEMBERS: TeamMember[] = [
+export const SEED_MEMBERS: TeamMember[] = [
   DEFAULT_ADMIN,
   {
     id: 'user-default',
