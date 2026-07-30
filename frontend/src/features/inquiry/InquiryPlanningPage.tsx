@@ -381,29 +381,90 @@ export const InquiryPlanningPage: React.FC = () => {
     .filter((item) => item.consignment_code === activeConsignmentCode)
     .sort((a, b) => (a.tally_post_status === 'PENDING' ? -1 : 1)); // Pending entries on top by default!
 
-  // Export CSV
+  // Export CSV (Layer-Aware & Excel UTF-8 BOM formatted)
   const handleExportCSV = () => {
-    const headers = ['Company', 'Consignment Code', 'Product Name', 'Quantity', 'UOM', 'Computed CBM', 'Computed Weight', 'Tally Status', 'License Required'];
-    const rows = activeGridItems.map((i) => [
-      `"${i.company}"`,
-      `"${i.consignment_code}"`,
-      `"${i.product_name}"`,
-      `"${i.quantity}"`,
-      `"${i.uom}"`,
-      `"${(i.quantity * i.unit_cbm).toFixed(3)}"`,
-      `"${(i.quantity * i.gross_weight).toFixed(2)}"`,
-      `"${i.tally_post_status}"`,
-      `"${i.license_warning ? 'YES' : 'NO'}"`,
-    ]);
+    let headers: string[] = [];
+    let rows: string[][] = [];
+    let fileName = '';
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
+    if (currentLayer === 1) {
+      // 1ST LAYER EXPORT: Company Consignment Summary List
+      headers = [
+        'Inquiry By (Buyer Company Name)',
+        'Consignment Code',
+        'Consignment Status',
+        'Total CBM (m³)',
+        'Total Gross Weight (KG)',
+        'Proposed Date',
+        'Proposed By',
+      ];
+
+      rows = filteredLayer1Consignments.map((c) => [
+        `"${(c.company || '').replace(/"/g, '""')}"`,
+        `"${(c.code || '').replace(/"/g, '""')}"`,
+        `"${(c.status || '').replace(/"/g, '""')}"`,
+        `"${c.total_cbm || 0}"`,
+        `"${c.total_weight || 0}"`,
+        `"${c.proposed_date || ''}"`,
+        `"${(c.proposed_by || '').replace(/"/g, '""')}"`,
+      ]);
+
+      fileName = `Yinglima_Consignments_Summary_Layer1_${new Date().toISOString().split('T')[0]}.csv`;
+    } else {
+      // 2ND LAYER EXPORT: Consignment Line Items Master Planning Sheet
+      headers = [
+        'Inquiry By (Buyer Company Name)',
+        'Consignment Code',
+        'Product Name',
+        'Product Code',
+        'Quantity',
+        'UOM',
+        'Brand Preference',
+        'Product Specs / Remarks',
+        'Computed CBM (m³)',
+        'Computed Gross Weight (KG)',
+        'Item Status',
+        'Tally Entry Status',
+        'License Required?',
+        'License Warning Remark',
+        'China Procurement Team Remarks',
+        'Proposed Date',
+        'Proposed By',
+      ];
+
+      rows = activeGridItems.map((i) => [
+        `"${(i.company || '').replace(/"/g, '""')}"`,
+        `"${(i.consignment_code || '').replace(/"/g, '""')}"`,
+        `"${(i.product_name || '').replace(/"/g, '""')}"`,
+        `"${(i.product_code || '').replace(/"/g, '""')}"`,
+        `"${i.quantity || 0}"`,
+        `"${(i.uom || '').replace(/"/g, '""')}"`,
+        `"${(i.brand_preference || '').replace(/"/g, '""')}"`,
+        `"${(i.product_specs || '').replace(/"/g, '""')}"`,
+        `"${(i.quantity * i.unit_cbm).toFixed(3)}"`,
+        `"${(i.quantity * i.gross_weight).toFixed(2)}"`,
+        `"${(i.item_status || '').replace(/"/g, '""')}"`,
+        `"${(i.tally_post_status || '').replace(/"/g, '""')}"`,
+        `"${i.license_warning ? 'YES' : 'NO'}"`,
+        `"${(i.license_remark || '').replace(/"/g, '""')}"`,
+        `"${(i.procurement_remarks || '').replace(/"/g, '""')}"`,
+        `"${i.proposed_date || ''}"`,
+        `"${(i.proposed_by || '').replace(/"/g, '""')}"`,
+      ]);
+
+      fileName = `Yinglima_Inquiry_Planning_${activeConsignmentCode}_${new Date().toISOString().split('T')[0]}.csv`;
+    }
+
+    const csvContent = [headers.map((h) => `"${h.replace(/"/g, '""')}"`).join(','), ...rows.map((e) => e.join(','))].join('\n');
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Yinglima_Inquiry_Export_${activeConsignmentCode}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.href = url;
+    link.download = fileName;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // Import File

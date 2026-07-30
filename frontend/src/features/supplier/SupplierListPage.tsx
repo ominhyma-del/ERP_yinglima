@@ -553,29 +553,60 @@ export const SupplierListPage: React.FC = () => {
   };
 
   const handleExportCSV = () => {
-    const headers = ['Company Name', 'Supplier Type', 'Brand', 'Categories', 'Sub Categories', 'Secondary Products', 'Country', 'City & Province', 'Status', 'Grade', 'Potential'];
+    const headers = [
+      'Company Name',
+      'Supplier Type',
+      'Brand Name',
+      'Product Categories',
+      'Key Strength Sub Categories',
+      'Secondary Products',
+      'Country',
+      'Province',
+      'City',
+      'Town',
+      'Address',
+      'Primary Contact Name',
+      'Calling Number',
+      'Email',
+      'Current Status',
+      'Supplier Grade',
+      'Potential',
+      'Visited Factory?',
+      'Visit Remarks',
+    ];
+
     const rows = filteredSuppliers.map((s) => [
-      `"${s.name}"`,
-      `"${s.supplier_type}"`,
-      `"${s.brand_name}"`,
-      `"${s.product_categories.join(', ')}"`,
-      `"${s.key_strength_subcategories.join(', ')}"`,
-      `"${Array.isArray(s.secondary_products) ? s.secondary_products.join(', ') : s.secondary_products}"`,
-      `"${s.country}"`,
-      `"${s.city}, ${s.province}"`,
-      `"${s.current_status}"`,
-      `"${s.grade}"`,
-      `"${s.potential}"`,
+      `"${(s.name || '').replace(/"/g, '""')}"`,
+      `"${(s.supplier_type || '').replace(/"/g, '""')}"`,
+      `"${(s.brand_name || '').replace(/"/g, '""')}"`,
+      `"${(Array.isArray(s.product_categories) ? s.product_categories.join('; ') : '').replace(/"/g, '""')}"`,
+      `"${(Array.isArray(s.key_strength_subcategories) ? s.key_strength_subcategories.join('; ') : '').replace(/"/g, '""')}"`,
+      `"${(Array.isArray(s.secondary_products) ? s.secondary_products.join('; ') : s.secondary_products || '').replace(/"/g, '""')}"`,
+      `"${(s.country || '').replace(/"/g, '""')}"`,
+      `"${(s.province || '').replace(/"/g, '""')}"`,
+      `"${(s.city || '').replace(/"/g, '""')}"`,
+      `"${(s.town || '').replace(/"/g, '""')}"`,
+      `"${(s.address || '').replace(/"/g, '""')}"`,
+      `"${(s.contact_name || '').replace(/"/g, '""')}"`,
+      `"${(s.calling_number || '').replace(/"/g, '""')}"`,
+      `"${(s.emails ? s.emails.join('; ') : '').replace(/"/g, '""')}"`,
+      `"${(s.current_status || '').replace(/"/g, '""')}"`,
+      `"${(s.grade || '').replace(/"/g, '""')}"`,
+      `"${(s.potential || '').replace(/"/g, '""')}"`,
+      `"${(s.visited_factory || '').replace(/"/g, '""')}"`,
+      `"${(s.visit_remarks || '').replace(/"/g, '""')}"`,
     ]);
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
+    const csvContent = [headers.map((h) => `"${h.replace(/"/g, '""')}"`).join(','), ...rows.map((e) => e.join(','))].join('\n');
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Yinglima_Suppliers_Export_${new Date().toISOString().split('T')[0]}.csv`);
+    link.href = url;
+    link.download = `Yinglima_Suppliers_Directory_${new Date().toISOString().split('T')[0]}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // CREATE OR UPDATE SUPPLIER PROFILE HANDLER
