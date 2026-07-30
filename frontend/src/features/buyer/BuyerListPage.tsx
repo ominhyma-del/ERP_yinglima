@@ -43,6 +43,53 @@ const categorySubcategoryMap: Record<string, string[]> = {
   'Spare Parts': ['Spares for Band Sealer', 'Teflon Belts', 'Heating Blocks', 'Temperature Controllers', 'Silicone Strips'],
 };
 
+// AUTO-COMPLETE KEYWORD SUGGESTION INPUT FOR BUYER COMPANY NAME
+const CompanyAutocompleteInput: React.FC<{
+  value: string;
+  onChange: (val: string) => void;
+  suggestions: string[];
+}> = ({ value, onChange, suggestions }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const filtered = suggestions.filter((s) => s.toLowerCase().includes(value.toLowerCase()) && s !== value);
+
+  return (
+    <div className="relative">
+      <label className="text-[11px] text-slate-700 font-semibold block mb-1">
+        Name of Company <span className="text-rose-500">*</span>
+      </label>
+      <input
+        type="text"
+        required
+        placeholder="e.g. Uganda Beverage Industries Ltd"
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value);
+          setIsOpen(true);
+        }}
+        onFocus={() => setIsOpen(true)}
+        onBlur={() => setTimeout(() => setIsOpen(false), 200)}
+        className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2 rounded-lg outline-none focus:border-blue-500 focus:bg-white font-medium"
+      />
+      {isOpen && filtered.length > 0 && (
+        <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-40 overflow-y-auto text-xs divide-y divide-slate-100">
+          {filtered.map((item, idx) => (
+            <div
+              key={idx}
+              onClick={() => {
+                onChange(item);
+                setIsOpen(false);
+              }}
+              className="p-2.5 hover:bg-blue-50 text-slate-800 cursor-pointer font-semibold"
+            >
+              {item}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // Multi-Select Dropdown Component with Checkboxes & Badges
 const MultiSelectDropdown: React.FC<{
   label: string;
@@ -835,28 +882,11 @@ export const BuyerListPage: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
               {/* Name of Company* */}
               <div className="md:col-span-2">
-                <label className="text-[11px] text-slate-700 font-semibold block mb-1">
-                  Name of Company <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Uganda Beverage Industries Ltd"
+                <CompanyAutocompleteInput
                   value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  list="company-name-datalist"
-                  className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2 rounded-lg outline-none focus:border-blue-500 focus:bg-white"
+                  onChange={(val) => setFormData({ ...formData, name: val })}
+                  suggestions={buyers.map((b) => b.name)}
                 />
-                <datalist id="company-name-datalist">
-                  <option value="Uganda Beverage Industries Ltd" />
-                  <option value="Mukwano Industries Uganda" />
-                  <option value="Kakira Sugar Ltd Uganda" />
-                  <option value="Nile Breweries Ltd" />
-                  <option value="Jinja Food Processing Co" />
-                  <option value="Kampala Chemicals Ltd" />
-                  <option value="Zhejiang Packaging Machinery Ltd" />
-                  <option value="Shandong Citric Acid Chemical Co" />
-                </datalist>
               </div>
 
               {/* Product Category (Multiple) */}
