@@ -10,7 +10,6 @@ import { BuyerListPage } from './features/buyer/BuyerListPage';
 import { ProductMasterPage } from './features/product-master/ProductMasterPage';
 import { ProductStockPage } from './features/product/ProductStockPage';
 import { InquiryPlanningPage } from './features/inquiry/InquiryPlanningPage';
-import { MastersPage } from './features/masters/MastersPage';
 import { TeamMembersPage } from './features/team/TeamMembersPage';
 import { RolesPermissionsPage } from './features/team/RolesPermissionsPage';
 import { AuditLogsPage } from './features/team/AuditLogsPage';
@@ -34,7 +33,10 @@ export function App() {
 
         <main className="p-8 flex-1 overflow-y-auto max-w-7xl w-full mx-auto">
           <Routes>
-            <Route path="/" element={<Navigate to="/suppliers" replace />} />
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+
+            {/* DASHBOARD */}
+            <Route path="/dashboard" element={<DashboardPage />} />
 
             {/* PURCHASE */}
             <Route path="/suppliers" element={<SupplierListPage />} />
@@ -55,14 +57,8 @@ export function App() {
             <Route path="/roles" element={<RolesPermissionsPage />} />
             <Route path="/audit-logs" element={<AuditLogsPage />} />
 
-            {/* SETTINGS */}
-            <Route path="/masters" element={<MastersPage />} />
-
-            {/* AI SERVICES */}
-            <Route path="/dashboard" element={<DashboardPage />} />
-
             {/* Fallback */}
-            <Route path="*" element={<Navigate to="/suppliers" replace />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </main>
       </div>
