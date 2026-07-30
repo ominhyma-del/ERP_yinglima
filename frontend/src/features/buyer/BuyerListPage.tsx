@@ -182,6 +182,7 @@ export const BuyerListPage: React.FC = () => {
   const [showImportModal, setShowImportModal] = useState(false);
   const [importNotification, setImportNotification] = useState<string | null>(null);
   const [showImpExpDropdown, setShowImpExpDropdown] = useState(false);
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [eyeModalContent, setEyeModalContent] = useState<{ title: string; items: string[] } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -442,6 +443,19 @@ export const BuyerListPage: React.FC = () => {
 
         {viewMode === 'list' ? (
           <div className="flex items-center gap-2">
+            {/* FILTER ICON TOGGLE BUTTON */}
+            <button
+              onClick={() => setShowFilterPanel(!showFilterPanel)}
+              className={`p-2.5 rounded-lg border transition-all cursor-pointer ${
+                showFilterPanel
+                  ? 'bg-blue-50 border-blue-200 text-blue-600'
+                  : 'bg-white border-slate-300 hover:bg-slate-50 text-slate-700'
+              }`}
+              title="Toggle Filters Panel"
+            >
+              <Filter size={15} />
+            </button>
+
             <button
               onClick={() => {
                 setEditingBuyerId(null);
@@ -526,154 +540,156 @@ export const BuyerListPage: React.FC = () => {
       {viewMode === 'list' && (
         <div className="space-y-4">
           {/* TOP FILTERS BAR (8 EXACT FIELDS) */}
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
-            <div className="flex items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-wider">
-              <span className="flex items-center gap-2">
-                <Filter size={14} className="text-blue-600" /> Top Filter Fields
-              </span>
-              <button
-                onClick={() => {
-                  setFilterDateRange('');
-                  setFilterBuyerType('');
-                  setFilterCurrentStatus('');
-                  setFilterProductCategory('');
-                  setFilterProductSubCategory('');
-                  setFilterCountry('');
-                  setFilterPotential('');
-                  setFilterClientGrade('');
-                  setSearchQuery('');
-                }}
-                className="text-[11px] text-blue-600 hover:underline flex items-center gap-1 normal-case cursor-pointer"
-              >
-                <RotateCcw size={12} /> Reset Filters
-              </button>
+          {showFilterPanel && (
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-wider">
+                <span className="flex items-center gap-2">
+                  <Filter size={14} className="text-blue-600" /> Top Filter Fields
+                </span>
+                <button
+                  onClick={() => {
+                    setFilterDateRange('');
+                    setFilterBuyerType('');
+                    setFilterCurrentStatus('');
+                    setFilterProductCategory('');
+                    setFilterProductSubCategory('');
+                    setFilterCountry('');
+                    setFilterPotential('');
+                    setFilterClientGrade('');
+                    setSearchQuery('');
+                  }}
+                  className="text-[11px] text-blue-600 hover:underline flex items-center gap-1 normal-case cursor-pointer"
+                >
+                  <RotateCcw size={12} /> Reset Filters
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-8 gap-2.5">
+                {/* 1. Added Date Range */}
+                <div>
+                  <label className="text-[10px] text-slate-500 font-bold block mb-0.5">Added Date Range</label>
+                  <input
+                    type="date"
+                    value={filterDateRange}
+                    onChange={(e) => setFilterDateRange(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-800 p-2 rounded-lg outline-none"
+                  />
+                </div>
+
+                {/* 2. Buyer Type */}
+                <div>
+                  <label className="text-[10px] text-slate-500 font-bold block mb-0.5">Buyer Type</label>
+                  <select
+                    value={filterBuyerType}
+                    onChange={(e) => setFilterBuyerType(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-800 p-2 rounded-lg outline-none cursor-pointer"
+                  >
+                    <option value="">All Types</option>
+                    <option value="Manufacturer">Manufacturer</option>
+                    <option value="Trader">Trader</option>
+                    <option value="Select">Select</option>
+                  </select>
+                </div>
+
+                {/* 3. Current Status */}
+                <div>
+                  <label className="text-[10px] text-slate-500 font-bold block mb-0.5">Current Status</label>
+                  <select
+                    value={filterCurrentStatus}
+                    onChange={(e) => setFilterCurrentStatus(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-800 p-2 rounded-lg outline-none cursor-pointer"
+                  >
+                    <option value="">All Statuses</option>
+                    <option value="NEW">New</option>
+                    <option value="EXISTING">Existing</option>
+                    <option value="INACTIVE">Inactive</option>
+                    <option value="Select">Select</option>
+                  </select>
+                </div>
+
+                {/* 4. Product Category */}
+                <div>
+                  <label className="text-[10px] text-slate-500 font-bold block mb-0.5">Product Category</label>
+                  <select
+                    value={filterProductCategory}
+                    onChange={(e) => setFilterProductCategory(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-800 p-2 rounded-lg outline-none cursor-pointer"
+                  >
+                    <option value="">All Categories</option>
+                    {Object.keys(categorySubcategoryMap).map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 5. Product Sub Category */}
+                <div>
+                  <label className="text-[10px] text-slate-500 font-bold block mb-0.5">Product Sub Category</label>
+                  <select
+                    value={filterProductSubCategory}
+                    onChange={(e) => setFilterProductSubCategory(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-800 p-2 rounded-lg outline-none cursor-pointer"
+                  >
+                    <option value="">All Sub Categories</option>
+                    {availableSubcategories.map((sub) => (
+                      <option key={sub} value={sub}>
+                        {sub}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 6. Country */}
+                <div>
+                  <label className="text-[10px] text-slate-500 font-bold block mb-0.5">Country</label>
+                  <select
+                    value={filterCountry}
+                    onChange={(e) => setFilterCountry(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-800 p-2 rounded-lg outline-none cursor-pointer"
+                  >
+                    <option value="">All Countries</option>
+                    {Object.keys(countryMaster).map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 7. Potential */}
+                <div>
+                  <label className="text-[10px] text-slate-500 font-bold block mb-0.5">Potential</label>
+                  <select
+                    value={filterPotential}
+                    onChange={(e) => setFilterPotential(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-800 p-2 rounded-lg outline-none cursor-pointer"
+                  >
+                    <option value="">All Potential</option>
+                    <option value="YES">Yes</option>
+                    <option value="NO">No</option>
+                    <option value="Select">Select</option>
+                  </select>
+                </div>
+
+                {/* 8. Client Grade */}
+                <div>
+                  <label className="text-[10px] text-slate-500 font-bold block mb-0.5">Client Grade</label>
+                  <select
+                    value={filterClientGrade}
+                    onChange={(e) => setFilterClientGrade(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-800 p-2 rounded-lg outline-none cursor-pointer"
+                  >
+                    <option value="">All Grades</option>
+                    <option value="A">Grade A</option>
+                    <option value="B">Grade B</option>
+                    <option value="C">Grade C</option>
+                  </select>
+                </div>
+              </div>
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-8 gap-2.5">
-              {/* 1. Added Date Range */}
-              <div>
-                <label className="text-[10px] text-slate-500 font-bold block mb-0.5">Added Date Range</label>
-                <input
-                  type="date"
-                  value={filterDateRange}
-                  onChange={(e) => setFilterDateRange(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-800 p-2 rounded-lg outline-none"
-                />
-              </div>
-
-              {/* 2. Buyer Type */}
-              <div>
-                <label className="text-[10px] text-slate-500 font-bold block mb-0.5">Buyer Type</label>
-                <select
-                  value={filterBuyerType}
-                  onChange={(e) => setFilterBuyerType(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-800 p-2 rounded-lg outline-none cursor-pointer"
-                >
-                  <option value="">All Types</option>
-                  <option value="Manufacturer">Manufacturer</option>
-                  <option value="Trader">Trader</option>
-                  <option value="Select">Select</option>
-                </select>
-              </div>
-
-              {/* 3. Current Status */}
-              <div>
-                <label className="text-[10px] text-slate-500 font-bold block mb-0.5">Current Status</label>
-                <select
-                  value={filterCurrentStatus}
-                  onChange={(e) => setFilterCurrentStatus(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-800 p-2 rounded-lg outline-none cursor-pointer"
-                >
-                  <option value="">All Statuses</option>
-                  <option value="NEW">New</option>
-                  <option value="EXISTING">Existing</option>
-                  <option value="INACTIVE">Inactive</option>
-                  <option value="Select">Select</option>
-                </select>
-              </div>
-
-              {/* 4. Product Category */}
-              <div>
-                <label className="text-[10px] text-slate-500 font-bold block mb-0.5">Product Category</label>
-                <select
-                  value={filterProductCategory}
-                  onChange={(e) => setFilterProductCategory(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-800 p-2 rounded-lg outline-none cursor-pointer"
-                >
-                  <option value="">All Categories</option>
-                  {Object.keys(categorySubcategoryMap).map((cat) => (
-                    <option key={cat} value={cat}>
-                      {cat}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* 5. Product Sub Category */}
-              <div>
-                <label className="text-[10px] text-slate-500 font-bold block mb-0.5">Product Sub Category</label>
-                <select
-                  value={filterProductSubCategory}
-                  onChange={(e) => setFilterProductSubCategory(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-800 p-2 rounded-lg outline-none cursor-pointer"
-                >
-                  <option value="">All Sub Categories</option>
-                  {availableSubcategories.map((sub) => (
-                    <option key={sub} value={sub}>
-                      {sub}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* 6. Country */}
-              <div>
-                <label className="text-[10px] text-slate-500 font-bold block mb-0.5">Country</label>
-                <select
-                  value={filterCountry}
-                  onChange={(e) => setFilterCountry(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-800 p-2 rounded-lg outline-none cursor-pointer"
-                >
-                  <option value="">All Countries</option>
-                  {Object.keys(countryMaster).map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* 7. Potential */}
-              <div>
-                <label className="text-[10px] text-slate-500 font-bold block mb-0.5">Potential</label>
-                <select
-                  value={filterPotential}
-                  onChange={(e) => setFilterPotential(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-800 p-2 rounded-lg outline-none cursor-pointer"
-                >
-                  <option value="">All Potential</option>
-                  <option value="YES">Yes</option>
-                  <option value="NO">No</option>
-                  <option value="Select">Select</option>
-                </select>
-              </div>
-
-              {/* 8. Client Grade */}
-              <div>
-                <label className="text-[10px] text-slate-500 font-bold block mb-0.5">Client Grade</label>
-                <select
-                  value={filterClientGrade}
-                  onChange={(e) => setFilterClientGrade(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-800 p-2 rounded-lg outline-none cursor-pointer"
-                >
-                  <option value="">All Grades</option>
-                  <option value="A">Grade A</option>
-                  <option value="B">Grade B</option>
-                  <option value="C">Grade C</option>
-                </select>
-              </div>
-            </div>
-          </div>
+          )}
 
           {/* SEARCH BAR WITH CLEAR BUTTON */}
           <div className="relative">
