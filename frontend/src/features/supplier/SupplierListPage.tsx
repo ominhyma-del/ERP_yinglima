@@ -622,7 +622,7 @@ export const SupplierListPage: React.FC = () => {
   };
 
   // CREATE OR UPDATE SUPPLIER PROFILE HANDLER
-  const handleCreateSupplier = (e?: any) => {
+  const handleCreateSupplier = async (e?: any) => {
     if (e && typeof e.preventDefault === 'function') {
       e.preventDefault();
     }
@@ -693,8 +693,12 @@ export const SupplierListPage: React.FC = () => {
       setImportNotification(`Successfully updated supplier profile for "${companyName}"!`);
     } else {
       // Persist to Supabase Cloud DB via NestJS Backend API
-      supplierApi.createSupplier(updatedSupplierObj);
       setSuppliers([updatedSupplierObj, ...suppliers]);
+      await supplierApi.createSupplier(updatedSupplierObj);
+      const apiList = await supplierApi.getSuppliers();
+      if (apiList && Array.isArray(apiList) && apiList.length > 0) {
+        setSuppliers(apiList);
+      }
       setImportNotification(`Successfully created & saved new supplier profile "${companyName}" to Supabase Database!`);
     }
 

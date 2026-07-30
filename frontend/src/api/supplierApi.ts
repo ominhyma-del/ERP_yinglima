@@ -40,7 +40,43 @@ export const supplierApi = {
   async getSuppliers(params?: any) {
     try {
       const response = await api.get('/suppliers', { params });
-      return response.data;
+      const rawList = response.data?.data || response.data;
+      if (Array.isArray(rawList)) {
+        return rawList.map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          product_categories: s.product_categories || ['Machines'],
+          supplier_type: (s.supplier_type || 'MANUFACTURER') === 'TRADER' ? 'Trader' : 'Manufacturer',
+          brand_name: s.brand_description || 'Yinglima Supplier',
+          country: s.country || 'China',
+          province: s.province || '',
+          city: s.city || '',
+          town: s.town || '',
+          address: s.address || '',
+          contact_title: (s.contacts && s.contacts[0]?.salutation) || 'Mr',
+          contact_name: (s.contacts && s.contacts[0]?.full_name) || 'Primary Contact',
+          designation: (s.contacts && s.contacts[0]?.designation) || 'Sales Manager',
+          calling_number: (s.contacts && s.contacts[0]?.calling_number) || '+86 13800000000',
+          whatsapp_number: (s.contacts && s.contacts[0]?.whatsapp_number) || '+86 13800000000',
+          wechat_number: (s.contacts && s.contacts[0]?.wechat_number) || '+86 13800000000',
+          emails: s.contacts && s.contacts[0]?.email ? [s.contacts[0].email] : ['info@supplier.com'],
+          tax_id: s.tax_id || '',
+          primary_website: s.primary_website || '',
+          secondary_website: s.secondary_website || '',
+          key_strength_subcategories: s.key_strength_subcategories || ['Band Sealer'],
+          grade: s.grade || 'A',
+          current_status: s.current_status || 'NEW',
+          potential: s.potential || 'YES',
+          potential_reason: s.potential_reason || '',
+          secondary_products: s.secondary_products_desc ? s.secondary_products_desc.split(', ') : ['Spare Parts'],
+          visited_factory: s.visited_factory ? 'Yes' : 'No',
+          visit_remarks: s.visit_remarks || '',
+          attachments: s.visit_attachments || [],
+          overall_remarks: s.overall_remarks || '',
+          contacts: s.contacts || [],
+        }));
+      }
+      return null;
     } catch (error) {
       console.warn('API error fetching suppliers:', error);
       return null;
