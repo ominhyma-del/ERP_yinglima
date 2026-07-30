@@ -38,7 +38,6 @@ async function bootstrap() {
     )
     .setVersion('1.0')
     .addTag('Company Management')
-    .addTag('Masters Management')
     .addTag('Supplier Management')
     .addTag('Buyer Management')
     .addTag('Product Master')
