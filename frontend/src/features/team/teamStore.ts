@@ -53,7 +53,6 @@ export const PERMISSION_MODULES: { key: string; label: string }[] = [
   { key: 'stock', label: 'Stock Transactions & Re-Order Reports' },
   { key: 'team', label: 'Team Members' },
   { key: 'roles', label: 'Roles & Permissions' },
-  { key: 'masters', label: 'Masters (HSN, Countries)' },
 ];
 
 export type PermissionSet = Record<string, ModulePermission>;
