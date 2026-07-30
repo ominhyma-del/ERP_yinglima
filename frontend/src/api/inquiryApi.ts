@@ -23,7 +23,7 @@ export const inquiryApi = {
   // Fetch Layer 1 Consignments Summary from NestJS API
   async getConsignments() {
     try {
-      const response = await api.get('/inquiries/consignments');
+      const response = await api.get('/inquiries/layer1-summary');
       return response.data;
     } catch (error) {
       console.warn('API error fetching consignments summary:', error);
@@ -32,11 +32,9 @@ export const inquiryApi = {
   },
 
   // Fetch Layer 2 Line Items for a consignment code
-  async getInquiryItems(consignmentCode?: string) {
+  async getInquiryItems(consignmentCode: string) {
     try {
-      const response = await api.get('/inquiries/items', {
-        params: { consignmentCode },
-      });
+      const response = await api.get(`/inquiries/layer2-grid/${consignmentCode}`);
       return response.data;
     } catch (error) {
       console.warn('API error fetching inquiry items:', error);
@@ -47,7 +45,22 @@ export const inquiryApi = {
   // Create new Inquiry Item in Supabase DB via NestJS API
   async createInquiryItem(data: InquiryItemDto) {
     try {
-      const response = await api.post('/inquiries/items', data);
+      // Default fallback product_id to seeded Citric Acid / Band Sealer UUID if custom product
+      const productId =
+        data.product_name?.toLowerCase().includes('sealer')
+          ? '99999999-9999-9999-9999-999999999902'
+          : '99999999-9999-9999-9999-999999999901';
+
+      const payload = {
+        consignment_code: data.consignment_code || 'FB1',
+        product_id: productId,
+        quantity: Number(data.quantity) || 1,
+        brand_preference: data.brand_preference || 'Standard Preferred',
+        product_specs: data.product_specs || 'Standard Specification',
+        procurement_remarks: data.procurement_remarks || 'China Procurement requirement item.',
+      };
+
+      const response = await api.post('/inquiries/items', payload);
       return response.data;
     } catch (error) {
       console.warn('API error creating inquiry item:', error);
@@ -56,12 +69,12 @@ export const inquiryApi = {
   },
 
   // Update Item Quantity or Shift Consignment Code
-  async updateInquiryItem(id: string, updates: Partial<InquiryItemDto>) {
+  async updateInquiryItemQuantity(id: string, quantity: number) {
     try {
-      const response = await api.put(`/inquiries/items/${id}`, updates);
+      const response = await api.patch(`/inquiries/items/${id}/quantity`, { quantity });
       return response.data;
     } catch (error) {
-      console.warn('API error updating inquiry item:', error);
+      console.warn('API error updating inquiry item quantity:', error);
       return null;
     }
   },

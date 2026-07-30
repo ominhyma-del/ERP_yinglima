@@ -17,6 +17,7 @@ export interface SupplierDto {
   whatsapp_number?: string;
   wechat_number?: string;
   email?: string;
+  emails?: string[];
   tax_id?: string;
   primary_website?: string;
   secondary_website?: string;
@@ -27,7 +28,7 @@ export interface SupplierDto {
   potential?: string;
   potential_reason?: string;
   secondary_products?: string | string[];
-  visited_factory?: string;
+  visited_factory?: string | boolean;
   visit_remarks?: string;
   overall_remarks?: string;
   contacts?: any[];
@@ -41,7 +42,7 @@ export const supplierApi = {
       const response = await api.get('/suppliers', { params });
       return response.data;
     } catch (error) {
-      console.warn('API error fetching suppliers, using fallback:', error);
+      console.warn('API error fetching suppliers:', error);
       return null;
     }
   },
@@ -49,7 +50,45 @@ export const supplierApi = {
   // Create new Supplier in Supabase DB via NestJS API
   async createSupplier(data: SupplierDto) {
     try {
-      const response = await api.post('/suppliers', data);
+      // Map frontend model to NestJS CreateSupplierDto schema
+      const payload = {
+        name: data.name,
+        supplier_type: (data.supplier_type || 'MANUFACTURER').toUpperCase() === 'TRADER' ? 'TRADER' : 'MANUFACTURER',
+        brand_description: data.brand_name || 'Standard Supplier',
+        country: data.country || 'China',
+        province: data.province || '',
+        city: data.city || '',
+        town: data.town || '',
+        address: data.address || '',
+        tax_id: data.tax_id || '',
+        primary_website: data.primary_website || '',
+        secondary_website: data.secondary_website || '',
+        grade: (data.grade || 'A').toUpperCase() === 'B' ? 'B' : (data.grade || 'A').toUpperCase() === 'C' ? 'C' : 'A',
+        current_status: (data.current_status || 'NEW').toUpperCase() === 'EXISTING' ? 'EXISTING' : 'NEW',
+        potential: (data.potential || 'YES').toUpperCase() === 'NO' ? 'NO' : 'YES',
+        potential_reason: data.potential_reason || '',
+        secondary_products_desc: Array.isArray(data.secondary_products) ? data.secondary_products.join(', ') : data.secondary_products || '',
+        visited_factory: data.visited_factory === 'YES' || data.visited_factory === true,
+        visit_remarks: data.visit_remarks || '',
+        overall_remarks: data.overall_remarks || '',
+        product_categories: data.product_categories || [],
+        key_strength_subcategories: data.key_strength_subcategories || [],
+        contacts: [
+          {
+            salutation: data.contact_title || 'Mr.',
+            full_name: data.contact_name ? `${data.contact_title || ''} ${data.contact_name}`.trim() : 'Primary Contact',
+            designation: data.designation || 'Sales Manager',
+            handling_territory: 'Export Global',
+            country: data.country || 'China',
+            calling_number: data.calling_number || '',
+            whatsapp_number: data.whatsapp_number || data.calling_number || '',
+            wechat_number: data.wechat_number || '',
+            email: data.email || (data.emails && data.emails[0]) || '',
+          },
+        ],
+      };
+
+      const response = await api.post('/suppliers', payload);
       return response.data;
     } catch (error) {
       console.warn('API error creating supplier:', error);
