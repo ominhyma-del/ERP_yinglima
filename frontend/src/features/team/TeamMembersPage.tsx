@@ -1,31 +1,14 @@
 import React, { useState, useRef } from 'react';
 import {
   Users, Plus, Search, X, CheckCircle, Download, Upload, FileSpreadsheet,
-  Trash2, Mail, Phone, Eye, EyeOff, ArrowLeft, Pencil, ShieldAlert,
-  Building2, Calendar, KeyRound, AlertTriangle, RefreshCw,
+  Trash2, Mail, Eye, EyeOff, ArrowLeft, Pencil, ShieldAlert, ShieldCheck,
+  Building2, Calendar, KeyRound, AlertTriangle, RefreshCw, Crown, UserCog,
 } from 'lucide-react';
-
-interface TeamMember {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  role: string;
-  branch: string;
-  status: 'ACTIVE' | 'INACTIVE';
-  password: string;
-  createdDate: string;
-}
-
-const ROLES = ['Super Admin', 'Procurement Manager', 'China Sourcing Specialist', 'Uganda Sales Director', 'Finance & Accounting'];
-const BRANCHES = [
-  'Yinglima Machinery & Trade (China HQ)',
-  'F&B Uganda Ingredients Ltd',
-  'One Stop General Trading Uganda',
-  'Ingredi Trade Uganda Ltd',
-  'Darsh Impex India LLP (India HQ)',
-  'East Africa Chemical Supply',
-];
+import {
+  useTeamStore, TeamMember, AccountType, Department, DEPARTMENTS, BRANCHES,
+  PERMISSION_MODULES, emptyPermissionSet, fullPermissionSet, PermissionSet,
+} from './teamStore';
+import { useAuth } from '../auth/AuthContext';
 
 function genPassword() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%';
@@ -48,7 +31,68 @@ function Toast({ msg, onClose }: { msg: string; onClose: () => void }) {
   );
 }
 
+function AccountTypeBadge({ type }: { type: AccountType }) {
+  return type === 'ADMIN' ? (
+    <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 font-bold text-[10px] flex items-center gap-1 w-fit">
+      <Crown size={10} /> ADMIN
+    </span>
+  ) : (
+    <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200 font-bold text-[10px] flex items-center gap-1 w-fit">
+      <UserCog size={10} /> EMPLOYEE
+    </span>
+  );
+}
+
+function MiniPermissionEditor({
+  permissions, onChange,
+}: {
+  permissions: PermissionSet;
+  onChange: (p: PermissionSet) => void;
+}) {
+  const toggle = (moduleKey: string, action: 'view' | 'edit' | 'delete') => {
+    onChange({
+      ...permissions,
+      [moduleKey]: { ...permissions[moduleKey], [action]: !permissions[moduleKey]?.[action] },
+    });
+  };
+  return (
+    <div className="border border-slate-200 rounded-lg overflow-hidden">
+      <table className="w-full text-xs">
+        <thead className="bg-slate-50 border-b border-slate-200">
+          <tr>
+            <th className="text-left p-2.5 font-bold text-slate-500 uppercase text-[10px]">Module</th>
+            <th className="p-2.5 font-bold text-slate-500 uppercase text-[10px] w-16 text-center">View</th>
+            <th className="p-2.5 font-bold text-slate-500 uppercase text-[10px] w-16 text-center">Edit</th>
+            <th className="p-2.5 font-bold text-slate-500 uppercase text-[10px] w-16 text-center">Delete</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {PERMISSION_MODULES.map((mod) => (
+            <tr key={mod.key} className="hover:bg-slate-50">
+              <td className="p-2.5 font-medium text-slate-800">{mod.label}</td>
+              {(['view', 'edit', 'delete'] as const).map((action) => (
+                <td key={action} className="p-2.5 text-center">
+                  <input
+                    type="checkbox"
+                    checked={!!permissions[mod.key]?.[action]}
+                    onChange={() => toggle(mod.key, action)}
+                    className="rounded cursor-pointer w-3.5 h-3.5"
+                  />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export const TeamMembersPage: React.FC = () => {
+  const { user: currentUser } = useAuth();
+  const { members, addMember, updateMember, removeMember, setAccountType } = useTeamStore();
+  const isAdmin = currentUser?.accountType === 'ADMIN';
+
   const [view, setView] = useState<'list' | 'detail' | 'edit'>('list');
   const [showAddDrawer, setShowAddDrawer] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
@@ -56,44 +100,39 @@ export const TeamMembersPage: React.FC = () => {
   const [toast, setToast] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([
-    {
-      id: 't1', name: 'Yinglima Admin', email: 'admin@yinglima.com', phone: '+86 13800001111',
-      role: 'Super Admin', branch: 'Yinglima Machinery & Trade (China HQ)', status: 'ACTIVE',
-      password: 'Admin@123', createdDate: '2025-01-05',
-    },
-    {
-      id: 't2', name: 'David Musoke', email: 'david@fb-uganda.com', phone: '+256 700123456',
-      role: 'Uganda Procurement Manager', branch: 'F&B Uganda Ingredients Ltd', status: 'ACTIVE',
-      password: 'David@123', createdDate: '2025-02-11',
-    },
-    {
-      id: 't3', name: 'John Zhang', email: 'zhang@yinglima.cn', phone: '+86 13900112233',
-      role: 'China Sourcing Specialist', branch: 'Yinglima Machinery & Trade (China HQ)', status: 'ACTIVE',
-      password: 'Zhang@123', createdDate: '2025-03-02',
-    },
-  ]);
+  const [confirmPromote, setConfirmPromote] = useState<{ id: string; to: AccountType } | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const selectedMember = teamMembers.find((m) => m.id === selectedId) ?? null;
-
+  const selectedMember = members.find((m) => m.id === selectedId) ?? null;
   const [showPasswordDetail, setShowPasswordDetail] = useState(false);
 
-  // Add form
   const [formData, setFormData] = useState({
-    name: '', email: '', phone: '', role: 'Procurement Manager',
-    branch: 'Yinglima Machinery & Trade (China HQ)', password: genPassword(),
+    name: '', email: '', phone: '',
+    accountType: 'EMPLOYEE' as AccountType,
+    department: 'Purchase / Procurement' as Department,
+    branch: BRANCHES[0] as string,
+    password: genPassword(),
+    permissions: emptyPermissionSet(),
   });
   const [showAddPassword, setShowAddPassword] = useState(true);
 
-  // Edit form
   const [editData, setEditData] = useState<TeamMember | null>(null);
   const [showEditPassword, setShowEditPassword] = useState(false);
 
-  const filtered = teamMembers.filter((m) => {
+  if (!isAdmin) {
+    return (
+      <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 text-center space-y-3 max-w-lg mx-auto mt-10">
+        <ShieldAlert size={32} className="mx-auto text-amber-500" />
+        <h3 className="text-base font-bold text-slate-900">Admin Access Required</h3>
+        <p className="text-xs text-slate-500">Only Admin accounts can view or manage Team Members. Contact your administrator if you believe you should have access.</p>
+      </div>
+    );
+  }
+
+  const filtered = members.filter((m) => {
     const q = search.toLowerCase();
-    return !q || m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q) || m.role.toLowerCase().includes(q);
+    return !q || m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q) || m.department.toLowerCase().includes(q);
   });
 
   const openDetail = (m: TeamMember) => {
@@ -112,20 +151,22 @@ export const TeamMembersPage: React.FC = () => {
   const handleAddMember = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.email) return;
-    const newMember: TeamMember = {
-      id: `t${Date.now()}`,
+    addMember({
       name: formData.name,
       email: formData.email,
       phone: formData.phone || '+86 13800000000',
-      role: formData.role,
+      password: formData.password,
+      accountType: formData.accountType,
+      department: formData.department,
       branch: formData.branch,
       status: 'ACTIVE',
-      password: formData.password,
-      createdDate: new Date().toISOString().split('T')[0],
-    };
-    setTeamMembers((prev) => [...prev, newMember]);
+      permissions: formData.accountType === 'ADMIN' ? fullPermissionSet() : formData.permissions,
+    });
     setShowAddDrawer(false);
-    setFormData({ name: '', email: '', phone: '', role: 'Procurement Manager', branch: 'Yinglima Machinery & Trade (China HQ)', password: genPassword() });
+    setFormData({
+      name: '', email: '', phone: '', accountType: 'EMPLOYEE', department: 'Purchase / Procurement',
+      branch: BRANCHES[0], password: genPassword(), permissions: emptyPermissionSet(),
+    });
     setShowAddPassword(true);
     setToast('Team member created successfully.');
   };
@@ -133,24 +174,52 @@ export const TeamMembersPage: React.FC = () => {
   const handleSaveEdit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editData) return;
-    setTeamMembers((prev) => prev.map((m) => (m.id === editData.id ? editData : m)));
+    updateMember(editData.id, editData);
     setToast('Team member updated successfully.');
     setView('detail');
   };
 
-  const toggleStatus = (id: string) => {
-    setTeamMembers((prev) => prev.map((m) => (m.id === id ? { ...m, status: m.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' } : m)));
+  const toggleStatus = (m: TeamMember) => {
+    if (m.isDefaultAdmin) {
+      setToast('The default admin account cannot be deactivated.');
+      return;
+    }
+    updateMember(m.id, { status: m.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' });
   };
 
-  const handleDelete = (id: string) => {
-    setTeamMembers((prev) => prev.filter((m) => m.id !== id));
+  const handlePromoteRequest = (m: TeamMember, to: AccountType) => {
+    setConfirmPromote({ id: m.id, to });
+  };
+
+  const confirmPromoteAction = () => {
+    if (!confirmPromote) return;
+    const ok = setAccountType(confirmPromote.id, confirmPromote.to);
+    setToast(ok ? `Account ${confirmPromote.to === 'ADMIN' ? 'promoted to Admin' : 'changed to Employee'}.` : 'This action is not allowed on the default admin.');
+    setConfirmPromote(null);
+    if (editData && editData.id === confirmPromote.id) {
+      setEditData({ ...editData, accountType: confirmPromote.to, permissions: confirmPromote.to === 'ADMIN' ? fullPermissionSet() : editData.permissions });
+    }
+  };
+
+  const handleDeleteRequest = (m: TeamMember) => {
+    if (m.isDefaultAdmin) {
+      setToast('The default admin account cannot be removed.');
+      return;
+    }
+    setConfirmDeleteId(m.id);
+  };
+
+  const confirmDelete = () => {
+    if (!confirmDeleteId) return;
+    removeMember(confirmDeleteId);
+    setConfirmDeleteId(null);
     setToast('Team member removed.');
     setView('list');
   };
 
   const handleExportCSV = () => {
-    const headers = ['Name', 'Email', 'Phone', 'Role', 'Branch Location', 'Status'];
-    const rows = teamMembers.map((t) => [`"${t.name}"`, `"${t.email}"`, `"${t.phone}"`, `"${t.role}"`, `"${t.branch}"`, `"${t.status}"`]);
+    const headers = ['Name', 'Email', 'Phone', 'Account Type', 'Department', 'Branch Location', 'Status'];
+    const rows = members.map((t) => [`"${t.name}"`, `"${t.email}"`, `"${t.phone}"`, `"${t.accountType}"`, `"${t.department}"`, `"${t.branch}"`, `"${t.status}"`]);
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
     const link = document.createElement('a');
     link.setAttribute('href', encodeURI(csvContent));
@@ -164,12 +233,11 @@ export const TeamMembersPage: React.FC = () => {
     const file = e.target.files?.[0];
     if (file) {
       setTimeout(() => {
-        const imported: TeamMember = {
-          id: `t-imp-${Date.now()}`, name: 'Grace Akello', email: 'grace@one-stop.co.ug',
-          phone: '+256 750987654', role: 'Sales Executive', branch: 'One Stop General Trading Uganda',
-          status: 'ACTIVE', password: genPassword(), createdDate: new Date().toISOString().split('T')[0],
-        };
-        setTeamMembers((prev) => [imported, ...prev]);
+        addMember({
+          name: 'Grace Akello', email: 'grace@one-stop.co.ug', phone: '+256 750987654',
+          accountType: 'EMPLOYEE', department: 'Sales & Buyers', branch: 'One Stop General Trading Uganda',
+          status: 'ACTIVE', password: genPassword(), permissions: emptyPermissionSet(),
+        });
         setShowImportModal(false);
         setImportNotification(`Successfully imported team members from "${file.name}"!`);
         setTimeout(() => setImportNotification(null), 4000);
@@ -186,7 +254,7 @@ export const TeamMembersPage: React.FC = () => {
             {view === 'list' ? 'Team Members Directory' : view === 'detail' ? 'Member Details' : 'Edit Team Member'}
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            {view === 'list' ? 'Manage organization users, roles & location permissions' : 'Yinglima Team & Access Management'}
+            {view === 'list' ? 'Manage Admin & Employee accounts, departments and per-module permissions' : 'Yinglima Team & Access Management'}
           </p>
         </div>
 
@@ -229,7 +297,7 @@ export const TeamMembersPage: React.FC = () => {
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search team member name, email or role..."
+                placeholder="Search team member name, email or department..."
                 className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 text-xs text-slate-800 rounded-lg outline-none focus:border-blue-500 focus:bg-white"
               />
             </div>
@@ -241,9 +309,9 @@ export const TeamMembersPage: React.FC = () => {
               <thead className="bg-slate-100 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
                 <tr>
                   <th className="p-3.5">Member Name & Email</th>
-                  <th className="p-3.5">Role</th>
-                  <th className="p-3.5">Assigned Branch / Company</th>
-                  <th className="p-3.5">Phone Number</th>
+                  <th className="p-3.5">Account Type</th>
+                  <th className="p-3.5">Department</th>
+                  <th className="p-3.5">Branch / Company</th>
                   <th className="p-3.5">Status</th>
                   <th className="p-3.5 text-right">Actions</th>
                 </tr>
@@ -257,14 +325,12 @@ export const TeamMembersPage: React.FC = () => {
                         <Mail size={11} className="text-blue-600" /> {member.email}
                       </p>
                     </td>
-                    <td className="p-3.5">
-                      <span className="px-2.5 py-1 rounded bg-blue-50 text-blue-700 font-bold text-[11px]">{member.role}</span>
-                    </td>
+                    <td className="p-3.5"><AccountTypeBadge type={member.accountType} /></td>
+                    <td className="p-3.5 text-slate-700">{member.department}</td>
                     <td className="p-3.5 text-slate-700">{member.branch}</td>
-                    <td className="p-3.5 font-mono text-slate-600">{member.phone}</td>
                     <td className="p-3.5">
                       <button
-                        onClick={() => toggleStatus(member.id)}
+                        onClick={() => toggleStatus(member)}
                         className={`px-2 py-0.5 font-bold rounded text-[10px] cursor-pointer ${
                           member.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
                         }`}
@@ -308,9 +374,12 @@ export const TeamMembersPage: React.FC = () => {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div className="lg:col-span-2 space-y-4">
               <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-                <div className="px-5 py-3.5 border-b border-slate-100 flex items-center gap-2 bg-slate-50">
-                  <Users size={15} className="text-blue-600" />
-                  <h3 className="text-sm font-bold text-slate-800">Member Information</h3>
+                <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                  <div className="flex items-center gap-2">
+                    <Users size={15} className="text-blue-600" />
+                    <h3 className="text-sm font-bold text-slate-800">Member Information</h3>
+                  </div>
+                  <AccountTypeBadge type={selectedMember.accountType} />
                 </div>
                 <div className="p-5 grid grid-cols-2 gap-x-8 gap-y-3 text-xs">
                   <div>
@@ -323,11 +392,11 @@ export const TeamMembersPage: React.FC = () => {
                   </div>
                   <div>
                     <p className="text-slate-500 font-medium mb-0.5">Phone Number</p>
-                    <p className="font-semibold text-slate-900 font-mono">{selectedMember.phone}</p>
+                    <p className="font-semibold text-slate-900 font-mono">{selectedMember.phone || '—'}</p>
                   </div>
                   <div>
-                    <p className="text-slate-500 font-medium mb-0.5">Assigned Role</p>
-                    <p className="font-semibold text-slate-900">{selectedMember.role}</p>
+                    <p className="text-slate-500 font-medium mb-0.5">Department</p>
+                    <p className="font-semibold text-slate-900">{selectedMember.department}</p>
                   </div>
                   <div>
                     <p className="text-slate-500 font-medium mb-0.5">Branch / Company</p>
@@ -337,6 +406,29 @@ export const TeamMembersPage: React.FC = () => {
                     <p className="text-slate-500 font-medium mb-0.5">Status</p>
                     <p className={`font-semibold ${selectedMember.status === 'ACTIVE' ? 'text-emerald-600' : 'text-slate-400'}`}>{selectedMember.status}</p>
                   </div>
+                </div>
+
+                {/* Promote / demote control */}
+                <div className="px-5 pb-5">
+                  {selectedMember.isDefaultAdmin ? (
+                    <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2.5 text-[11px] flex items-center gap-2">
+                      <Crown size={13} /> This is the default system admin and always retains full Admin access.
+                    </div>
+                  ) : selectedMember.accountType === 'EMPLOYEE' ? (
+                    <button
+                      onClick={() => handlePromoteRequest(selectedMember, 'ADMIN')}
+                      className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-xs font-semibold rounded-lg flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Crown size={13} /> Promote to Admin
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handlePromoteRequest(selectedMember, 'EMPLOYEE')}
+                      className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold rounded-lg flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <UserCog size={13} /> Change to Employee
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -349,7 +441,7 @@ export const TeamMembersPage: React.FC = () => {
                 <div className="p-5 space-y-3">
                   <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2 text-[11px] flex items-start gap-2">
                     <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
-                    <span>Passwords are shown in plain text on this internal demo build. This is not a secure pattern for production — connect real authentication (e.g. Supabase) before handling real users.</span>
+                    <span>Passwords are shown in plain text on this internal demo build, per your instruction. Treat this as mock/demo data only.</span>
                   </div>
                   <div className="flex items-center gap-3">
                     <div className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 font-mono text-sm text-slate-800">
@@ -363,6 +455,21 @@ export const TeamMembersPage: React.FC = () => {
                       {showPasswordDetail ? <EyeOff size={15} /> : <Eye size={15} />}
                     </button>
                   </div>
+                </div>
+              </div>
+
+              {/* Permissions (read-only summary) */}
+              <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-slate-100 flex items-center gap-2 bg-slate-50">
+                  <ShieldCheck size={15} className="text-blue-600" />
+                  <h3 className="text-sm font-bold text-slate-800">Module Permissions</h3>
+                </div>
+                <div className="p-5">
+                  {selectedMember.accountType === 'ADMIN' ? (
+                    <p className="text-xs text-slate-600">Admin accounts have full View / Edit / Delete access to every module.</p>
+                  ) : (
+                    <MiniPermissionEditor permissions={selectedMember.permissions} onChange={() => {}} />
+                  )}
                 </div>
               </div>
             </div>
@@ -391,9 +498,9 @@ export const TeamMembersPage: React.FC = () => {
                 </div>
               </div>
 
-              {selectedMember.role !== 'Super Admin' && (
+              {!selectedMember.isDefaultAdmin && (
                 <button
-                  onClick={() => handleDelete(selectedMember.id)}
+                  onClick={() => handleDeleteRequest(selectedMember)}
                   className="w-full px-4 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Trash2 size={13} /> Remove Member
@@ -406,7 +513,7 @@ export const TeamMembersPage: React.FC = () => {
 
       {/* ── EDIT VIEW ── */}
       {view === 'edit' && editData && (
-        <form onSubmit={handleSaveEdit} className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 space-y-5 max-w-2xl">
+        <form onSubmit={handleSaveEdit} className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 space-y-6 max-w-3xl">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div>
               <label className="text-xs font-semibold text-slate-700 block mb-1">Full Name <span className="text-rose-500">*</span></label>
@@ -420,8 +527,9 @@ export const TeamMembersPage: React.FC = () => {
               <label className="text-xs font-semibold text-slate-700 block mb-1">Email Address <span className="text-rose-500">*</span></label>
               <input
                 type="email" required value={editData.email}
+                disabled={editData.isDefaultAdmin}
                 onChange={(e) => setEditData({ ...editData, email: e.target.value })}
-                className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none focus:border-blue-500 focus:bg-white"
+                className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none focus:border-blue-500 focus:bg-white disabled:opacity-60 disabled:cursor-not-allowed"
               />
             </div>
             <div>
@@ -433,13 +541,14 @@ export const TeamMembersPage: React.FC = () => {
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">Assigned Role</label>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">Department</label>
               <select
-                value={editData.role}
-                onChange={(e) => setEditData({ ...editData, role: e.target.value })}
-                className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none"
+                value={editData.department}
+                disabled={editData.isDefaultAdmin}
+                onChange={(e) => setEditData({ ...editData, department: e.target.value as Department })}
+                className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+                {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
               </select>
             </div>
             <div>
@@ -456,14 +565,59 @@ export const TeamMembersPage: React.FC = () => {
               <label className="text-xs font-semibold text-slate-700 block mb-1">Status</label>
               <select
                 value={editData.status}
+                disabled={editData.isDefaultAdmin}
                 onChange={(e) => setEditData({ ...editData, status: e.target.value as 'ACTIVE' | 'INACTIVE' })}
-                className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none"
+                className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <option value="ACTIVE">Active</option>
                 <option value="INACTIVE">Inactive</option>
               </select>
             </div>
           </div>
+
+          {/* Account type control */}
+          <div className="border-t border-slate-100 pt-5">
+            <label className="text-xs font-semibold text-slate-700 block mb-2">Account Type</label>
+            {editData.isDefaultAdmin ? (
+              <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2.5 text-xs flex items-center gap-2">
+                <Crown size={14} /> Default system admin — always full Admin access, cannot be changed.
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditData({ ...editData, accountType: 'EMPLOYEE' })}
+                  className={`flex-1 px-4 py-2.5 rounded-lg text-xs font-semibold border cursor-pointer flex items-center justify-center gap-1.5 transition-colors ${
+                    editData.accountType === 'EMPLOYEE' ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                  }`}
+                >
+                  <UserCog size={13} /> Employee
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditData({ ...editData, accountType: 'ADMIN', permissions: fullPermissionSet() })}
+                  className={`flex-1 px-4 py-2.5 rounded-lg text-xs font-semibold border cursor-pointer flex items-center justify-center gap-1.5 transition-colors ${
+                    editData.accountType === 'ADMIN' ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                  }`}
+                >
+                  <Crown size={13} /> Admin (full access)
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Permissions editor (only for Employees) */}
+          {editData.accountType === 'EMPLOYEE' && (
+            <div className="border-t border-slate-100 pt-5">
+              <label className="text-xs font-semibold text-slate-700 block mb-2 flex items-center gap-1.5">
+                <ShieldCheck size={13} className="text-slate-400" /> Module Permissions (View / Edit / Delete)
+              </label>
+              <MiniPermissionEditor
+                permissions={editData.permissions}
+                onChange={(p) => setEditData({ ...editData, permissions: p })}
+              />
+            </div>
+          )}
 
           {/* Password field */}
           <div className="border-t border-slate-100 pt-5">
@@ -516,7 +670,7 @@ export const TeamMembersPage: React.FC = () => {
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <div>
                 <h3 className="text-base font-bold text-slate-900">Add Team Member</h3>
-                <p className="text-xs text-slate-500">Create new user account & set role permissions</p>
+                <p className="text-xs text-slate-500">Create new user account, department & permissions</p>
               </div>
               <button onClick={() => setShowAddDrawer(false)} className="p-1 text-slate-500 hover:text-slate-900 bg-slate-100 rounded cursor-pointer">
                 <X size={16} />
@@ -552,13 +706,37 @@ export const TeamMembersPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="text-xs text-slate-700 font-semibold block mb-1">Assigned Role</label>
+                <label className="text-xs text-slate-700 font-semibold block mb-1">Account Type</label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, accountType: 'EMPLOYEE' })}
+                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-semibold border cursor-pointer flex items-center justify-center gap-1.5 ${
+                      formData.accountType === 'EMPLOYEE' ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-slate-200 text-slate-500'
+                    }`}
+                  >
+                    <UserCog size={13} /> Employee
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, accountType: 'ADMIN' })}
+                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-semibold border cursor-pointer flex items-center justify-center gap-1.5 ${
+                      formData.accountType === 'ADMIN' ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-white border-slate-200 text-slate-500'
+                    }`}
+                  >
+                    <Crown size={13} /> Admin
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-700 font-semibold block mb-1">Department</label>
                 <select
-                  value={formData.role}
-                  onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                  value={formData.department}
+                  onChange={(e) => setFormData({ ...formData, department: e.target.value as Department })}
                   className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none"
                 >
-                  {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+                  {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
 
@@ -572,6 +750,18 @@ export const TeamMembersPage: React.FC = () => {
                   {BRANCHES.map((b) => <option key={b} value={b}>{b}</option>)}
                 </select>
               </div>
+
+              {formData.accountType === 'EMPLOYEE' && (
+                <div>
+                  <label className="text-xs text-slate-700 font-semibold block mb-1.5 flex items-center gap-1.5">
+                    <ShieldCheck size={13} className="text-slate-400" /> Module Permissions
+                  </label>
+                  <MiniPermissionEditor
+                    permissions={formData.permissions}
+                    onChange={(p) => setFormData({ ...formData, permissions: p })}
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="text-xs text-slate-700 font-semibold block mb-1 flex items-center gap-1.5">
@@ -647,6 +837,42 @@ export const TeamMembersPage: React.FC = () => {
               <button onClick={() => setShowImportModal(false)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg cursor-pointer">
                 Cancel
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Confirm Promote / Demote ── */}
+      {confirmPromote && (
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 p-6 rounded-2xl w-full max-w-sm shadow-2xl space-y-4">
+            <div className="flex items-start gap-3">
+              {confirmPromote.to === 'ADMIN' ? <Crown size={22} className="text-amber-500 flex-shrink-0 mt-0.5" /> : <ShieldAlert size={22} className="text-amber-500 flex-shrink-0 mt-0.5" />}
+              <p className="text-sm text-slate-700 font-medium">
+                {confirmPromote.to === 'ADMIN'
+                  ? 'Grant this employee full Admin access, including the ability to manage all team members and permissions?'
+                  : 'Remove Admin access from this account and revert to Employee-level permissions?'}
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button onClick={() => setConfirmPromote(null)} className="px-4 py-2 bg-slate-100 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-200 cursor-pointer">Cancel</button>
+              <button onClick={confirmPromoteAction} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg cursor-pointer">Confirm</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Confirm Delete ── */}
+      {confirmDeleteId && (
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 p-6 rounded-2xl w-full max-w-sm shadow-2xl space-y-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle size={22} className="text-rose-500 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-slate-700 font-medium">Are you sure you want to remove this team member? This action cannot be undone.</p>
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button onClick={() => setConfirmDeleteId(null)} className="px-4 py-2 bg-slate-100 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-200 cursor-pointer">Cancel</button>
+              <button onClick={confirmDelete} className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-lg cursor-pointer">Remove</button>
             </div>
           </div>
         </div>
