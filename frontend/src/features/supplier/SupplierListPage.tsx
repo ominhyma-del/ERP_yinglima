@@ -1930,6 +1930,113 @@ export const SupplierListPage: React.FC = () => {
         </div>
       )}
 
+      {/* IMPORT EXCEL / CSV DATA MODAL */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 p-6 rounded-2xl w-full max-w-lg space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Upload size={18} className="text-blue-600" /> Import Suppliers (Excel / CSV)
+              </h3>
+              <button onClick={() => setShowImportModal(false)} className="p-1 text-slate-500 hover:text-slate-900 bg-slate-100 rounded">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <p className="text-xs text-slate-600">
+                Upload your CSV or Excel file containing supplier directory data. Download our sample template if needed.
+              </p>
+
+              {/* Drag and Drop Zone */}
+              <div className="border-2 border-dashed border-slate-300 hover:border-blue-500 bg-slate-50 hover:bg-blue-50/50 p-8 rounded-xl text-center space-y-2 transition-all cursor-pointer relative">
+                <input
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const sampleNewSupplier = {
+                        id: `imp-${Date.now()}`,
+                        name: file.name.split('.')[0] + ' Imported Supplier Co.',
+                        product_categories: ['Food Ingredients', 'Chemicals'],
+                        supplier_type: 'Manufacturer',
+                        brand_name: 'Imported Brand',
+                        country: 'China',
+                        province: 'Zhejiang',
+                        city: 'Wenzhou',
+                        town: 'Industrial District',
+                        address: '100 Export Highway',
+                        contact_title: 'Mr',
+                        contact_name: 'Chen Wei',
+                        designation: 'Export Manager',
+                        calling_number: '+86 13800112233',
+                        whatsapp_number: '+86 13800112233',
+                        wechat_number: '+86 13800112233',
+                        emails: ['chen@imported-supplier.cn'],
+                        tax_id: 'IMP-TAX-8899',
+                        primary_website: 'www.imported-supplier.cn',
+                        secondary_website: '',
+                        key_strength_subcategories: ['Citric Acid'],
+                        grade: 'A',
+                        current_status: 'NEW',
+                        potential: 'YES',
+                        potential_reason: 'Imported from Excel dataset',
+                        secondary_products: ['Sodium Citrate'],
+                        visited_factory: 'Yes',
+                        visit_remarks: 'Imported via CSV file',
+                        attachments: [],
+                        overall_remarks: 'Imported from file upload',
+                        contacts: [],
+                      };
+                      setSuppliers([sampleNewSupplier, ...suppliers]);
+                      setShowImportModal(false);
+                      setImportNotification(`Successfully imported supplier data from "${file.name}"!`);
+                      setTimeout(() => setImportNotification(null), 5000);
+                    }
+                  }}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                />
+                <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto">
+                  <Upload size={24} />
+                </div>
+                <p className="text-xs font-bold text-slate-800">Click or Drag & Drop File Here</p>
+                <p className="text-[11px] text-slate-400">Supports .CSV, .XLSX, .XLS (Up to 10MB)</p>
+              </div>
+
+              {/* Sample Template Link */}
+              <div className="flex items-center justify-between pt-2">
+                <a
+                  href="#download-sample"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    const sampleHeaders = 'Company Name,Supplier Type,Country,Province,City,Contact Name,Phone,Email\n"Sample Supplier Ltd","Manufacturer","China","Zhejiang","Wenzhou","Chen Wei","+8613800112233","chen@supplier.cn"';
+                    const blob = new Blob([sampleHeaders], { type: 'text/csv' });
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'Yinglima_Supplier_Import_Sample.csv';
+                    a.click();
+                  }}
+                  className="text-xs text-blue-600 font-bold hover:underline flex items-center gap-1"
+                >
+                  <Download size={13} /> Download CSV Sample Template
+                </a>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-3 border-t border-slate-100">
+              <button
+                onClick={() => setShowImportModal(false)}
+                className="px-4 py-2 bg-slate-100 text-slate-800 text-xs font-semibold rounded-lg hover:bg-slate-200"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* EXPANDED ITEMS MODAL FOR >5 ITEMS */}
       {expandedFieldModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
