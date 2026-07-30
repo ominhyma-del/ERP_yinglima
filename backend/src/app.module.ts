@@ -9,8 +9,6 @@ import { ProductService } from './modules/product/product.service';
 import { ProductController } from './modules/product/product.controller';
 import { InquiryService } from './modules/inquiry/inquiry.service';
 import { InquiryController } from './modules/inquiry/inquiry.controller';
-import { MastersService } from './modules/masters/masters.service';
-import { MastersController } from './modules/masters/masters.controller';
 import { CompanyService } from './modules/company/company.service';
 import { CompanyController } from './modules/company/company.controller';
 import { AuthController } from './modules/auth/auth.controller';
@@ -29,7 +27,6 @@ import { AuditService } from './modules/audit/audit.service';
     BuyerController,
     ProductController,
     InquiryController,
-    MastersController,
     CompanyController,
     AuthController,
     AuditController,
@@ -40,7 +37,6 @@ import { AuditService } from './modules/audit/audit.service';
     BuyerService,
     ProductService,
     InquiryService,
-    MastersService,
     CompanyService,
     AuthService,
     AuditService,
