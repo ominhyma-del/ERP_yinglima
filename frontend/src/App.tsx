@@ -18,6 +18,15 @@ export function App() {
   const { isAuthenticated } = useAuth();
   const [activeModule, setActiveModule] = useState<string>('suppliers');
   const [currentCompany, setCompany] = useState<string>('c1');
+  const { isAuthenticated, user } = useAuth();
+
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
+
+  const memberForCheck = user ? ({ accountType: user.accountType, permissions: user.permissions } as any) : null;
+  const gate = MODULE_GATE[activeModule];
+  const allowed = gate === null || gate === undefined || can(memberForCheck, gate, 'view');
 
   if (!isAuthenticated) {
     return <LoginPage />;
