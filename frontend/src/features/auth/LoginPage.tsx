@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { Lock, Mail, Shield, CheckCircle2, UserCheck, AlertCircle, ArrowRight } from 'lucide-react';
+import { Lock, Mail, AlertCircle, ArrowRight, Eye, EyeOff } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
   const { login } = useAuth();
-  const [email, setEmail] = useState('admin@yinglima.com');
-  const [password, setPassword] = useState('admin123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,18 +24,6 @@ export const LoginPage: React.FC = () => {
     const res = login(email, password, rememberMe);
     if (!res.ok) {
       setError(res.error || 'Invalid login credentials.');
-    }
-  };
-
-  const handleDemoLogin = (type: 'ADMIN' | 'USER') => {
-    if (type === 'ADMIN') {
-      setEmail('admin@yinglima.com');
-      setPassword('admin123');
-      login('admin@yinglima.com', 'admin123', true);
-    } else {
-      setEmail('user@yinglima.com');
-      setPassword('user123');
-      login('user@yinglima.com', 'user123', true);
     }
   };
 
@@ -152,15 +141,23 @@ export const LoginPage: React.FC = () => {
                 <div className="relative">
                   <Lock size={16} className="absolute left-3.5 top-3 text-slate-400" />
                   <input
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => {
                       setPassword(e.target.value);
                       setError(null);
                     }}
-                    className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-xs pl-10 pr-4 py-3 rounded-xl outline-none focus:border-blue-600 focus:bg-white font-medium transition-all"
+                    className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-xs pl-10 pr-10 py-3 rounded-xl outline-none focus:border-blue-600 focus:bg-white font-medium transition-all"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3.5 top-3 text-slate-400 hover:text-slate-600 focus:outline-none cursor-pointer flex items-center justify-center"
+                    title={showPassword ? 'Hide Password' : 'Show Password'}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
                 </div>
               </div>
 
@@ -190,27 +187,6 @@ export const LoginPage: React.FC = () => {
                 <ArrowRight size={16} />
               </button>
             </form>
-          </div>
-
-          {/* QUICK DEMO LOGIN BUTTONS */}
-          <div className="pt-8 mt-6 border-t border-slate-100 space-y-2">
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider text-center mb-2">
-              Quick One-Click Test Login:
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => handleDemoLogin('ADMIN')}
-                className="py-2.5 px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 border border-indigo-200 transition-colors cursor-pointer"
-              >
-                <Shield size={14} /> Login as Admin
-              </button>
-              <button
-                onClick={() => handleDemoLogin('USER')}
-                className="py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 border border-slate-200 transition-colors cursor-pointer"
-              >
-                <UserCheck size={14} /> Login as User
-              </button>
-            </div>
           </div>
         </div>
       </div>
