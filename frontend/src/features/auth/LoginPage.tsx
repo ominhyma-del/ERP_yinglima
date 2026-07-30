@@ -20,9 +20,9 @@ export const LoginPage: React.FC = () => {
       return;
     }
 
-    const success = login(email, password);
-    if (!success) {
-      setError('Invalid login credentials.');
+    const res = login(email, password, rememberMe);
+    if (!res.ok) {
+      setError(res.error || 'Invalid login credentials.');
     }
   };
 
@@ -30,11 +30,11 @@ export const LoginPage: React.FC = () => {
     if (type === 'ADMIN') {
       setEmail('admin@yinglima.com');
       setPassword('admin123');
-      login('admin@yinglima.com', 'admin123', 'ADMIN');
+      login('admin@yinglima.com', 'admin123', true);
     } else {
       setEmail('user@yinglima.com');
       setPassword('user123');
-      login('user@yinglima.com', 'user123', 'USER');
+      login('user@yinglima.com', 'user123', true);
     }
   };
 

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { findMemberByEmail, TeamMember, AccountType, PermissionSet } from '../team/teamStore';
+import { findMemberByEmail, TeamMember, AccountType, PermissionSet, useTeamStore } from '../team/teamStore';
 
 /**
  * ── Mock Authentication ───────────────────────────────────────────────────
@@ -9,10 +9,6 @@ import { findMemberByEmail, TeamMember, AccountType, PermissionSet } from '../te
  * `features/team/teamStore.ts` — the same data Team Members and Roles &
  * Permissions read/write. That means promoting someone to Admin there is
  * immediately reflected here the next time they log in.
- *
- * Not wired to a real backend yet. When real auth is added, only the
- * `login()` function below needs replacing — everything else (session
- * storage, remember-me, routing) can stay as-is.
  */
 
 export interface AuthUser {
@@ -82,11 +78,6 @@ function readStoredSession(): StoredSession | null {
   return null;
 }
 
-// Look a member up by id via the same store the rest of the app uses.
-// (Kept as a plain import-time function rather than the hook, since this
-// runs outside React component render.)
-import { useTeamStore } from '../team/teamStore';
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { members } = useTeamStore();
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -108,14 +99,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   // Keep the logged-in user's permissions/account type live if an admin
-  // changes them elsewhere (e.g. promotes them, or edits their permissions)
-  // while they're logged in, without requiring a re-login.
+  // changes them elsewhere while logged in.
   useEffect(() => {
     if (!user) return;
     const fresh = members.find((m) => m.id === user.id);
     if (fresh) setUser(toAuthUser(fresh));
     else {
-      // Member was deleted while logged in -> force logout
       logout();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -132,8 +121,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const newSessionId = genSessionId();
     const session: StoredSession = { sessionId: newSessionId, memberId: member.id, createdAt: new Date().toISOString() };
 
-    // Remember me -> persists across browser restarts (localStorage).
-    // Otherwise -> cleared when the browser tab/session ends (sessionStorage).
     if (remember) {
       localStorage.setItem(SESSION_KEY, JSON.stringify(session));
       sessionStorage.removeItem(SESSION_KEY);
@@ -145,10 +132,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(toAuthUser(member));
     setSessionId(newSessionId);
     setRememberMe(remember);
+
+    // Audit trace logging
+    const auditLogs = JSON.parse(localStorage.getItem('yinglima_audit_logs') || '[]');
+    const newLog = {
+      id: `log-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      user_email: email,
+      action: 'LOGIN_SUCCESS',
+      entity: 'USER_AUTH',
+      entity_id: member.id,
+      role: member.accountType,
+      ip_address: '127.0.0.1 (Local Session)',
+      status: 'SUCCESS',
+      description: `User "${email}" authenticated successfully as ${member.accountType}`,
+    };
+    localStorage.setItem('yinglima_audit_logs', JSON.stringify([newLog, ...auditLogs]));
+
     return { ok: true };
   };
 
   const logout = () => {
+    if (user) {
+      const auditLogs = JSON.parse(localStorage.getItem('yinglima_audit_logs') || '[]');
+      const newLog = {
+        id: `log-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        user_email: user.email,
+        action: 'LOGOUT',
+        entity: 'USER_AUTH',
+        entity_id: user.id,
+        role: user.accountType,
+        ip_address: '127.0.0.1 (Local Session)',
+        status: 'SUCCESS',
+        description: `User "${user.email}" logged out`,
+      };
+      localStorage.setItem('yinglima_audit_logs', JSON.stringify([newLog, ...auditLogs]));
+    }
+
     localStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(SESSION_KEY);
     setUser(null);
