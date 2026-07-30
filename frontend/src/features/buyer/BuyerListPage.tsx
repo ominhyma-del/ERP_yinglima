@@ -181,6 +181,7 @@ export const BuyerListPage: React.FC = () => {
   const [showRuleAlert, setShowRuleAlert] = useState<string | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
   const [importNotification, setImportNotification] = useState<string | null>(null);
+  const [showImpExpDropdown, setShowImpExpDropdown] = useState(false);
   const [eyeModalContent, setEyeModalContent] = useState<{ title: string; items: string[] } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -442,28 +443,49 @@ export const BuyerListPage: React.FC = () => {
         {viewMode === 'list' ? (
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setShowImportModal(true)}
-              className="px-3.5 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium text-xs rounded-lg flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
-            >
-              <Upload size={15} className="text-blue-600" /> Import
-            </button>
-            <button
-              onClick={handleExportCSV}
-              className="px-3.5 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium text-xs rounded-lg flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
-            >
-              <Download size={15} className="text-emerald-600" /> Export
-            </button>
-            <button
               onClick={() => {
                 setEditingBuyerId(null);
                 setFormData({ ...initialFormData });
                 setFormContacts([]);
                 setViewMode('add');
               }}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-lg flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+              className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-lg flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
             >
               <Plus size={16} /> Add Buyer
             </button>
+
+            {/* IMP / EXP DROPDOWN BUTTON MATCHING SUPPLIERS / INQUIRY */}
+            <div className="relative">
+              <button
+                onClick={() => setShowImpExpDropdown(!showImpExpDropdown)}
+                className="px-3.5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+              >
+                <span>Imp / Exp</span>
+                <ChevronDown size={14} />
+              </button>
+              {showImpExpDropdown && (
+                <div className="absolute right-0 mt-1 w-36 bg-white border border-slate-200 rounded-lg shadow-xl z-50 text-xs py-1">
+                  <button
+                    onClick={() => {
+                      setShowImportModal(true);
+                      setShowImpExpDropdown(false);
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center gap-2 text-slate-700 font-semibold cursor-pointer"
+                  >
+                    <Upload size={14} className="text-blue-600" /> Import
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleExportCSV();
+                      setShowImpExpDropdown(false);
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center gap-2 text-slate-700 font-semibold cursor-pointer"
+                  >
+                    <Download size={14} className="text-amber-600" /> Export CSV
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         ) : (
           <button
