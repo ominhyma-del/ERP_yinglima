@@ -1,4 +1,5 @@
 import React from 'react';
+import { NavLink } from 'react-router-dom';
 import {
   ShoppingBag,
   Truck,
@@ -12,79 +13,73 @@ import {
   ShieldCheck,
   RefreshCw,
   FileText,
-  Trash2,
   ShieldAlert,
   LogOut,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { can } from '../../features/team/teamStore';
 
-interface SidebarProps {
-  activeModule: string;
-  setActiveModule: (module: string) => void;
-}
-
 const MODULE_GATE: Record<string, string | null> = {
   suppliers: 'suppliers',
-  inquiries: 'inquiry',
-  import_purchase: 'import_purchase',
+  localpurchase: 'inquiry',
+  'import-purchase': 'import_purchase',
   buyers: 'buyers',
   quotation: 'quotation',
   products: 'products',
-  stock_trans: 'stock',
-  reorder: 'stock',
+  'stock-transactions': 'stock',
+  'reorder-reports': 'stock',
   team: 'team',
   roles: 'roles',
   masters: 'masters',
-  audit_logs: 'roles',
+  'audit-logs': 'roles',
   dashboard: null,
 };
 
-export const Sidebar: React.FC<SidebarProps> = ({ activeModule, setActiveModule }) => {
+export const Sidebar: React.FC = () => {
   const { user, logout } = useAuth();
 
   const menuSections = [
     {
       title: 'PURCHASE',
       items: [
-        { id: 'suppliers', label: 'Suppliers', icon: Truck },
-        { id: 'inquiries', label: 'Local Purchase / Inquiry', icon: FileSpreadsheet },
-        { id: 'import_purchase', label: 'Import Purchase', icon: ShoppingBag },
+        { id: 'suppliers', label: 'Suppliers', icon: Truck, path: '/suppliers' },
+        { id: 'localpurchase', label: 'Local Purchase / Inquiry', icon: FileSpreadsheet, path: '/localpurchase' },
+        { id: 'import-purchase', label: 'Import Purchase', icon: ShoppingBag, path: '/import-purchase' },
       ],
     },
     {
       title: 'SALES & BUYERS',
       items: [
-        { id: 'buyers', label: 'Buyers (Clients)', icon: Users },
-        { id: 'quotation', label: 'Quotation', icon: FileText },
+        { id: 'buyers', label: 'Buyers (Clients)', icon: Users, path: '/buyers' },
+        { id: 'quotation', label: 'Quotation', icon: FileText, path: '/quotation' },
       ],
     },
     {
       title: 'PRODUCTS & STOCK',
       items: [
-        { id: 'products', label: 'Product Master', icon: Package },
-        { id: 'stock_trans', label: 'Stock Transactions', icon: RefreshCw },
-        { id: 'reorder', label: 'Re-Order Reports', icon: BarChart3 },
+        { id: 'products', label: 'Product Master', icon: Package, path: '/products' },
+        { id: 'stock-transactions', label: 'Stock Transactions', icon: RefreshCw, path: '/stock-transactions' },
+        { id: 'reorder-reports', label: 'Re-Order Reports', icon: BarChart3, path: '/reorder-reports' },
       ],
     },
     {
       title: 'TEAM & ACCESS',
       items: [
-        { id: 'team', label: 'Team Members', icon: Users },
-        { id: 'roles', label: 'Roles & Permission', icon: ShieldCheck },
-        { id: 'audit_logs', label: 'Audit Trace Logs', icon: ShieldAlert },
+        { id: 'team', label: 'Team Members', icon: Users, path: '/team' },
+        { id: 'roles', label: 'Roles & Permission', icon: ShieldCheck, path: '/roles' },
+        { id: 'audit-logs', label: 'Audit Trace Logs', icon: ShieldAlert, path: '/audit-logs' },
       ],
     },
     {
       title: 'SETTINGS',
       items: [
-        { id: 'masters', label: 'Masters', icon: Database },
+        { id: 'masters', label: 'Masters', icon: Database, path: '/masters' },
       ],
     },
     {
       title: 'AI SERVICES',
       items: [
-        { id: 'dashboard', label: 'AI Optimization & Risk', icon: Bot },
+        { id: 'dashboard', label: 'AI Optimization & Risk', icon: Bot, path: '/dashboard' },
       ],
     },
   ];
@@ -127,23 +122,28 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeModule, setActiveModule 
               </h2>
               {visibleItems.map((item) => {
                 const Icon = item.icon;
-                const isActive = activeModule === item.id;
                 return (
-                  <button
+                  <NavLink
                     key={item.id}
-                    onClick={() => setActiveModule(item.id)}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                      isActive
-                        ? 'bg-blue-50 text-blue-600 border-l-4 border-blue-600 font-bold shadow-xs'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                    }`}
+                    to={item.path}
+                    className={({ isActive }) =>
+                      `w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        isActive
+                          ? 'bg-blue-50 text-blue-600 border-l-4 border-blue-600 font-bold shadow-xs'
+                          : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                      }`
+                    }
                   >
-                    <div className="flex items-center gap-2.5">
-                      <Icon size={17} className={isActive ? 'text-blue-600' : 'text-slate-400'} />
-                      <span>{item.label}</span>
-                    </div>
-                    {isActive && <ChevronRight size={14} className="text-blue-600" />}
-                  </button>
+                    {({ isActive }) => (
+                      <>
+                        <div className="flex items-center gap-2.5">
+                          <Icon size={17} className={isActive ? 'text-blue-600' : 'text-slate-400'} />
+                          <span>{item.label}</span>
+                        </div>
+                        {isActive && <ChevronRight size={14} className="text-blue-600" />}
+                      </>
+                    )}
+                  </NavLink>
                 );
               })}
             </div>
