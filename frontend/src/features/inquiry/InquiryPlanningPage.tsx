@@ -32,6 +32,7 @@ const companyConsignmentMasterMap: Record<string, { code: string; label: string 
   'F&B Uganda Ingredients Ltd': [
     { code: 'FB1', label: 'FB1 - F&B Uganda Shipment 1' },
     { code: 'FB2', label: 'FB2 - F&B Uganda Shipment 2' },
+    { code: 'FB3', label: 'FB3 - F&B Uganda Shipment 3' },
   ],
   'One Stop General Trading Uganda': [
     { code: 'OS1', label: 'OS1 - One Stop Uganda Shipment 1' },
@@ -41,6 +42,7 @@ const companyConsignmentMasterMap: Record<string, { code: string; label: string 
     { code: 'ING1', label: 'ING1 - Inhyma Gujarat Shipment 1' },
     { code: 'ING2', label: 'ING2 - Inhyma Gujarat Shipment 2' },
     { code: 'INM1', label: 'INM1 - Inhyma Mumbai Shipment 1' },
+    { code: 'INM2', label: 'INM2 - Inhyma Mumbai Shipment 2' },
     { code: 'INC1', label: 'INC1 - Inhyma Chennai Shipment 1' },
     { code: 'INI1', label: 'INI1 - Inhyma Indore Shipment 1' },
   ],
@@ -240,6 +242,27 @@ export const InquiryPlanningPage: React.FC = () => {
     }));
   };
 
+  // Open Inquiry Modal with Prefilled Memory for Brand & Specs
+  const handleOpenInquiryModal = (type: 'QUICK' | 'MAIN') => {
+    const lastBrand = localStorage.getItem('yinglima_last_brand_pref') || 'TTCA Brand Preferred';
+    const lastSpecs = localStorage.getItem('yinglima_last_product_specs') || 'Standard export packaging';
+    const initialComp = userRole === 'ADMIN' ? loggedInCompany : loggedInCompany;
+    const initialCode = companyConsignmentMasterMap[initialComp]?.[0]?.code || 'FB1';
+
+    setFormData({
+      company: initialComp,
+      consignment_code: initialCode,
+      product_name: '',
+      product_code: '',
+      uom: '',
+      quantity: 100,
+      brand_preference: lastBrand,
+      product_specs: lastSpecs,
+      status: 'PROPOSED',
+    });
+    setShowInquiryModal(type);
+  };
+
   // Quick or Main Form Submit Handler
   const handleSaveInquiry = (e: React.FormEvent) => {
     e.preventDefault();
@@ -250,6 +273,14 @@ export const InquiryPlanningPage: React.FC = () => {
     const matched = masterProductOptions.find((p) => p.name === formData.product_name);
     const requiresLic = matched ? matched.requiresLicense : false;
     const licRem = matched ? matched.licenseRemark : '';
+
+    // Remember last entered Brand Preference and Product Specs in localStorage memory
+    if (formData.brand_preference) {
+      localStorage.setItem('yinglima_last_brand_pref', formData.brand_preference);
+    }
+    if (formData.product_specs) {
+      localStorage.setItem('yinglima_last_product_specs', formData.product_specs);
+    }
 
     const newItem = {
       id: `item-${Date.now()}`,
@@ -429,13 +460,13 @@ export const InquiryPlanningPage: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setShowInquiryModal('QUICK')}
+            onClick={() => handleOpenInquiryModal('QUICK')}
             className="px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
           >
             <Zap size={15} /> Quick Add Inquiry
           </button>
           <button
-            onClick={() => setShowInquiryModal('MAIN')}
+            onClick={() => handleOpenInquiryModal('MAIN')}
             className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
           >
             <Plus size={16} /> + ADD NEW
