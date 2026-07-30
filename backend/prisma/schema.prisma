@@ -1,0 +1,518 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ==========================================
+// ENUMS
+// ==========================================
+enum RecordStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum PartyStatus {
+  NEW
+  EXISTING
+}
+
+enum PotentialStatus {
+  YES
+  NO
+  UNSELECTED
+}
+
+enum PartyType {
+  MANUFACTURER
+  TRADER
+}
+
+enum PartyGrade {
+  A
+  B
+  C
+}
+
+enum InquiryStatus {
+  PROPOSED
+  PARTIALLY_APPROVED
+  FULLY_APPROVED
+}
+
+enum InquiryItemStatus {
+  PROPOSED
+  APPROVED
+  REJECTED
+}
+
+enum TallyPostStatus {
+  PENDING
+  POSTED
+}
+
+// ==========================================
+// TENANT & CORE MODULES
+// ==========================================
+model Company {
+  id          String       @id @default(uuid()) @db.Uuid
+  code        String       @unique
+  name        String
+  tax_number  String?
+  currency    String       @default("USD")
+  status      RecordStatus @default(ACTIVE)
+  created_at  DateTime     @default(now())
+  updated_at  DateTime     @updatedAt
+  deleted_at  DateTime?    @db.Timestamp
+
+  branches    Branch[]
+  users       UserCompany[]
+  suppliers   Supplier[]
+  buyers      Buyer[]
+  products    Product[]
+  inquiries   InquiryConsignment[]
+
+  @@map("companies")
+}
+
+model Branch {
+  id          String       @id @default(uuid()) @db.Uuid
+  company_id  String       @db.Uuid
+  code        String
+  name        String
+  city        String?
+  country     String?
+  status      RecordStatus @default(ACTIVE)
+  created_at  DateTime     @default(now())
+  updated_at  DateTime     @updatedAt
+  deleted_at  DateTime?    @db.Timestamp
+
+  company     Company      @relation(fields: [company_id], references: [id], onDelete: Cascade)
+
+  @@unique([company_id, code])
+  @@map("branches")
+}
+
+model User {
+  id            String       @id @default(uuid()) @db.Uuid
+  email         String       @unique
+  password_hash String?
+  full_name     String
+  phone         String?
+  avatar_url    String?
+  role          String       @default("USER")
+  status        RecordStatus @default(ACTIVE)
+  department    String?
+  branch        String?
+  permissions   Json?
+  created_at    DateTime     @default(now())
+  updated_at    DateTime     @updatedAt
+  deleted_at    DateTime?    @db.Timestamp
+
+  user_companies UserCompany[]
+  user_roles     UserRole[]
+  audit_logs     AuditLog[]
+
+  @@map("users")
+}
+
+model UserCompany {
+  id          String   @id @default(uuid()) @db.Uuid
+  user_id     String   @db.Uuid
+  company_id  String   @db.Uuid
+  branch_id   String?  @db.Uuid
+  is_default  Boolean  @default(false)
+
+  user        User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  company     Company  @relation(fields: [company_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, company_id])
+  @@map("user_companies")
+}
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique
+  description String?
+  permissions String[]
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  user_roles  UserRole[]
+
+  @@map("roles")
+}
+
+model UserRole {
+  user_id     String @db.Uuid
+  role_id     String @db.Uuid
+
+  user        User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  role        Role   @relation(fields: [role_id], references: [id], onDelete: Cascade)
+
+  @@id([user_id, role_id])
+  @@map("user_roles")
+}
+
+// ==========================================
+// MASTERS
+// ==========================================
+model CountryMaster {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique
+  iso_code    String   @unique
+  phone_code  String
+  min_digits  Int      @default(7)
+  max_digits  Int      @default(11)
+  created_at  DateTime @default(now())
+
+  provinces   ProvinceMaster[]
+
+  @@map("master_countries")
+}
+
+model ProvinceMaster {
+  id          String        @id @default(uuid()) @db.Uuid
+  country_id  String        @db.Uuid
+  name        String
+
+  country     CountryMaster @relation(fields: [country_id], references: [id])
+  cities      CityMaster[]
+
+  @@map("master_provinces")
+}
+
+model CityMaster {
+  id          String         @id @default(uuid()) @db.Uuid
+  province_id String         @db.Uuid
+  name        String
+
+  province    ProvinceMaster @relation(fields: [province_id], references: [id])
+
+  @@map("master_cities")
+}
+
+model ProductCategory {
+  id          String        @id @default(uuid()) @db.Uuid
+  company_id  String        @db.Uuid
+  branch_id   String?       @db.Uuid
+  name        String
+  status      RecordStatus  @default(ACTIVE)
+  created_by  String        @db.Uuid
+  updated_by  String?       @db.Uuid
+  created_at  DateTime      @default(now())
+  updated_at  DateTime      @updatedAt
+  deleted_at  DateTime?     @db.Timestamp
+
+  subcategories ProductSubCategory[]
+  products      Product[]
+
+  @@map("product_categories")
+}
+
+model ProductSubCategory {
+  id          String          @id @default(uuid()) @db.Uuid
+  company_id  String          @db.Uuid
+  branch_id   String?         @db.Uuid
+  category_id String          @db.Uuid
+  name        String
+  status      RecordStatus    @default(ACTIVE)
+  created_by  String          @db.Uuid
+  updated_by  String?         @db.Uuid
+  created_at  DateTime        @default(now())
+  updated_at  DateTime        @updatedAt
+  deleted_at  DateTime?       @db.Timestamp
+
+  category    ProductCategory @relation(fields: [category_id], references: [id])
+  products    Product[]
+
+  @@map("product_sub_categories")
+}
+
+model Brand {
+  id          String       @id @default(uuid()) @db.Uuid
+  company_id  String       @db.Uuid
+  branch_id   String?      @db.Uuid
+  name        String
+  description String?
+  status      RecordStatus @default(ACTIVE)
+  created_by  String       @db.Uuid
+  updated_by  String?      @db.Uuid
+  created_at  DateTime     @default(now())
+  updated_at  DateTime     @updatedAt
+  deleted_at  DateTime?    @db.Timestamp
+
+  products    Product[]
+
+  @@map("brands")
+}
+
+model HsnMaster {
+  id             String    @id @default(uuid()) @db.Uuid
+  hsn_code       String    @unique
+  description    String?
+  vat_refund_pct Decimal   @db.Decimal(5, 2)
+  created_at     DateTime  @default(now())
+
+  products       Product[]
+
+  @@map("master_hsn")
+}
+
+model ConsignmentCodeMaster {
+  id          String   @id @default(uuid()) @db.Uuid
+  company_id  String   @db.Uuid
+  code_prefix String   @unique
+  description String?
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now())
+
+  inquiries   InquiryConsignment[]
+
+  @@map("master_consignment_codes")
+}
+
+// ==========================================
+// SUPPLIER MODULE
+// ==========================================
+model Supplier {
+  id                         String             @id @default(uuid()) @db.Uuid
+  company_id                 String             @db.Uuid
+  branch_id                  String?            @db.Uuid
+  name                       String
+  supplier_type              PartyType          @default(MANUFACTURER)
+  brand_description          String?
+  country                    String             @default("China")
+  province                   String?
+  city                       String?
+  town                       String?
+  address                    String?
+  tax_id                     String?
+  primary_website            String?
+  secondary_website          String?
+  grade                      PartyGrade?
+  current_status             PartyStatus        @default(NEW)
+  potential                  PotentialStatus    @default(UNSELECTED)
+  potential_reason           String?
+  secondary_products_desc    String?
+  visited_factory            Boolean            @default(false)
+  visit_remarks              String?
+  visit_attachments          String[]
+  overall_remarks            String?
+  product_categories         String[]
+  key_strength_subcategories String[]
+  status                     RecordStatus       @default(ACTIVE)
+  created_by                 String             @db.Uuid
+  updated_by                 String?            @db.Uuid
+  created_at                 DateTime           @default(now())
+  updated_at                 DateTime           @updatedAt
+  deleted_at                 DateTime?          @db.Timestamp
+
+  company                    Company            @relation(fields: [company_id], references: [id])
+  contacts                   SupplierContact[]
+
+  @@index([company_id, current_status, potential])
+  @@map("suppliers")
+}
+
+model SupplierContact {
+  id                 String   @id @default(uuid()) @db.Uuid
+  supplier_id        String   @db.Uuid
+  salutation         String?
+  full_name          String
+  designation        String?
+  handling_territory String?
+  country            String   @default("China")
+  calling_number     String?
+  whatsapp_number    String?
+  wechat_number      String?
+  email              String?
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
+
+  supplier           Supplier @relation(fields: [supplier_id], references: [id], onDelete: Cascade)
+
+  @@map("supplier_contacts")
+}
+
+// ==========================================
+// BUYER MODULE
+// ==========================================
+model Buyer {
+  id                      String          @id @default(uuid()) @db.Uuid
+  company_id              String          @db.Uuid
+  branch_id               String?         @db.Uuid
+  name                    String
+  buyer_type              PartyType       @default(MANUFACTURER)
+  country                 String          @default("Uganda")
+  city                    String?
+  address                 String?
+  tax_id                  String?
+  website                 String?
+  current_status          PartyStatus     @default(NEW)
+  product_range_supplied  String?
+  potential               PotentialStatus @default(UNSELECTED)
+  potential_reason        String?
+  client_grade            PartyGrade?
+  currently_buying_from   String?
+  overall_remarks         String?
+  product_categories      String[]
+  potential_subcategories String[]
+  status                  RecordStatus    @default(ACTIVE)
+  created_by              String          @db.Uuid
+  updated_by              String?         @db.Uuid
+  created_at              DateTime        @default(now())
+  updated_at              DateTime        @updatedAt
+  deleted_at              DateTime?       @db.Timestamp
+
+  company                 Company         @relation(fields: [company_id], references: [id])
+  contacts                BuyerContact[]
+
+  @@index([company_id, current_status, potential])
+  @@map("buyers")
+}
+
+model BuyerContact {
+  id              String   @id @default(uuid()) @db.Uuid
+  buyer_id        String   @db.Uuid
+  salutation      String?
+  full_name       String
+  designation     String?
+  country         String   @default("Uganda")
+  calling_number  String?
+  whatsapp_number String?
+  email           String?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  buyer           Buyer    @relation(fields: [buyer_id], references: [id], onDelete: Cascade)
+
+  @@map("buyer_contacts")
+}
+
+// ==========================================
+// PRODUCT MASTER MODULE
+// ==========================================
+model Product {
+  id                    String             @id @default(uuid()) @db.Uuid
+  company_id            String             @db.Uuid
+  branch_id             String?            @db.Uuid
+  name_tally            String
+  name_invoice          String?
+  product_code          String
+  category_id           String             @db.Uuid
+  subcategory_id        String             @db.Uuid
+  brand_id              String?            @db.Uuid
+  hsn_id                String?            @db.Uuid
+  hsn_code              String?
+  vat_refund_pct        Decimal            @default(0.00) @db.Decimal(5, 2)
+  license_required_info String?
+  uom                   String
+  packaging_qty         Decimal            @default(1.00) @db.Decimal(12, 3)
+  net_weight            Decimal            @default(0.00) @db.Decimal(12, 3)
+  gross_weight          Decimal            @default(0.00) @db.Decimal(12, 3)
+  length_cm             Decimal            @default(0.00) @db.Decimal(10, 2)
+  width_cm              Decimal            @default(0.00) @db.Decimal(10, 2)
+  height_cm             Decimal            @default(0.00) @db.Decimal(10, 2)
+  unit_cbm              Decimal            @default(0.00) @db.Decimal(12, 6)
+  current_stock         Decimal            @default(0.00) @db.Decimal(14, 3)
+  specifications        String?
+  image_url             String?
+  status                RecordStatus       @default(ACTIVE)
+  created_by            String             @db.Uuid
+  updated_by            String?            @db.Uuid
+  created_at            DateTime           @default(now())
+  updated_at            DateTime           @updatedAt
+  deleted_at            DateTime?          @db.Timestamp
+
+  company               Company            @relation(fields: [company_id], references: [id])
+  category              ProductCategory    @relation(fields: [category_id], references: [id])
+  subcategory           ProductSubCategory @relation(fields: [subcategory_id], references: [id])
+  brand                 Brand?             @relation(fields: [brand_id], references: [id])
+  hsn                   HsnMaster?         @relation(fields: [hsn_id], references: [id])
+  inquiry_items         InquiryItem[]
+
+  @@unique([company_id, product_code])
+  @@index([company_id, category_id, subcategory_id])
+  @@map("products")
+}
+
+// ==========================================
+// INQUIRY & CONSIGNMENT MODULE
+// ==========================================
+model InquiryConsignment {
+  id                    String                 @id @default(uuid()) @db.Uuid
+  company_id            String                 @db.Uuid
+  branch_id             String?                @db.Uuid
+  consignment_code      String
+  consignment_master_id String?                @db.Uuid
+  status                InquiryStatus          @default(PROPOSED)
+  total_cbm             Decimal                @default(0.000000) @db.Decimal(14, 6)
+  total_weight          Decimal                @default(0.000) @db.Decimal(14, 3)
+  proposed_by           String?                @db.Uuid
+  proposed_at           DateTime?
+  approved_by           String?                @db.Uuid
+  approved_at           DateTime?
+  created_by            String                 @db.Uuid
+  updated_by            String?                @db.Uuid
+  created_at            DateTime               @default(now())
+  updated_at            DateTime               @updatedAt
+  deleted_at            DateTime?              @db.Timestamp
+
+  company               Company                @relation(fields: [company_id], references: [id])
+  consignment_code_ref  ConsignmentCodeMaster? @relation(fields: [consignment_master_id], references: [id])
+  items                 InquiryItem[]
+
+  @@index([company_id, consignment_code])
+  @@map("inquiry_consignments")
+}
+
+model InquiryItem {
+  id                   String             @id @default(uuid()) @db.Uuid
+  consignment_id       String             @db.Uuid
+  product_id           String             @db.Uuid
+  quantity             Decimal            @db.Decimal(14, 3)
+  uom                  String
+  brand_preference     String?
+  product_specs        String?
+  procurement_remarks  String?
+  item_status          InquiryItemStatus  @default(PROPOSED)
+  tally_post_status    TallyPostStatus    @default(PENDING)
+  license_warning_flag Boolean            @default(false)
+  proposed_by          String?            @db.Uuid
+  proposed_at          DateTime?
+  approved_by          String?            @db.Uuid
+  approved_at          DateTime?
+  created_at           DateTime           @default(now())
+  updated_at           DateTime           @updatedAt
+
+  consignment          InquiryConsignment @relation(fields: [consignment_id], references: [id], onDelete: Cascade)
+  product              Product            @relation(fields: [product_id], references: [id])
+
+  @@map("inquiry_items")
+}
+
+// ==========================================
+// AUDIT LOG & TIMELINE
+// ==========================================
+model AuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  company_id  String   @db.Uuid
+  user_id     String   @db.Uuid
+  entity_name String
+  entity_id   String   @db.Uuid
+  action      String
+  before_state Json?
+  after_state  Json?
+  ip_address  String?
+  created_at  DateTime @default(now())
+
+  user        User     @relation(fields: [user_id], references: [id])
+
+  @@index([company_id, entity_name, entity_id])
+  @@map("audit_logs")
+}
