@@ -142,6 +142,7 @@ const CompanyAutocompleteInput: React.FC<{
 export const SupplierListPage: React.FC = () => {
   const [viewMode, setViewMode] = useState<'list' | 'add' | 'detail'>('list');
   const [selectedSupplier, setSelectedSupplier] = useState<any>(null);
+  const [inlineEditEnabled, setInlineEditEnabled] = useState(false);
   const [editingSupplierId, setEditingSupplierId] = useState<string | null>(null); // EDIT SUPPLIER STATE
   const [showRuleAlert, setShowRuleAlert] = useState<string | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
@@ -665,6 +666,20 @@ export const SupplierListPage: React.FC = () => {
             >
               <Filter size={16} />
             </button>
+ 
+            {/* Inline Edit Toggle Button */}
+            <button
+              onClick={() => setInlineEditEnabled(!inlineEditEnabled)}
+              className={`p-2.5 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs text-xs font-bold ${
+                inlineEditEnabled
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white animate-pulse'
+                  : 'bg-white border border-slate-300 hover:bg-slate-100 text-slate-700'
+              }`}
+              title="Toggle Inline Editing Mode"
+            >
+              <Edit size={14} />
+              <span>Inline Edit</span>
+            </button>
 
             {/* + ADD NEW BUTTON */}
             <button
@@ -963,9 +978,9 @@ export const SupplierListPage: React.FC = () => {
                     <th className="p-3.5">City, Province</th>
                     <th className="p-3.5">Brand</th>
                     <th className="p-3.5">Supplier Type</th>
-                    <th className="p-3.5">Current Status</th>
-                    <th className="p-3.5">Supplier's Grade (Editable)</th>
-                    <th className="p-3.5">Potential (Editable)</th>
+                    <th className="p-3.5">Current Status{inlineEditEnabled && ' (Editable)'}</th>
+                    <th className="p-3.5">Supplier's Grade{inlineEditEnabled && ' (Editable)'}</th>
+                    <th className="p-3.5">Potential{inlineEditEnabled && ' (Editable)'}</th>
                     <th className="p-3.5 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -1034,42 +1049,65 @@ export const SupplierListPage: React.FC = () => {
                         <td className="p-3.5 text-slate-700">{item.brand_name || '-'}</td>
                         <td className="p-3.5 font-semibold text-slate-800">{item.supplier_type}</td>
 
-                        {/* Current Status (1-way editable) */}
+                        {/* Current Status */}
                         <td className="p-3.5">
-                          <select
-                            value={item.current_status}
-                            onChange={(e) => handleStatusChange(item.id, e.target.value)}
-                            className="bg-slate-50 border border-slate-200 text-xs text-slate-900 p-1 rounded font-bold cursor-pointer outline-none"
-                          >
-                            <option value="NEW">New</option>
-                            <option value="EXISTING">Existing</option>
-                          </select>
+                          {inlineEditEnabled ? (
+                            <select
+                              value={item.current_status}
+                              onChange={(e) => handleStatusChange(item.id, e.target.value)}
+                              className="bg-slate-50 border border-slate-200 text-xs text-slate-900 p-1 rounded font-bold cursor-pointer outline-none"
+                            >
+                              <option value="NEW">New</option>
+                              <option value="EXISTING">Existing</option>
+                            </select>
+                          ) : (
+                            <span className={`px-2 py-1 rounded font-bold text-xs uppercase ${
+                              item.current_status === 'EXISTING' ? 'bg-slate-200 text-slate-800' : 'bg-slate-100 text-slate-600'
+                            }`}>
+                              {item.current_status === 'EXISTING' ? 'Existing' : 'New'}
+                            </span>
+                          )}
                         </td>
 
-                        {/* Editable Supplier's Grade in List */}
+                        {/* Supplier's Grade */}
                         <td className="p-3.5">
-                          <select
-                            value={item.grade}
-                            onChange={(e) => handleInlineGradeChange(item.id, e.target.value)}
-                            className="bg-blue-50 border border-blue-200 text-blue-800 text-xs p-1 rounded font-bold cursor-pointer outline-none"
-                          >
-                            <option value="A">Grade A</option>
-                            <option value="B">Grade B</option>
-                            <option value="C">Grade C</option>
-                          </select>
+                          {inlineEditEnabled ? (
+                            <select
+                              value={item.grade}
+                              onChange={(e) => handleInlineGradeChange(item.id, e.target.value)}
+                              className="bg-blue-50 border border-blue-200 text-blue-800 text-xs p-1 rounded font-bold cursor-pointer outline-none"
+                            >
+                              <option value="A">Grade A</option>
+                              <option value="B">Grade B</option>
+                              <option value="C">Grade C</option>
+                            </select>
+                          ) : (
+                            <span className="px-2 py-1 bg-blue-50 text-blue-800 rounded font-bold text-xs">
+                              Grade {item.grade || 'Select'}
+                            </span>
+                          )}
                         </td>
 
-                        {/* Editable Potential in List */}
+                        {/* Potential */}
                         <td className="p-3.5">
-                          <select
-                            value={item.potential}
-                            onChange={(e) => handleInlinePotentialChange(item.id, e.target.value)}
-                            className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs p-1 rounded font-bold cursor-pointer outline-none"
-                          >
-                            <option value="YES">Yes</option>
-                            <option value="NO">No</option>
-                            <option value="UNSELECTED">Select</option>
-                          </select>
+                          {inlineEditEnabled ? (
+                            <select
+                              value={item.potential}
+                              onChange={(e) => handleInlinePotentialChange(item.id, e.target.value)}
+                              className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs p-1 rounded font-bold cursor-pointer outline-none"
+                            >
+                              <option value="YES">Yes</option>
+                              <option value="NO">No</option>
+                              <option value="UNSELECTED">Select</option>
+                            </select>
+                          ) : (
+                            <span className={`px-2 py-1 rounded font-bold text-xs ${
+                              item.potential === 'YES' ? 'bg-emerald-50 text-emerald-800' :
+                              item.potential === 'NO' ? 'bg-rose-50 text-rose-800' : 'bg-slate-100 text-slate-600'
+                            }`}>
+                              {item.potential === 'YES' ? 'Yes' : item.potential === 'NO' ? 'No' : 'Select'}
+                            </span>
+                          )}
                         </td>
 
                         <td className="p-3.5 text-right space-x-1">
