@@ -286,7 +286,7 @@ export const InquiryPlanningPage: React.FC = () => {
   };
 
   // Quick or Main Form Submit Handler
-  const handleSaveInquiry = (e: React.FormEvent) => {
+  const handleSaveInquiry = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.product_name) {
       alert('Please select a Product Name from the dropdown menu.');
@@ -325,9 +325,14 @@ export const InquiryPlanningPage: React.FC = () => {
       proposed_by: 'Yinglima Admin',
     };
 
-    // Persist to Supabase Cloud DB via NestJS Backend API
-    inquiryApi.createInquiryItem(newItem);
     setGridItems([newItem, ...gridItems]);
+
+    // Persist to Supabase Cloud DB via NestJS Backend API
+    await inquiryApi.createInquiryItem(newItem);
+    const updatedConsignments = await inquiryApi.getConsignments();
+    if (updatedConsignments && Array.isArray(updatedConsignments) && updatedConsignments.length > 0) {
+      setConsignments(updatedConsignments);
+    }
 
     // Ensure Consignment exists in 1st layer summary
     const existsInLayer1 = consignments.some((c) => c.code === formData.consignment_code);

@@ -20,22 +20,58 @@ export interface InquiryItemDto {
 }
 
 export const inquiryApi = {
-  // Fetch Layer 1 Consignments Summary from NestJS API
+  // Fetch Layer 1 Consignments Summary from NestJS API (connected to Supabase DB)
   async getConsignments() {
     try {
       const response = await api.get('/inquiries/layer1-summary');
-      return response.data;
+      const rawList = response.data?.data || response.data;
+      if (Array.isArray(rawList)) {
+        return rawList.map((c: any) => ({
+          id: c.id,
+          company: c.company?.name || 'F&B Uganda Ingredients Ltd',
+          code: c.consignment_code,
+          status: c.status || 'PROPOSED',
+          total_cbm: Number(c.total_cbm) || 0,
+          total_weight: Number(c.total_weight) || 0,
+          proposed_date: c.created_at ? c.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
+          proposed_by: 'Yinglima Admin',
+        }));
+      }
+      return null;
     } catch (error) {
       console.warn('API error fetching consignments summary:', error);
       return null;
     }
   },
 
-  // Fetch Layer 2 Line Items for a consignment code
+  // Fetch Layer 2 Line Items for a consignment code from NestJS API
   async getInquiryItems(consignmentCode: string) {
     try {
       const response = await api.get(`/inquiries/layer2-grid/${consignmentCode}`);
-      return response.data;
+      const consignmentData = response.data;
+      if (consignmentData && consignmentData.items && Array.isArray(consignmentData.items)) {
+        return consignmentData.items.map((i: any) => ({
+          id: i.id,
+          company: consignmentData.company?.name || 'F&B Uganda Ingredients Ltd',
+          consignment_code: consignmentData.consignment_code,
+          product_name: i.product?.name_tally || 'Citric Acid Monohydrate',
+          product_code: i.product?.product_code || 'PRD-CUSTOM',
+          uom: i.uom || i.product?.uom || 'PCS',
+          quantity: Number(i.quantity) || 1,
+          unit_cbm: Number(i.product?.unit_cbm) || 0.1,
+          gross_weight: Number(i.product?.gross_weight) || 20.0,
+          brand_preference: i.brand_preference || 'Standard Preferred',
+          product_specs: i.product_specs || 'Standard Specification',
+          procurement_remarks: i.procurement_remarks || 'China Procurement requirement item.',
+          item_status: i.item_status || 'PROPOSED',
+          tally_post_status: i.tally_post_status || 'PENDING',
+          license_warning: !!i.license_warning_flag,
+          license_remark: i.product?.license_required_info || '',
+          proposed_date: i.created_at ? i.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
+          proposed_by: 'Yinglima Admin',
+        }));
+      }
+      return null;
     } catch (error) {
       console.warn('API error fetching inquiry items:', error);
       return null;
@@ -45,7 +81,6 @@ export const inquiryApi = {
   // Create new Inquiry Item in Supabase DB via NestJS API
   async createInquiryItem(data: InquiryItemDto) {
     try {
-      // Default fallback product_id to seeded Citric Acid / Band Sealer UUID if custom product
       const productId =
         data.product_name?.toLowerCase().includes('sealer')
           ? '99999999-9999-9999-9999-999999999902'
@@ -68,7 +103,7 @@ export const inquiryApi = {
     }
   },
 
-  // Update Item Quantity or Shift Consignment Code
+  // Update Item Quantity
   async updateInquiryItemQuantity(id: string, quantity: number) {
     try {
       const response = await api.patch(`/inquiries/items/${id}/quantity`, { quantity });
