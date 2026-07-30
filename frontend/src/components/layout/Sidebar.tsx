@@ -15,7 +15,10 @@ import {
   RefreshCw,
   FileText,
   Trash2,
+  ShieldAlert,
+  LogOut,
 } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 
 interface SidebarProps {
   activeModule: string;
@@ -23,6 +26,8 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeModule, setActiveModule }) => {
+  const { user, logout } = useAuth();
+
   const menuSections = [
     {
       title: 'PURCHASE',
@@ -52,6 +57,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeModule, setActiveModule 
       items: [
         { id: 'team', label: 'Team Members', icon: Users },
         { id: 'roles', label: 'Roles & Permission', icon: ShieldCheck },
+        { id: 'audit_logs', label: 'Audit Trace Logs', icon: ShieldAlert },
       ],
     },
     {
@@ -115,10 +121,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeModule, setActiveModule 
         ))}
       </div>
 
-      {/* Footer User Info */}
-      <div className="p-3 border-t border-slate-100 bg-slate-50 text-[11px] text-slate-500 flex items-center justify-between">
-        <span>Logged in as <strong>Yinglima Admin</strong></span>
-        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+      {/* Footer User Info & Logout Button */}
+      <div className="p-3 border-t border-slate-100 bg-slate-50 flex items-center justify-between text-xs">
+        <div className="overflow-hidden">
+          <p className="font-bold text-slate-800 truncate">{user?.full_name || 'Yinglima User'}</p>
+          <span className="text-[10px] text-blue-600 font-semibold">{user?.role || 'USER'}</span>
+        </div>
+        <button
+          onClick={logout}
+          className="p-1.5 bg-white border border-slate-200 hover:bg-rose-50 text-slate-600 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
+          title="Sign Out"
+        >
+          <LogOut size={15} />
+        </button>
       </div>
     </aside>
   );

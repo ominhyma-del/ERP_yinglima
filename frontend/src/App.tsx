@@ -1,6 +1,8 @@
 import { useState } from 'react';
+import { useAuth } from './context/AuthContext';
 import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
+import { LoginPage } from './features/auth/LoginPage';
 import { DashboardPage } from './features/dashboard/DashboardPage';
 import { SupplierListPage } from './features/supplier/SupplierListPage';
 import { BuyerListPage } from './features/buyer/BuyerListPage';
@@ -10,10 +12,16 @@ import { InquiryPlanningPage } from './features/inquiry/InquiryPlanningPage';
 import { MastersPage } from './features/masters/MastersPage';
 import { TeamMembersPage } from './features/team/TeamMembersPage';
 import { RolesPermissionsPage } from './features/team/RolesPermissionsPage';
+import { AuditLogsPage } from './features/team/AuditLogsPage';
 
 export function App() {
+  const { isAuthenticated } = useAuth();
   const [activeModule, setActiveModule] = useState<string>('suppliers');
   const [currentCompany, setCompany] = useState<string>('c1');
+
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-800 flex">
@@ -34,6 +42,7 @@ export function App() {
           {activeModule === 'masters' && <MastersPage />}
           {activeModule === 'team' && <TeamMembersPage />}
           {activeModule === 'roles' && <RolesPermissionsPage />}
+          {activeModule === 'audit_logs' && <AuditLogsPage />}
         </main>
       </div>
     </div>
