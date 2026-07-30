@@ -589,15 +589,24 @@ export const InquiryPlanningPage: React.FC = () => {
               ))}
             </div>
 
-            <div className="relative w-full md:w-64">
-              <Search size={15} className="absolute left-3 top-2.5 text-slate-400" />
+            <div className="relative w-full md:w-64 flex items-center">
+              <Search size={15} className="absolute left-3 text-slate-400" />
               <input
                 type="text"
                 placeholder="Search consignments (FB1, OS1...)"
                 value={layer1Search}
                 onChange={(e) => setLayer1Search(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-xs pl-9 pr-3 py-2 rounded-lg outline-none focus:border-blue-500 font-medium"
+                className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-xs pl-9 pr-8 py-2 rounded-lg outline-none focus:border-blue-500 font-medium"
               />
+              {layer1Search && (
+                <button
+                  onClick={() => setLayer1Search('')}
+                  className="absolute right-2.5 p-0.5 hover:bg-slate-200 text-slate-400 hover:text-slate-700 rounded-full transition-colors cursor-pointer"
+                  title="Clear Search"
+                >
+                  <X size={14} />
+                </button>
+              )}
             </div>
           </div>
 

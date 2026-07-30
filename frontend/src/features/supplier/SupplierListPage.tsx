@@ -951,15 +951,26 @@ export const SupplierListPage: React.FC = () => {
             </button>
           </div>
           {/* TABLE SEARCH BAR (MATCHING DARSH IMPEX EXACT LAYOUT) */}
-          <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs flex items-center gap-2">
-            <Search size={16} className="text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search suppliers by name, brand, city, category..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full text-xs text-slate-800 outline-none bg-transparent"
-            />
+          <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 flex-1">
+              <Search size={16} className="text-slate-400 shrink-0" />
+              <input
+                type="text"
+                placeholder="Search suppliers by name, brand, city, category..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full text-xs text-slate-800 outline-none bg-transparent"
+              />
+            </div>
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="p-1 hover:bg-slate-100 text-slate-400 hover:text-slate-700 rounded-full transition-colors cursor-pointer"
+                title="Clear Search"
+              >
+                <X size={15} />
+              </button>
+            )}
           </div>
 
           {/* Supplier Data Table matching exact spec */}
