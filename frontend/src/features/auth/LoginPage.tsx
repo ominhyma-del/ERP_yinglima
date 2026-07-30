@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Lock, Mail, Eye, EyeOff, ShieldCheck, AlertTriangle, Info } from 'lucide-react';
-import { useAuth, DEMO_ACCOUNTS } from './AuthContext';
+import { useAuth } from './AuthContext';
 
 export const LoginPage: React.FC = () => {
   const { login, sessionId, isAuthenticated } = useAuth();
@@ -118,17 +118,16 @@ export const LoginPage: React.FC = () => {
             onClick={() => setShowDemoHelp((v) => !v)}
             className="w-full text-center text-[11px] text-slate-400 hover:text-slate-600 cursor-pointer flex items-center justify-center gap-1"
           >
-            <Info size={11} /> {showDemoHelp ? 'Hide demo accounts' : 'Show demo accounts'}
+            <Info size={11} /> {showDemoHelp ? 'Hide default admin login' : 'Show default admin login'}
           </button>
           {showDemoHelp && (
             <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-[11px] text-slate-600 space-y-1.5">
-              <p className="font-semibold text-slate-500 uppercase tracking-wide text-[10px]">Demo accounts (mock auth — not a real backend yet)</p>
-              {DEMO_ACCOUNTS.map((a) => (
-                <div key={a.email} className="flex items-center justify-between font-mono">
-                  <span>{a.email}</span>
-                  <span className="text-slate-400">{a.password}</span>
-                </div>
-              ))}
+              <p className="font-semibold text-slate-500 uppercase tracking-wide text-[10px]">Default Admin (mock auth — not a real backend yet)</p>
+              <div className="flex items-center justify-between font-mono">
+                <span>admin.yinglima@gmail.com</span>
+                <span className="text-slate-400">yinglima@2026</span>
+              </div>
+              <p className="text-[10px] text-slate-400 pt-1">This account always has full access and can promote any employee to Admin from Team Members.</p>
             </div>
           )}
         </div>
