@@ -203,7 +203,7 @@ export const SupplierListPage: React.FC = () => {
   }, []);
 
   // Active Top Filter & View States matching Darsh Impex
-  const [showFilterPanel, setShowFilterPanel] = useState(true);
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [subTab, setSubTab] = useState<'Active' | 'Inactive'>('Active');
   const [showImpExpDropdown, setShowImpExpDropdown] = useState(false);
   const [showBulkDropdown, setShowBulkDropdown] = useState(false);
