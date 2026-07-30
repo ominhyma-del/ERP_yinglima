@@ -6,7 +6,6 @@ import {
   Users,
   Package,
   FileSpreadsheet,
-  Database,
   BarChart3,
   Bot,
   ChevronRight,
@@ -30,7 +29,6 @@ const MODULE_GATE: Record<string, string | null> = {
   'reorder-reports': 'stock',
   team: 'team',
   roles: 'roles',
-  masters: 'masters',
   'audit-logs': 'roles',
   dashboard: null,
 };
@@ -39,6 +37,12 @@ export const Sidebar: React.FC = () => {
   const { user, logout } = useAuth();
 
   const menuSections = [
+    {
+      title: 'DASHBOARD',
+      items: [
+        { id: 'dashboard', label: 'Dashboard', icon: Bot, path: '/dashboard' },
+      ],
+    },
     {
       title: 'PURCHASE',
       items: [
@@ -68,18 +72,6 @@ export const Sidebar: React.FC = () => {
         { id: 'team', label: 'Team Members', icon: Users, path: '/team' },
         { id: 'roles', label: 'Roles & Permission', icon: ShieldCheck, path: '/roles' },
         { id: 'audit-logs', label: 'Audit Trace Logs', icon: ShieldAlert, path: '/audit-logs' },
-      ],
-    },
-    {
-      title: 'SETTINGS',
-      items: [
-        { id: 'masters', label: 'Masters', icon: Database, path: '/masters' },
-      ],
-    },
-    {
-      title: 'AI SERVICES',
-      items: [
-        { id: 'dashboard', label: 'AI Optimization & Risk', icon: Bot, path: '/dashboard' },
       ],
     },
   ];
