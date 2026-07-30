@@ -8,21 +8,40 @@ import {
   Database,
   BarChart3,
   Bot,
-  Layers,
   ChevronRight,
   ShieldCheck,
-  Building2,
   RefreshCw,
   FileText,
-  Trash2,
+  Crown,
 } from 'lucide-react';
+import { useAuth } from '../../features/auth/AuthContext';
+import { can } from '../../features/team/teamStore';
 
 interface SidebarProps {
   activeModule: string;
   setActiveModule: (module: string) => void;
 }
 
+// Maps each sidebar item id to the permission module key it's gated by.
+// 'dashboard' has no gate (always visible) since it's a read-only overview.
+const MODULE_GATE: Record<string, string | null> = {
+  suppliers: 'suppliers',
+  inquiries: 'inquiry',
+  import_purchase: 'import_purchase',
+  buyers: 'buyers',
+  quotation: 'quotation',
+  products: 'products',
+  stock_trans: 'stock',
+  reorder: 'stock',
+  team: 'team',
+  roles: 'roles',
+  masters: 'masters',
+  dashboard: null,
+};
+
 export const Sidebar: React.FC<SidebarProps> = ({ activeModule, setActiveModule }) => {
+  const { user } = useAuth();
+
   const menuSections = [
     {
       title: 'PURCHASE',
@@ -68,6 +87,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeModule, setActiveModule 
     },
   ];
 
+  // Fake TeamMember shell just for the `can()` check — it only reads
+  // accountType/permissions, both of which live on AuthUser already.
+  const memberForCheck = user
+    ? { accountType: user.accountType, permissions: user.permissions } as any
+    : null;
+
+  const isVisible = (itemId: string) => {
+    const gate = MODULE_GATE[itemId];
+    if (gate === null || gate === undefined) return true;
+    if (!memberForCheck) return false;
+    return can(memberForCheck, gate, 'view');
+  };
+
   return (
     <aside className="w-64 bg-white border-r border-slate-200 flex flex-col h-screen sticky top-0 z-30 select-none shadow-xs">
       {/* YINGLIMA LOGO HEADER */}
@@ -85,40 +117,47 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeModule, setActiveModule 
 
       {/* Navigation Sections */}
       <div className="flex-1 overflow-y-auto py-3 px-2 space-y-4">
-        {menuSections.map((section) => (
-          <div key={section.title} className="space-y-1">
-            <h2 className="px-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-              {section.title}
-            </h2>
-            {section.items.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeModule === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setActiveModule(item.id)}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                    isActive
-                      ? 'bg-blue-50 text-blue-600 border-l-4 border-blue-600 font-bold shadow-xs'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <Icon size={17} className={isActive ? 'text-blue-600' : 'text-slate-400'} />
-                    <span>{item.label}</span>
-                  </div>
-                  {isActive && <ChevronRight size={14} className="text-blue-600" />}
-                </button>
-              );
-            })}
-          </div>
-        ))}
+        {menuSections.map((section) => {
+          const visibleItems = section.items.filter((item) => isVisible(item.id));
+          if (visibleItems.length === 0) return null;
+          return (
+            <div key={section.title} className="space-y-1">
+              <h2 className="px-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                {section.title}
+              </h2>
+              {visibleItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = activeModule === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveModule(item.id)}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                      isActive
+                        ? 'bg-blue-50 text-blue-600 border-l-4 border-blue-600 font-bold shadow-xs'
+                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Icon size={17} className={isActive ? 'text-blue-600' : 'text-slate-400'} />
+                      <span>{item.label}</span>
+                    </div>
+                    {isActive && <ChevronRight size={14} className="text-blue-600" />}
+                  </button>
+                );
+              })}
+            </div>
+          );
+        })}
       </div>
 
       {/* Footer User Info */}
       <div className="p-3 border-t border-slate-100 bg-slate-50 text-[11px] text-slate-500 flex items-center justify-between">
-        <span>Logged in as <strong>Yinglima Admin</strong></span>
-        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+        <span className="flex items-center gap-1.5 truncate">
+          {user?.accountType === 'ADMIN' && <Crown size={11} className="text-amber-500 flex-shrink-0" />}
+          Logged in as <strong className="truncate">{user?.name ?? 'Guest'}</strong>
+        </span>
+        <span className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0"></span>
       </div>
     </aside>
   );
