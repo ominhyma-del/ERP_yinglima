@@ -17,21 +17,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { can } from '../../features/team/teamStore';
-
-const MODULE_GATE: Record<string, string | null> = {
-  suppliers: 'suppliers',
-  localpurchase: 'inquiry',
-  'import-purchase': 'import_purchase',
-  buyers: 'buyers',
-  quotation: 'quotation',
-  products: 'products',
-  'stock-transactions': 'stock',
-  'reorder-reports': 'stock',
-  team: 'team',
-  roles: 'roles',
-  'audit-logs': 'roles',
-  dashboard: null,
-};
+import { ROUTE_PERMISSION } from '../../config/routeAccess';
 
 export const Sidebar: React.FC = () => {
   const { user, logout } = useAuth();
@@ -80,8 +66,8 @@ export const Sidebar: React.FC = () => {
     ? { accountType: user.accountType, permissions: user.permissions } as any
     : null;
 
-  const isVisible = (itemId: string) => {
-    const gate = MODULE_GATE[itemId];
+  const isVisible = (itemPath: string) => {
+    const gate = ROUTE_PERMISSION[itemPath];
     if (gate === null || gate === undefined) return true;
     if (!memberForCheck) return false;
     return can(memberForCheck, gate, 'view');
@@ -105,7 +91,7 @@ export const Sidebar: React.FC = () => {
       {/* Navigation Sections */}
       <div className="flex-1 overflow-y-auto py-3 px-2 space-y-4">
         {menuSections.map((section) => {
-          const visibleItems = section.items.filter((item) => isVisible(item.id));
+          const visibleItems = section.items.filter((item) => isVisible(item.path));
           if (visibleItems.length === 0) return null;
           return (
             <div key={section.title} className="space-y-1">
