@@ -173,7 +173,7 @@ export const BuyerListPage: React.FC = () => {
     product_range_supplied: '',
     potential: 'Select',
     potential_reason: '',
-    client_grade: 'A',
+    client_grade: 'Select',
     currently_buying_from: '',
     overall_remarks: '',
   };
@@ -844,8 +844,19 @@ export const BuyerListPage: React.FC = () => {
                   placeholder="e.g. Uganda Beverage Industries Ltd"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  list="company-name-datalist"
                   className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2 rounded-lg outline-none focus:border-blue-500 focus:bg-white"
                 />
+                <datalist id="company-name-datalist">
+                  <option value="Uganda Beverage Industries Ltd" />
+                  <option value="Mukwano Industries Uganda" />
+                  <option value="Kakira Sugar Ltd Uganda" />
+                  <option value="Nile Breweries Ltd" />
+                  <option value="Jinja Food Processing Co" />
+                  <option value="Kampala Chemicals Ltd" />
+                  <option value="Zhejiang Packaging Machinery Ltd" />
+                  <option value="Shandong Citric Acid Chemical Co" />
+                </datalist>
               </div>
 
               {/* Product Category (Multiple) */}
@@ -1090,6 +1101,7 @@ export const BuyerListPage: React.FC = () => {
                   onChange={(e) => setFormData({ ...formData, client_grade: e.target.value })}
                   className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2 rounded-lg outline-none cursor-pointer font-bold"
                 >
+                  <option value="Select">Select</option>
                   <option value="A">Grade A</option>
                   <option value="B">Grade B</option>
                   <option value="C">Grade C</option>

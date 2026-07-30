@@ -1047,22 +1047,25 @@ export const InquiryPlanningPage: React.FC = () => {
                 </select>
               </div>
 
-              {/* Product Name from Masters */}
+              {/* Product Name from Masters with datalist suggestions */}
               <div>
                 <label className="text-xs font-semibold text-slate-700 block mb-1">
                   Product Name <span className="text-rose-500">*</span>
                 </label>
-                <select
+                <input
+                  type="text"
                   value={formData.product_name}
                   onChange={(e) => handleProductNameChange(e.target.value)}
+                  placeholder="Type to search or enter product name..."
+                  list="inquiry-product-datalist"
                   className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-medium"
                   required
-                >
-                  <option value="">-- Select Product Name --</option>
+                />
+                <datalist id="inquiry-product-datalist">
                   {masterProductOptions.map((p) => (
-                    <option key={p.code} value={p.name}>{p.name}</option>
+                    <option key={p.code} value={p.name} />
                   ))}
-                </select>
+                </datalist>
               </div>
 
               {/* Quantity & Auto-Reflecting UOM */}
