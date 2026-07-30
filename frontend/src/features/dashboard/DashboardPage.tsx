@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bot, AlertTriangle, Layers, TrendingUp, Cpu, CheckCircle, ShieldAlert } from 'lucide-react';
+import { Bot, AlertTriangle, CheckCircle, ShieldAlert } from 'lucide-react';
 
 export const DashboardPage: React.FC = () => {
   const [analyzing, setAnalyzing] = useState(false);
@@ -24,12 +24,12 @@ export const DashboardPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* DARSH IMPEX TOP TITLE BAR */}
+      {/* TOP TITLE BAR */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-slate-900 tracking-tight">AI Optimization & Risk Service</h2>
+          <h2 className="text-xl font-bold text-slate-900 tracking-tight">Dashboard</h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            FastAPI AI Sidecar Service • Container Packing & Risk Analysis
+            AI Optimization & Risk • Container Packing & Compliance Analysis
           </p>
         </div>
         <button
