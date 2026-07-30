@@ -5,11 +5,18 @@ import { PrismaService } from '../../core/database/prisma.service';
 export class UserService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private sanitizeUser(user: any) {
+    if (!user) return user;
+    const { password_hash, ...rest } = user;
+    return rest;
+  }
+
   async findAll() {
-    return this.prisma.user.findMany({
+    const users = await this.prisma.user.findMany({
       where: { deleted_at: null },
       orderBy: { created_at: 'desc' },
     });
+    return users.map((u) => this.sanitizeUser(u));
   }
 
   async findOne(id: string) {
@@ -19,11 +26,11 @@ export class UserService {
     if (!user) {
       throw new NotFoundException(`User with ID ${id} not found.`);
     }
-    return user;
+    return this.sanitizeUser(user);
   }
 
   async create(data: any) {
-    return this.prisma.user.create({
+    const created = await this.prisma.user.create({
       data: {
         email: data.email.trim().toLowerCase(),
         password_hash: data.password || 'default123',
@@ -37,11 +44,17 @@ export class UserService {
         permissions: data.permissions || {},
       },
     });
+    return this.sanitizeUser(created);
   }
 
   async update(id: string, data: any) {
-    const user = await this.findOne(id);
-    return this.prisma.user.update({
+    const user = await this.prisma.user.findFirst({
+      where: { id, deleted_at: null },
+    });
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found.`);
+    }
+    const updated = await this.prisma.user.update({
       where: { id: user.id },
       data: {
         email: data.email !== undefined ? data.email.trim().toLowerCase() : undefined,
@@ -56,13 +69,20 @@ export class UserService {
         permissions: data.permissions !== undefined ? data.permissions : undefined,
       },
     });
+    return this.sanitizeUser(updated);
   }
 
   async remove(id: string) {
-    const user = await this.findOne(id);
-    return this.prisma.user.update({
+    const user = await this.prisma.user.findFirst({
+      where: { id, deleted_at: null },
+    });
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found.`);
+    }
+    const removed = await this.prisma.user.update({
       where: { id: user.id },
       data: { deleted_at: new Date() },
     });
+    return this.sanitizeUser(removed);
   }
 }

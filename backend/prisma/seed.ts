@@ -250,9 +250,71 @@ async function main() {
     },
   });
 
-  console.log('✔ Standard Suppliers (Zhejiang & Shandong) seeded into Supabase DB!');
+  // 6. Seed Inquiry Consignments (FB1, FB2, OS1, ING1) & Line Items
+  const inquiryConsignments = [
+    {
+      id: '77777777-7777-7777-7777-777777777701',
+      consignment_code: 'FB1',
+      status: 'PROPOSED',
+      total_cbm: 28.45,
+      total_weight: 14250.0,
+    },
+    {
+      id: '77777777-7777-7777-7777-777777777702',
+      consignment_code: 'FB2',
+      status: 'PARTIALLY_APPROVED',
+      total_cbm: 32.1,
+      total_weight: 16800.0,
+    },
+    {
+      id: '77777777-7777-7777-7777-777777777703',
+      consignment_code: 'OS1',
+      status: 'FULLY_APPROVED',
+      total_cbm: 45.0,
+      total_weight: 22500.0,
+    },
+    {
+      id: '77777777-7777-7777-7777-777777777704',
+      consignment_code: 'ING1',
+      status: 'PROPOSED',
+      total_cbm: 18.2,
+      total_weight: 8500.0,
+    },
+  ];
 
-  console.log('✔ Inquiry Consignments (FB1) seeded into Supabase DB!');
+  for (const c of inquiryConsignments) {
+    await prisma.inquiryConsignment.upsert({
+      where: { id: c.id },
+      update: {
+        total_cbm: c.total_cbm,
+        total_weight: c.total_weight,
+      },
+      create: {
+        id: c.id,
+        company_id: defaultCompanyId,
+        consignment_code: c.consignment_code,
+        status: c.status as any,
+        total_cbm: c.total_cbm,
+        total_weight: c.total_weight,
+        created_by: defaultUserId,
+        items: {
+          create: [
+            {
+              product_id: '99999999-9999-9999-9999-999999999901',
+              quantity: 100,
+              uom: 'BAGS',
+              brand_preference: 'TTCA Brand Preferred',
+              product_specs: 'Standard Packaging',
+              procurement_remarks: 'China Supplier Confirmed',
+              license_warning_flag: true,
+            },
+          ],
+        },
+      },
+    });
+  }
+
+  console.log('✔ Inquiry Consignments (FB1, FB2, OS1, ING1) seeded into Supabase DB!');
 
   // 7. Seed Initial Buyer Companies (Uganda Beverage & Mukwano)
   await prisma.buyer.upsert({

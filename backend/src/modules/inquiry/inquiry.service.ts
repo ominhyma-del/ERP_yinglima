@@ -166,10 +166,13 @@ export class InquiryService {
       });
     }
 
-    // Shift items
+    // Shift items (scoped to tenant company)
     await this.prisma.inquiryItem.updateMany({
       where: {
         id: { in: dto.item_ids },
+        consignment: {
+          company_id: tenant.companyId,
+        },
       },
       data: {
         consignment_id: targetConsignment.id,
@@ -185,6 +188,9 @@ export class InquiryService {
     await this.prisma.inquiryItem.updateMany({
       where: {
         id: { in: dto.item_ids },
+        consignment: {
+          company_id: tenant.companyId,
+        },
       },
       data: {
         tally_post_status: TallyPostStatus.POSTED,
@@ -195,6 +201,19 @@ export class InquiryService {
   }
 
   async approveItem(itemId: string, tenant: TenantContext) {
+    const existing = await this.prisma.inquiryItem.findFirst({
+      where: {
+        id: itemId,
+        consignment: {
+          company_id: tenant.companyId,
+        },
+      },
+    });
+
+    if (!existing) {
+      throw new NotFoundException(`Inquiry item ${itemId} not found.`);
+    }
+
     const item = await this.prisma.inquiryItem.update({
       where: { id: itemId },
       data: {

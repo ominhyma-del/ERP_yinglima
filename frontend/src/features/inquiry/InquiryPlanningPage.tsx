@@ -210,15 +210,20 @@ export const InquiryPlanningPage: React.FC = () => {
       if (data && Array.isArray(data) && data.length > 0) {
         const formattedLayer1 = data.map((c: any) => ({
           id: c.id,
-          company: c.company?.name || 'F&B Uganda Ingredients Ltd',
-          code: c.consignment_code,
+          company: c.company?.name || 'Uganda Ingredients Ltd',
+          code: c.consignment_code || c.code,
           status: c.status || 'PROPOSED',
           total_cbm: Number(c.total_cbm) || 0,
           total_weight: Number(c.total_weight) || 0,
           proposed_date: c.created_at ? c.created_at.split('T')[0] : '2025-04-20',
           proposed_by: 'Yinglima Admin',
         }));
-        setConsignments(formattedLayer1);
+        setConsignments((prev) => {
+          const map = new Map<string, any>();
+          prev.forEach((item) => map.set(item.code, item));
+          formattedLayer1.forEach((item) => map.set(item.code, { ...map.get(item.code), ...item }));
+          return Array.from(map.values());
+        });
       }
     }
     loadApiInquiries();
@@ -530,7 +535,7 @@ export const InquiryPlanningPage: React.FC = () => {
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
             {currentLayer === 1
-              ? 'Company-wise Summary (F&B, One Stop, Inhyma) & Aggregate Consignment Codes'
+              ? 'Company-wise Summary & Aggregate Consignment Codes'
               : 'Excel-like Master Planning Sheet for Line Items, Quantities, License Alerts & Tally Post'}
           </p>
         </div>
@@ -635,10 +640,10 @@ export const InquiryPlanningPage: React.FC = () => {
                     className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
                   >
                     <option value="">All Consignment Codes</option>
-                    <option value="FB1">FB1 (F&B Uganda)</option>
-                    <option value="FB2">FB2 (F&B Uganda)</option>
-                    <option value="OS1">OS1 (One Stop Uganda)</option>
-                    <option value="ING1">ING1 (Inhyma Gujarat)</option>
+                    <option value="FB1">FB1 (Uganda Shipment 1)</option>
+                    <option value="FB2">FB2 (Uganda Shipment 2)</option>
+                    <option value="OS1">OS1 (Uganda Shipment 1)</option>
+                    <option value="ING1">ING1 (Gujarat Shipment 1)</option>
                   </select>
                 </div>
                 <div>
@@ -696,34 +701,9 @@ export const InquiryPlanningPage: React.FC = () => {
               Inactive
             </button>
           </div>
-          {/* SEARCH FILTER & COMPANY TAB SWITCHER */}
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-2 overflow-x-auto">
-              <span className="font-bold text-slate-700 uppercase tracking-wider text-[11px] whitespace-nowrap">
-                Company Filter:
-              </span>
-              <button
-                onClick={() => setActiveCompanyFilter('ALL')}
-                className={`px-3 py-1.5 font-bold rounded-lg transition-colors cursor-pointer ${
-                  activeCompanyFilter === 'ALL' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                All Companies
-              </button>
-              {Object.keys(companyConsignmentMasterMap).map((comp) => (
-                <button
-                  key={comp}
-                  onClick={() => setActiveCompanyFilter(comp)}
-                  className={`px-3 py-1.5 font-bold rounded-lg transition-colors cursor-pointer ${
-                    activeCompanyFilter === comp ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  {comp.split(' ')[0]}
-                </button>
-              ))}
-            </div>
-
-            <div className="relative w-full md:w-64 flex items-center">
+          {/* SEARCH FILTER */}
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between gap-3 text-xs">
+            <div className="relative w-full md:w-80 flex items-center">
               <Search size={15} className="absolute left-3 text-slate-400" />
               <input
                 type="text"

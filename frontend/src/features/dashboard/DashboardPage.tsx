@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { Bot, AlertTriangle, CheckCircle, ShieldAlert } from 'lucide-react';
+import { useAuth } from '../auth/AuthContext';
 
 export const DashboardPage: React.FC = () => {
+  const { user } = useAuth();
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState<any>({
     recommended_container: '40ft High Cube (HC)',
@@ -27,7 +29,9 @@ export const DashboardPage: React.FC = () => {
       {/* TOP TITLE BAR */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-slate-900 tracking-tight">Dashboard</h2>
+          <h2 className="text-xl font-bold text-slate-900 tracking-tight">
+            Welcome, "{user?.name || 'Yinglima Admin'}"
+          </h2>
           <p className="text-xs text-slate-500 mt-0.5">
             AI Optimization & Risk • Container Packing & Compliance Analysis
           </p>
