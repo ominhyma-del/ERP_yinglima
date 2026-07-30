@@ -26,6 +26,7 @@ import {
   ChevronDown,
   RotateCcw,
 } from 'lucide-react';
+import { inquiryApi } from '../../api/inquiryApi';
 
 // Consignment master options mapping by company
 const companyConsignmentMasterMap: Record<string, { code: string; label: string }[]> = {
@@ -303,6 +304,8 @@ export const InquiryPlanningPage: React.FC = () => {
       proposed_by: 'Yinglima Admin',
     };
 
+    // Persist to Supabase Cloud DB via NestJS Backend API
+    inquiryApi.createInquiryItem(newItem);
     setGridItems([newItem, ...gridItems]);
 
     // Ensure Consignment exists in 1st layer summary

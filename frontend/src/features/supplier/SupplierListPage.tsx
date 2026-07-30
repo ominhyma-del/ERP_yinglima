@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Truck, Plus, Filter, ShieldAlert, ArrowLeft, Download, Upload, FileSpreadsheet, X, CheckCircle, Eye, Trash2, Camera, Phone, Mail, MessageSquare, AlertCircle, Link as LinkIcon, Check, ChevronDown, UserPlus, Edit, Maximize2, FileText, Image as ImageIcon, Video, Search, RotateCcw } from 'lucide-react';
+import { supplierApi } from '../../api/supplierApi';
 
 // Country Phone Dial Code Map
 const countryPhoneCodeMap: Record<string, string> = {
@@ -680,8 +681,10 @@ export const SupplierListPage: React.FC = () => {
       setSuppliers(suppliers.map((s) => (s.id === editingSupplierId ? updatedSupplierObj : s)));
       setImportNotification(`Successfully updated supplier profile for "${companyName}"!`);
     } else {
+      // Persist to Supabase Cloud DB via NestJS Backend API
+      supplierApi.createSupplier(updatedSupplierObj);
       setSuppliers([updatedSupplierObj, ...suppliers]);
-      setImportNotification(`Successfully created & saved new supplier profile "${companyName}"!`);
+      setImportNotification(`Successfully created & saved new supplier profile "${companyName}" to Supabase Database!`);
     }
 
     setViewMode('list');
