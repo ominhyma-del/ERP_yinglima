@@ -189,15 +189,86 @@ export const SupplierListPage: React.FC = () => {
     'Temperature Controllers',
   ];
 
-  // Initial Suppliers state (loaded live from Supabase DB via NestJS API)
-  const [suppliers, setSuppliers] = useState<any[]>([]);
+  // Default seed suppliers (fallback when DB is initialising)
+  const DEFAULT_SUPPLIERS = [
+    {
+      id: 's-1',
+      name: 'Zhejiang Packaging Machinery Ltd',
+      product_categories: ['Machines', 'Packaging Equipment'],
+      supplier_type: 'Manufacturer',
+      brand_name: 'Yinglima Machinery',
+      country: 'China',
+      province: 'Zhejiang',
+      city: 'Wenzhou',
+      address: 'No. 888 Industrial Zone',
+      contact_title: 'Mr',
+      contact_name: 'John Zhang',
+      designation: 'Export Director',
+      calling_number: '+86 13800138000',
+      whatsapp_number: '+86 13800138000',
+      wechat_number: '+86 13800138000',
+      emails: ['john@zhejiangpack.com'],
+      tax_id: '91330300MA12345678',
+      primary_website: 'www.zhejiangpack.com',
+      secondary_website: '',
+      key_strength_subcategories: ['Band Sealer', 'Vacuum Packers'],
+      grade: 'A',
+      current_status: 'EXISTING',
+      potential: 'YES',
+      potential_reason: 'High manufacturing capacity & automated lines',
+      secondary_products: ['Teflon Belts', 'Heating Blocks'],
+      visited_factory: 'Yes',
+      visit_remarks: 'Visited facility in March 2025.',
+      overall_remarks: 'Primary supplier for band sealers.',
+      contacts: [],
+    },
+    {
+      id: 's-2',
+      name: 'Shandong Citric Acid Chemical Co',
+      product_categories: ['Food Ingredients', 'Chemicals'],
+      supplier_type: 'Manufacturer',
+      brand_name: 'TTCA Brand',
+      country: 'China',
+      province: 'Shandong',
+      city: 'Weifang',
+      address: 'Chemical Industry Park',
+      contact_title: 'Mr',
+      contact_name: 'Li Wei',
+      designation: 'Sales Manager',
+      calling_number: '+86 13900139000',
+      whatsapp_number: '+86 13900139000',
+      wechat_number: '+86 13900139000',
+      emails: ['liwei@citric.cn'],
+      tax_id: '91370700MA98765432',
+      primary_website: 'www.citricacid-shandong.com',
+      secondary_website: '',
+      key_strength_subcategories: ['Citric Acid'],
+      grade: 'B',
+      current_status: 'NEW',
+      potential: 'UNSELECTED',
+      potential_reason: '',
+      secondary_products: ['Citric Acid Monohydrate'],
+      visited_factory: 'No',
+      visit_remarks: '',
+      overall_remarks: 'Food grade Citric Acid Anhydrous 30-100 mesh supplier.',
+      contacts: [],
+    },
+  ];
+
+  // Initial Suppliers state
+  const [suppliers, setSuppliers] = useState<any[]>(DEFAULT_SUPPLIERS);
 
   // Fetch live suppliers from NestJS API connected to Supabase DB on mount
   useEffect(() => {
     async function loadApiSuppliers() {
       const data = await supplierApi.getSuppliers();
       if (data && Array.isArray(data) && data.length > 0) {
-        setSuppliers(data);
+        setSuppliers((prev) => {
+          const map = new Map<string, any>();
+          prev.forEach((s) => map.set(s.id || s.name, s));
+          data.forEach((s) => map.set(s.id || s.name, { ...map.get(s.id || s.name), ...s }));
+          return Array.from(map.values());
+        });
       }
     }
     loadApiSuppliers();

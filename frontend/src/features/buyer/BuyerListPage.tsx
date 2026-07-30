@@ -186,8 +186,52 @@ export const BuyerListPage: React.FC = () => {
   const [eyeModalContent, setEyeModalContent] = useState<{ title: string; items: string[] } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Buyers State (loaded live from Supabase DB via NestJS API)
-  const [buyers, setBuyers] = useState<any[]>([]);
+  // Default seed buyers
+  const DEFAULT_BUYERS = [
+    {
+      id: 'b-1',
+      name: 'Uganda Beverage Industries Ltd',
+      buyer_type: 'Manufacturer',
+      country: 'Uganda',
+      city: 'Kampala',
+      address: 'Plot 45 Industrial Area',
+      client_grade: 'A',
+      current_status: 'EXISTING',
+      potential: 'YES',
+      product_range_supplied: 'Carbonated Soft Drinks, Juice Concentrates',
+      product_categories: ['Food Ingredients'],
+      potential_subcategories: ['Citric Acid'],
+      contact_name: 'David Musoke',
+      designation: 'Procurement Director',
+      calling_number: '+256 700123456',
+      whatsapp_number: '+256 700123456',
+      email: 'david@ugandabev.co.ug',
+      contacts: [],
+    },
+    {
+      id: 'b-2',
+      name: 'Mukwano Industries Uganda',
+      buyer_type: 'Manufacturer',
+      country: 'Uganda',
+      city: 'Kampala',
+      address: 'Mukwano Complex Jinja Road',
+      client_grade: 'A',
+      current_status: 'NEW',
+      potential: 'UNSELECTED',
+      product_range_supplied: 'Soaps, Detergents, Cooking Oils',
+      product_categories: ['Chemicals'],
+      potential_subcategories: ['Caustic Soda'],
+      contact_name: 'Grace Akello',
+      designation: 'Supply Chain Manager',
+      calling_number: '+256 750987654',
+      whatsapp_number: '+256 750987654',
+      email: 'gakello@mukwano.com',
+      contacts: [],
+    },
+  ];
+
+  // Buyers State
+  const [buyers, setBuyers] = useState<any[]>(DEFAULT_BUYERS);
 
   // 8 Exact Top Filters
   const [filterDateRange, setFilterDateRange] = useState('');
@@ -245,7 +289,12 @@ export const BuyerListPage: React.FC = () => {
   const loadApiBuyers = async () => {
     const data = await buyerApi.getBuyers();
     if (data && Array.isArray(data) && data.length > 0) {
-      setBuyers(data);
+      setBuyers((prev) => {
+        const map = new Map<string, any>();
+        prev.forEach((b) => map.set(b.id || b.name, b));
+        data.forEach((b) => map.set(b.id || b.name, { ...map.get(b.id || b.name), ...b }));
+        return Array.from(map.values());
+      });
     }
   };
 
