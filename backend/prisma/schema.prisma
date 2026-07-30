@@ -97,16 +97,17 @@ model Branch {
 }
 
 model User {
-  id          String       @id @default(uuid()) @db.Uuid
-  supabase_id String       @unique
-  email       String       @unique
-  full_name   String
-  phone       String?
-  avatar_url  String?
-  status      RecordStatus @default(ACTIVE)
-  created_at  DateTime     @default(now())
-  updated_at  DateTime     @updatedAt
-  deleted_at  DateTime?    @db.Timestamp
+  id            String       @id @default(uuid()) @db.Uuid
+  email         String       @unique
+  password_hash String?
+  full_name     String
+  phone         String?
+  avatar_url    String?
+  role          String       @default("USER")
+  status        RecordStatus @default(ACTIVE)
+  created_at    DateTime     @default(now())
+  updated_at    DateTime     @updatedAt
+  deleted_at    DateTime?    @db.Timestamp
 
   user_companies UserCompany[]
   user_roles     UserRole[]
