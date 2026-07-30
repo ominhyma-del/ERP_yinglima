@@ -89,7 +89,7 @@ export const Header: React.FC<HeaderProps> = ({ currentCompany, setCompany }) =>
             </div>
             <div className="hidden lg:block text-left">
               <p className="text-xs font-bold text-slate-900 leading-tight">{user?.name ?? 'Unknown User'}</p>
-              <p className="text-[10px] font-semibold text-blue-600">{user?.role ?? ''}</p>
+              <p className="text-[10px] font-semibold text-blue-600">{user?.accountType === 'ADMIN' ? 'Admin' : user?.department ?? ''}</p>
             </div>
             <ChevronDown size={14} className="text-slate-400" />
           </button>
@@ -99,7 +99,9 @@ export const Header: React.FC<HeaderProps> = ({ currentCompany, setCompany }) =>
               <div className="px-4 py-3 border-b border-slate-100">
                 <p className="font-bold text-slate-900">{user?.name}</p>
                 <p className="text-slate-500">{user?.email}</p>
-                <span className="inline-block mt-1.5 px-2 py-0.5 bg-blue-50 text-blue-700 rounded font-bold text-[10px]">{user?.role}</span>
+                <span className="inline-block mt-1.5 px-2 py-0.5 bg-blue-50 text-blue-700 rounded font-bold text-[10px]">
+                  {user?.accountType === 'ADMIN' ? 'Admin' : `Employee · ${user?.department}`}
+                </span>
               </div>
               <div className="px-4 py-3 border-b border-slate-100 space-y-1">
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1">
