@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('Seeding default Tenant Companies, Users, Categories & Products into Supabase DB...');
+  console.log('Seeding default Tenant Companies, Users, Categories, Products & Suppliers into Supabase DB...');
 
   const defaultCompanyId = '11111111-1111-1111-1111-111111111111';
   const defaultUserId = '00000000-0000-0000-0000-000000000001';
@@ -43,7 +43,7 @@ async function main() {
   const defaultCatId = '88888888-8888-8888-8888-888888888801';
   const defaultSubcatId = '88888888-8888-8888-8888-888888888802';
 
-  const category = await prisma.productCategory.upsert({
+  await prisma.productCategory.upsert({
     where: { id: defaultCatId },
     update: {},
     create: {
@@ -55,7 +55,7 @@ async function main() {
     },
   });
 
-  const subcategory = await prisma.productSubCategory.upsert({
+  await prisma.productSubCategory.upsert({
     where: { id: defaultSubcatId },
     update: {},
     create: {
@@ -70,7 +70,7 @@ async function main() {
 
   console.log('✔ Product Category & Subcategory seeded!');
 
-  // 4. Seed Standard Master Products (Citric Acid, Band Sealer)
+  // 4. Seed Standard Master Products
   const products = [
     {
       id: '99999999-9999-9999-9999-999999999901',
@@ -114,7 +114,98 @@ async function main() {
 
   console.log('✔ Master Products seeded into Supabase DB!');
 
-  // 5. Seed Inquiry Consignments (FB1, FB2)
+  // 5. Seed Standard Suppliers (Zhejiang Packaging Machinery & Shandong Citric Acid)
+  const zhejiangSupplier = await prisma.supplier.upsert({
+    where: { id: '66666666-6666-6666-6666-666666666601' },
+    update: {},
+    create: {
+      id: '66666666-6666-6666-6666-666666666601',
+      company_id: defaultCompanyId,
+      name: 'Zhejiang Packaging Machinery Ltd',
+      supplier_type: 'MANUFACTURER',
+      brand_description: 'Yinglima Machinery',
+      country: 'China',
+      province: 'Zhejiang',
+      city: 'Wenzhou',
+      town: 'Ruian Town',
+      address: 'No. 888 Industrial Zone',
+      tax_id: '91330300MA12345678',
+      primary_website: 'www.zhejiangpack.com',
+      grade: 'A',
+      current_status: 'EXISTING',
+      potential: 'YES',
+      potential_reason: 'High manufacturing capacity & 4 automated production lines',
+      secondary_products_desc: 'Teflon Belts, Heating Blocks, Silicone Strips',
+      visited_factory: true,
+      visit_remarks: 'Visited facility in March 2025.',
+      overall_remarks: 'Primary supplier for band sealers.',
+      product_categories: ['Machines', 'Spare Parts', 'Packaging Equipment'],
+      key_strength_subcategories: ['Band Sealer', 'Vacuum Packers', 'Spares for Band Sealer'],
+      created_by: defaultUserId,
+      contacts: {
+        create: [
+          {
+            salutation: 'Mr',
+            full_name: 'John Zhang',
+            designation: 'Export Director',
+            handling_territory: 'Export Global',
+            country: 'China',
+            calling_number: '+86 13800138000',
+            whatsapp_number: '+86 13800138000',
+            wechat_number: '+86 13800138000',
+            email: 'john@zhejiangpack.com',
+          },
+        ],
+      },
+    },
+  });
+
+  const shandongSupplier = await prisma.supplier.upsert({
+    where: { id: '66666666-6666-6666-6666-666666666602' },
+    update: {},
+    create: {
+      id: '66666666-6666-6666-6666-666666666602',
+      company_id: defaultCompanyId,
+      name: 'Shandong Citric Acid Chemical Co',
+      supplier_type: 'MANUFACTURER',
+      brand_description: 'TTCA Brand',
+      country: 'China',
+      province: 'Shandong',
+      city: 'Weifang',
+      town: 'Anqiu Town',
+      address: 'Chemical Industry Park',
+      tax_id: '91370700MA98765432',
+      primary_website: 'www.citricacid-shandong.com',
+      grade: 'B',
+      current_status: 'NEW',
+      potential: 'NO',
+      secondary_products_desc: 'Citric Acid Monohydrate, Sodium Citrate',
+      visited_factory: false,
+      overall_remarks: 'Food grade Citric Acid Anhydrous 30-100 mesh supplier.',
+      product_categories: ['Food Ingredients', 'Chemicals'],
+      key_strength_subcategories: ['Citric Acid'],
+      created_by: defaultUserId,
+      contacts: {
+        create: [
+          {
+            salutation: 'Mr',
+            full_name: 'Li Wei',
+            designation: 'Sales Manager',
+            handling_territory: 'Export Global',
+            country: 'China',
+            calling_number: '+86 13900139000',
+            whatsapp_number: '+86 13900139000',
+            wechat_number: '+86 13900139000',
+            email: 'liwei@citric.cn',
+          },
+        ],
+      },
+    },
+  });
+
+  console.log('✔ Standard Suppliers (Zhejiang & Shandong) seeded into Supabase DB!');
+
+  // 6. Seed Inquiry Consignments (FB1)
   await prisma.inquiryConsignment.upsert({
     where: { id: '77777777-7777-7777-7777-777777777701' },
     update: {},
