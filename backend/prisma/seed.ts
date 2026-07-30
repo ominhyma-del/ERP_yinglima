@@ -205,22 +205,78 @@ async function main() {
 
   console.log('✔ Standard Suppliers (Zhejiang & Shandong) seeded into Supabase DB!');
 
-  // 6. Seed Inquiry Consignments (FB1)
-  await prisma.inquiryConsignment.upsert({
-    where: { id: '77777777-7777-7777-7777-777777777701' },
+  console.log('✔ Inquiry Consignments (FB1) seeded into Supabase DB!');
+
+  // 7. Seed Initial Buyer Companies (Uganda Beverage & Mukwano)
+  await prisma.buyer.upsert({
+    where: { id: '55555555-5555-5555-5555-555555555501' },
     update: {},
     create: {
-      id: '77777777-7777-7777-7777-777777777701',
+      id: '55555555-5555-5555-5555-555555555501',
       company_id: defaultCompanyId,
-      consignment_code: 'FB1',
-      status: 'PROPOSED',
-      total_cbm: 25.0,
-      total_weight: 25000.0,
+      name: 'Uganda Beverage Industries Ltd',
+      buyer_type: 'MANUFACTURER',
+      country: 'Uganda',
+      city: 'Kampala',
+      address: 'Plot 45 Industrial Area',
+      client_grade: 'A',
+      current_status: 'EXISTING',
+      potential: 'YES',
+      product_range_supplied: 'Carbonated Soft Drinks, Juice Concentrates',
+      product_categories: ['Food Ingredients'],
+      potential_subcategories: ['Citric Acid'],
       created_by: defaultUserId,
+      contacts: {
+        create: [
+          {
+            salutation: 'Mr.',
+            full_name: 'David Musoke',
+            designation: 'Procurement Director',
+            country: 'Uganda',
+            calling_number: '+256 700123456',
+            whatsapp_number: '+256 700123456',
+            email: 'david@ugandabev.co.ug',
+          },
+        ],
+      },
     },
   });
 
-  console.log('✔ Inquiry Consignments (FB1) seeded into Supabase DB!');
+  await prisma.buyer.upsert({
+    where: { id: '55555555-5555-5555-5555-555555555502' },
+    update: {},
+    create: {
+      id: '55555555-5555-5555-5555-555555555502',
+      company_id: defaultCompanyId,
+      name: 'Mukwano Industries Uganda',
+      buyer_type: 'MANUFACTURER',
+      country: 'Uganda',
+      city: 'Kampala',
+      address: 'Mukwano Complex Jinja Road',
+      client_grade: 'A',
+      current_status: 'NEW',
+      potential: 'UNSELECTED',
+      product_range_supplied: 'Soaps, Detergents, Cooking Oils',
+      product_categories: ['Chemicals'],
+      potential_subcategories: ['Caustic Soda'],
+      created_by: defaultUserId,
+      contacts: {
+        create: [
+          {
+            salutation: 'Ms.',
+            full_name: 'Grace Akello',
+            designation: 'Supply Chain Manager',
+            country: 'Uganda',
+            calling_number: '+256 750987654',
+            whatsapp_number: '+256 750987654',
+            email: 'gakello@mukwano.com',
+          },
+        ],
+      },
+    },
+  });
+
+  console.log('✔ Initial Buyers (Uganda Beverage & Mukwano) seeded into Supabase DB!');
 }
 
 main()
