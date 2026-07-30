@@ -22,6 +22,9 @@ import {
   Trash2,
   ShieldAlert,
   Zap,
+  Filter,
+  ChevronDown,
+  RotateCcw,
 } from 'lucide-react';
 
 // Consignment master options mapping by company
@@ -196,6 +199,13 @@ export const InquiryPlanningPage: React.FC = () => {
       proposed_by: 'Uganda Buyer Team',
     },
   ]);
+
+  // Filter & Sub-Tab States matching Darsh Impex
+  const [showFilterPanel, setShowFilterPanel] = useState(true);
+  const [subTab, setSubTab] = useState<'Active' | 'Inactive'>('Active');
+  const [showImpExpDropdown, setShowImpExpDropdown] = useState(false);
+  const [showBulkDropdown, setShowBulkDropdown] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Form State for Quick / Main Add Modal
   const [formData, setFormData] = useState({
@@ -392,6 +402,19 @@ export const InquiryPlanningPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* DARSH IMPEX FILTER TOGGLE BUTTON [ T ] */}
+          <button
+            onClick={() => setShowFilterPanel(!showFilterPanel)}
+            className={`p-2.5 rounded-lg flex items-center justify-center transition-all cursor-pointer shadow-xs ${
+              showFilterPanel
+                ? 'bg-slate-700 hover:bg-slate-800 text-white'
+                : 'bg-white border border-slate-300 hover:bg-slate-100 text-slate-700'
+            }`}
+            title="Toggle Filter Fields Box"
+          >
+            <Filter size={16} />
+          </button>
+
           <button
             onClick={() => setShowInquiryModal('QUICK')}
             className="px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
@@ -402,20 +425,41 @@ export const InquiryPlanningPage: React.FC = () => {
             onClick={() => setShowInquiryModal('MAIN')}
             className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
           >
-            <Plus size={16} /> Add Main Inquiry
+            <Plus size={16} /> + ADD NEW
           </button>
-          <button
-            onClick={() => setShowImportModal(true)}
-            className="px-3.5 py-2.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium text-xs rounded-lg flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
-          >
-            <Upload size={15} className="text-blue-600" /> Import
-          </button>
-          <button
-            onClick={handleExportCSV}
-            className="px-3.5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
-          >
-            <Download size={15} /> Export
-          </button>
+
+          {/* IMP / EXP DROPDOWN BUTTON */}
+          <div className="relative">
+            <button
+              onClick={() => setShowImpExpDropdown(!showImpExpDropdown)}
+              className="px-3.5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+            >
+              <span>Imp / Exp</span>
+              <ChevronDown size={14} />
+            </button>
+            {showImpExpDropdown && (
+              <div className="absolute right-0 mt-1 w-36 bg-white border border-slate-200 rounded-lg shadow-xl z-50 text-xs py-1">
+                <button
+                  onClick={() => {
+                    setShowImportModal(true);
+                    setShowImpExpDropdown(false);
+                  }}
+                  className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center gap-2 text-slate-700 font-semibold"
+                >
+                  <Upload size={14} className="text-blue-600" /> Import
+                </button>
+                <button
+                  onClick={() => {
+                    handleExportCSV();
+                    setShowImpExpDropdown(false);
+                  }}
+                  className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center gap-2 text-slate-700 font-semibold"
+                >
+                  <Download size={14} className="text-amber-600" /> Export CSV
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -433,6 +477,91 @@ export const InquiryPlanningPage: React.FC = () => {
       {/* 1ST LAYER: COMPANY WISE SUMMARY & CONSIGNMENT CODES */}
       {currentLayer === 1 && (
         <div className="space-y-4">
+          {/* EXACT DARSH IMPEX COLLAPSIBLE FILTER PANEL */}
+          {showFilterPanel && (
+            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4 transition-all">
+              <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3.5 text-xs">
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Company Filter</label>
+                  <select
+                    value={activeCompanyFilter}
+                    onChange={(e) => setActiveCompanyFilter(e.target.value)}
+                    className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
+                  >
+                    <option value="ALL">All Companies</option>
+                    {Object.keys(companyConsignmentMasterMap).map((comp) => (
+                      <option key={comp} value={comp}>{comp}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Consignment Code</label>
+                  <select
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
+                  >
+                    <option value="">All Consignment Codes</option>
+                    <option value="FB1">FB1 (F&B Uganda)</option>
+                    <option value="FB2">FB2 (F&B Uganda)</option>
+                    <option value="OS1">OS1 (One Stop Uganda)</option>
+                    <option value="ING1">ING1 (Inhyma Gujarat)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Status</label>
+                  <select
+                    className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
+                  >
+                    <option value="ALL">All Status</option>
+                    <option value="PROPOSED">Proposed</option>
+                    <option value="PARTIALLY_APPROVED">Partially Approved</option>
+                    <option value="FULLY_APPROVED">Fully Approved</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  onClick={() => {
+                    setSearchTerm('');
+                    setActiveCompanyFilter('ALL');
+                  }}
+                  className="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white font-semibold text-xs rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <RotateCcw size={14} /> Reset
+                </button>
+                <button
+                  onClick={() => {}}
+                  className="px-5 py-2 bg-amber-400 hover:bg-amber-500 text-slate-900 font-bold text-xs rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <Search size={14} /> Search
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ACTIVE / INACTIVE SUB-TAB NAVIGATION MATCHING DARSH IMPEX */}
+          <div className="flex items-center border-b border-slate-200 px-1 gap-8 text-xs font-bold pt-2">
+            <button
+              onClick={() => setSubTab('Active')}
+              className={`pb-3 border-b-2 transition-all cursor-pointer ${
+                subTab === 'Active'
+                  ? 'border-blue-600 text-blue-600 font-extrabold text-sm'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              Active
+            </button>
+            <button
+              onClick={() => setSubTab('Inactive')}
+              className={`pb-3 border-b-2 transition-all cursor-pointer ${
+                subTab === 'Inactive'
+                  ? 'border-blue-600 text-blue-600 font-extrabold text-sm'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              Inactive
+            </button>
+          </div>
           {/* SEARCH FILTER & COMPANY TAB SWITCHER */}
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
             <div className="flex items-center gap-2 overflow-x-auto">

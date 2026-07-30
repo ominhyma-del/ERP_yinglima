@@ -264,7 +264,12 @@ export const SupplierListPage: React.FC = () => {
     },
   ]);
 
-  // Active Top Filter State
+  // Active Top Filter & View States matching Darsh Impex
+  const [showFilterPanel, setShowFilterPanel] = useState(true);
+  const [subTab, setSubTab] = useState<'Active' | 'Inactive'>('Active');
+  const [showImpExpDropdown, setShowImpExpDropdown] = useState(false);
+  const [showBulkDropdown, setShowBulkDropdown] = useState(false);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('All');
   const [filterSubCategory, setFilterSubCategory] = useState('All');
@@ -279,6 +284,8 @@ export const SupplierListPage: React.FC = () => {
 
   // ACTIVE FILTERED SUPPLIERS IMPLEMENTATION
   const filteredSuppliers = suppliers.filter((s) => {
+    if (subTab === 'Active' && s.current_status === 'INACTIVE') return false;
+    if (subTab === 'Inactive' && s.current_status !== 'INACTIVE') return false;
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       const nameMatch = s.name.toLowerCase().includes(term);
@@ -671,18 +678,20 @@ export const SupplierListPage: React.FC = () => {
 
         {viewMode === 'list' ? (
           <div className="flex items-center gap-2">
+            {/* DARSH IMPEX FILTER TOGGLE BUTTON [ T ] */}
             <button
-              onClick={() => setShowImportModal(true)}
-              className="px-3.5 py-2.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium text-xs rounded-lg flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+              onClick={() => setShowFilterPanel(!showFilterPanel)}
+              className={`p-2.5 rounded-lg flex items-center justify-center transition-all cursor-pointer shadow-xs ${
+                showFilterPanel
+                  ? 'bg-slate-700 hover:bg-slate-800 text-white'
+                  : 'bg-white border border-slate-300 hover:bg-slate-100 text-slate-700'
+              }`}
+              title="Toggle Filter Fields Box"
             >
-              <Upload size={15} className="text-blue-600" /> Import
+              <Filter size={16} />
             </button>
-            <button
-              onClick={handleExportCSV}
-              className="px-3.5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
-            >
-              <Download size={15} /> Export
-            </button>
+
+            {/* + ADD NEW BUTTON */}
             <button
               onClick={() => {
                 setEditingSupplierId(null);
@@ -692,10 +701,76 @@ export const SupplierListPage: React.FC = () => {
                 setViewMode('add');
                 setFormStage(1);
               }}
-              className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-lg flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+              className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-lg flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
             >
-              <Plus size={16} /> Add New Supplier
+              <Plus size={16} /> + ADD NEW
             </button>
+
+            {/* IMP / EXP DROPDOWN BUTTON */}
+            <div className="relative">
+              <button
+                onClick={() => setShowImpExpDropdown(!showImpExpDropdown)}
+                className="px-3.5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+              >
+                <span>Imp / Exp</span>
+                <ChevronDown size={14} />
+              </button>
+              {showImpExpDropdown && (
+                <div className="absolute right-0 mt-1 w-36 bg-white border border-slate-200 rounded-lg shadow-xl z-50 text-xs py-1">
+                  <button
+                    onClick={() => {
+                      setShowImportModal(true);
+                      setShowImpExpDropdown(false);
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center gap-2 text-slate-700 font-semibold"
+                  >
+                    <Upload size={14} className="text-blue-600" /> Import
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleExportCSV();
+                      setShowImpExpDropdown(false);
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center gap-2 text-slate-700 font-semibold"
+                  >
+                    <Download size={14} className="text-amber-600" /> Export CSV
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* BULK ACTIONS DROPDOWN BUTTON */}
+            <div className="relative">
+              <button
+                onClick={() => setShowBulkDropdown(!showBulkDropdown)}
+                className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+              >
+                <span>Bulk Actions</span>
+                <ChevronDown size={14} />
+              </button>
+              {showBulkDropdown && (
+                <div className="absolute right-0 mt-1 w-44 bg-white border border-slate-200 rounded-lg shadow-xl z-50 text-xs py-1">
+                  <button
+                    onClick={() => {
+                      setShowBulkDropdown(false);
+                      setImportNotification('Bulk updated selected items');
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-50 text-slate-700 font-semibold"
+                  >
+                    Mark as Active
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowBulkDropdown(false);
+                      setImportNotification('Exported bulk data');
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-50 text-slate-700 font-semibold"
+                  >
+                    Export Selected
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         ) : (
           <button
@@ -759,167 +834,122 @@ export const SupplierListPage: React.FC = () => {
       {/* VIEW MODE 1: SUPPLIER LIST TABLE MATCHING SPECIFICATION */}
       {viewMode === 'list' && (
         <div className="space-y-4">
-          {/* EXACT DARSH IMPEX TOP FILTER PANEL (PROMINENT GRID DISPLAY) */}
-          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                <Filter size={15} className="text-blue-600" /> TOP FILTER FIELDS
-              </span>
-              <div className="flex gap-2">
+          {/* EXACT DARSH IMPEX COLLAPSIBLE FILTER PANEL */}
+          {showFilterPanel && (
+            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4 transition-all">
+              <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-5 gap-3.5 text-xs">
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Product Category</label>
+                  <select
+                    value={filterCategory}
+                    onChange={(e) => setFilterCategory(e.target.value)}
+                    className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
+                  >
+                    <option value="All">All</option>
+                    {categoryMasterOptions.map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Key Strength Sub Category</label>
+                  <select
+                    value={filterSubCategory}
+                    onChange={(e) => setFilterSubCategory(e.target.value)}
+                    className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
+                  >
+                    <option value="All">All</option>
+                    {subcategoryMasterOptions.map((sub) => (
+                      <option key={sub} value={sub}>{sub}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Country</label>
+                  <select
+                    value={filterCountry}
+                    onChange={(e) => setFilterCountry(e.target.value)}
+                    className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
+                  >
+                    <option value="All">All</option>
+                    <option value="China">China</option>
+                    <option value="Uganda">Uganda</option>
+                    <option value="India">India</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Province</label>
+                  <select
+                    value={filterProvince}
+                    onChange={(e) => setFilterProvince(e.target.value)}
+                    className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
+                  >
+                    <option value="All">All</option>
+                    {Object.keys(provinceCityMap).map((prov) => (
+                      <option key={prov} value={prov}>{prov}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">City</label>
+                  <select
+                    value={filterCity}
+                    onChange={(e) => setFilterCity(e.target.value)}
+                    className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
+                  >
+                    <option value="All">All</option>
+                    <option value="Wenzhou">Wenzhou</option>
+                    <option value="Weifang">Weifang</option>
+                    <option value="Qingdao">Qingdao</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* FILTER ACTION BUTTONS (RESET & SEARCH BOTTOM RIGHT) */}
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
                 <button
                   onClick={handleResetFilters}
-                  className="px-3.5 py-1.5 bg-slate-600 hover:bg-slate-700 text-white font-semibold text-xs rounded-lg flex items-center gap-1 cursor-pointer"
+                  className="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white font-semibold text-xs rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
                 >
-                  <RotateCcw size={13} /> Reset
+                  <RotateCcw size={14} /> Reset
                 </button>
                 <button
                   onClick={() => {}}
-                  className="px-4 py-1.5 bg-amber-400 hover:bg-amber-500 text-slate-900 font-bold text-xs rounded-lg flex items-center gap-1 cursor-pointer"
+                  className="px-5 py-2 bg-amber-400 hover:bg-amber-500 text-slate-900 font-bold text-xs rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
                 >
-                  <Search size={13} /> Search
+                  <Search size={14} /> Search
                 </button>
               </div>
             </div>
+          )}
 
-            <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-5 gap-3.5 text-xs">
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">Product Category</label>
-                <select
-                  value={filterCategory}
-                  onChange={(e) => setFilterCategory(e.target.value)}
-                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
-                >
-                  <option value="All">All</option>
-                  {categoryMasterOptions.map((cat) => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">Key Strength Sub Category</label>
-                <select
-                  value={filterSubCategory}
-                  onChange={(e) => setFilterSubCategory(e.target.value)}
-                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
-                >
-                  <option value="All">All</option>
-                  {subcategoryMasterOptions.map((sub) => (
-                    <option key={sub} value={sub}>{sub}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">Country</label>
-                <select
-                  value={filterCountry}
-                  onChange={(e) => setFilterCountry(e.target.value)}
-                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
-                >
-                  <option value="All">All</option>
-                  <option value="China">China</option>
-                  <option value="Uganda">Uganda</option>
-                  <option value="India">India</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">Province</label>
-                <select
-                  value={filterProvince}
-                  onChange={(e) => setFilterProvince(e.target.value)}
-                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
-                >
-                  <option value="All">All</option>
-                  {Object.keys(provinceCityMap).map((prov) => (
-                    <option key={prov} value={prov}>{prov}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">City</label>
-                <select
-                  value={filterCity}
-                  onChange={(e) => setFilterCity(e.target.value)}
-                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
-                >
-                  <option value="All">All</option>
-                  <option value="Wenzhou">Wenzhou</option>
-                  <option value="Weifang">Weifang</option>
-                  <option value="Qingdao">Qingdao</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">Supplier Type</label>
-                <select
-                  value={filterSupplierType}
-                  onChange={(e) => setFilterSupplierType(e.target.value)}
-                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
-                >
-                  <option value="All">All / Blank</option>
-                  <option value="Manufacturer">Manufacturer</option>
-                  <option value="Trader">Trader</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">Supplier's Grade</label>
-                <select
-                  value={filterGrade}
-                  onChange={(e) => setFilterGrade(e.target.value)}
-                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
-                >
-                  <option value="All">All / Blank</option>
-                  <option value="A">Grade A</option>
-                  <option value="B">Grade B</option>
-                  <option value="C">Grade C</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">Current Status</label>
-                <select
-                  value={filterStatus}
-                  onChange={(e) => setFilterStatus(e.target.value)}
-                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
-                >
-                  <option value="All">All / Blank</option>
-                  <option value="Existing">Existing</option>
-                  <option value="New">New</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">Potential</label>
-                <select
-                  value={filterPotential}
-                  onChange={(e) => setFilterPotential(e.target.value)}
-                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
-                >
-                  <option value="All">All / Blank</option>
-                  <option value="Yes">Yes</option>
-                  <option value="No">No</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">Visited Factory/Office?</label>
-                <select
-                  value={filterVisited}
-                  onChange={(e) => setFilterVisited(e.target.value)}
-                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
-                >
-                  <option value="All">All / Blank</option>
-                  <option value="Yes">Yes</option>
-                  <option value="No">No</option>
-                </select>
-              </div>
-            </div>
+          {/* ACTIVE / INACTIVE SUB-TAB NAVIGATION MATCHING DARSH IMPEX */}
+          <div className="flex items-center border-b border-slate-200 px-1 gap-8 text-xs font-bold pt-2">
+            <button
+              onClick={() => setSubTab('Active')}
+              className={`pb-3 border-b-2 transition-all cursor-pointer ${
+                subTab === 'Active'
+                  ? 'border-blue-600 text-blue-600 font-extrabold text-sm'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              Active
+            </button>
+            <button
+              onClick={() => setSubTab('Inactive')}
+              className={`pb-3 border-b-2 transition-all cursor-pointer ${
+                subTab === 'Inactive'
+                  ? 'border-blue-600 text-blue-600 font-extrabold text-sm'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              Inactive
+            </button>
           </div>
-
           {/* TABLE SEARCH BAR (MATCHING DARSH IMPEX EXACT LAYOUT) */}
           <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs flex items-center gap-2">
             <Search size={16} className="text-slate-400" />
