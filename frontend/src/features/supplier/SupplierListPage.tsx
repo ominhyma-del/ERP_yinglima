@@ -265,6 +265,17 @@ export const SupplierListPage: React.FC = () => {
     },
   ]);
 
+  // Fetch live suppliers from NestJS API connected to Supabase DB on mount
+  useEffect(() => {
+    async function loadApiSuppliers() {
+      const data = await supplierApi.getSuppliers();
+      if (data && Array.isArray(data) && data.length > 0) {
+        setSuppliers(data);
+      }
+    }
+    loadApiSuppliers();
+  }, []);
+
   // Active Top Filter & View States matching Darsh Impex
   const [showFilterPanel, setShowFilterPanel] = useState(true);
   const [subTab, setSubTab] = useState<'Active' | 'Inactive'>('Active');

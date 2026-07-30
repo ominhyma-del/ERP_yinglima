@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   FileSpreadsheet,
   ArrowLeft,
@@ -202,6 +202,27 @@ export const InquiryPlanningPage: React.FC = () => {
       proposed_by: 'Uganda Buyer Team',
     },
   ]);
+
+  // Fetch live consignments & items from NestJS API connected to Supabase DB on mount
+  useEffect(() => {
+    async function loadApiInquiries() {
+      const data = await inquiryApi.getConsignments();
+      if (data && Array.isArray(data) && data.length > 0) {
+        const formattedLayer1 = data.map((c: any) => ({
+          id: c.id,
+          company: c.company?.name || 'F&B Uganda Ingredients Ltd',
+          code: c.consignment_code,
+          status: c.status || 'PROPOSED',
+          total_cbm: Number(c.total_cbm) || 0,
+          total_weight: Number(c.total_weight) || 0,
+          proposed_date: c.created_at ? c.created_at.split('T')[0] : '2025-04-20',
+          proposed_by: 'Yinglima Admin',
+        }));
+        setConsignments(formattedLayer1);
+      }
+    }
+    loadApiInquiries();
+  }, []);
 
   // Filter & Sub-Tab States matching Darsh Impex
   const [showFilterPanel, setShowFilterPanel] = useState(true);
