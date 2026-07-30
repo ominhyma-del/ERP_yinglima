@@ -63,7 +63,7 @@ export const LoginPage: React.FC = () => {
                 <circle cx="200" cy="160" r="130" fill="#E0E7FF" opacity="0.6" />
                 
                 {/* Floating UI Card 1 */}
-                <rect x="50" y="40" width="120" height="70" rx="10" fill="#FFFFFF" shadow="0 4px 6px -1px rgba(0, 0, 0, 0.1)" />
+                <rect x="50" y="40" width="120" height="70" rx="10" fill="#FFFFFF" />
                 <rect x="65" y="55" width="40" height="25" rx="4" fill="#3B82F6" />
                 <rect x="115" y="55" width="40" height="8" rx="4" fill="#93C5FD" />
                 <rect x="115" y="70" width="30" height="8" rx="4" fill="#E0E7FF" />

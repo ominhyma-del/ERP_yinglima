@@ -17,14 +17,13 @@ import {
   LogOut,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { can } from '../../features/team/teamStore';
 
 interface SidebarProps {
   activeModule: string;
   setActiveModule: (module: string) => void;
 }
 
-// Maps each sidebar item id to the permission module key it's gated by.
-// 'dashboard' has no gate (always visible) since it's a read-only overview.
 const MODULE_GATE: Record<string, string | null> = {
   suppliers: 'suppliers',
   inquiries: 'inquiry',
@@ -37,6 +36,7 @@ const MODULE_GATE: Record<string, string | null> = {
   team: 'team',
   roles: 'roles',
   masters: 'masters',
+  audit_logs: 'roles',
   dashboard: null,
 };
 
@@ -89,8 +89,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeModule, setActiveModule 
     },
   ];
 
-  // Fake TeamMember shell just for the `can()` check — it only reads
-  // accountType/permissions, both of which live on AuthUser already.
   const memberForCheck = user
     ? { accountType: user.accountType, permissions: user.permissions } as any
     : null;
@@ -156,8 +154,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeModule, setActiveModule 
       {/* Footer User Info & Logout Button */}
       <div className="p-3 border-t border-slate-100 bg-slate-50 flex items-center justify-between text-xs">
         <div className="overflow-hidden">
-          <p className="font-bold text-slate-800 truncate">{user?.full_name || 'Yinglima User'}</p>
-          <span className="text-[10px] text-blue-600 font-semibold">{user?.role || 'USER'}</span>
+          <p className="font-bold text-slate-800 truncate">{user?.name || 'Yinglima User'}</p>
+          <span className="text-[10px] text-blue-600 font-semibold">{user?.accountType || 'USER'}</span>
         </div>
         <button
           onClick={logout}
