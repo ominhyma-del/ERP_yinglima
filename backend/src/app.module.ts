@@ -15,6 +15,8 @@ import { AuthController } from './modules/auth/auth.controller';
 import { AuthService } from './modules/auth/auth.service';
 import { AuditController } from './modules/audit/audit.controller';
 import { AuditService } from './modules/audit/audit.service';
+import { UserController } from './modules/user/user.controller';
+import { UserService } from './modules/user/user.service';
 
 @Module({
   imports: [
@@ -30,6 +32,7 @@ import { AuditService } from './modules/audit/audit.service';
     CompanyController,
     AuthController,
     AuditController,
+    UserController,
   ],
   providers: [
     PrismaService,
@@ -40,6 +43,7 @@ import { AuditService } from './modules/audit/audit.service';
     CompanyService,
     AuthService,
     AuditService,
+    UserService,
   ],
 })
 export class AppModule {}

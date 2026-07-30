@@ -23,21 +23,68 @@ async function main() {
 
   console.log('✔ Company seeded:', company.name);
 
-  // 2. Seed Default Admin User
-  const user = await prisma.user.upsert({
+  // 2. Seed Default Admin User & Default standard User
+  const fullPermissions = {
+    suppliers: { view: true, edit: true, delete: true },
+    inquiry: { view: true, edit: true, delete: true },
+    import_purchase: { view: true, edit: true, delete: true },
+    buyers: { view: true, edit: true, delete: true },
+    quotation: { view: true, edit: true, delete: true },
+    products: { view: true, edit: true, delete: true },
+    stock: { view: true, edit: true, delete: true },
+    team: { view: true, edit: true, delete: true },
+    roles: { view: true, edit: true, delete: true }
+  };
+
+  const adminUser = await prisma.user.upsert({
     where: { id: defaultUserId },
-    update: {},
+    update: {
+      password_hash: 'admin123',
+      phone: '+86 13800000000',
+      department: 'Management',
+      branch: 'Yinglima Machinery & Trade (China HQ)',
+      permissions: fullPermissions,
+    },
     create: {
       id: defaultUserId,
       email: 'admin@yinglima.com',
-      password_hash: '$2b$10$e.S.GfF6n4s9YnZ2W4kMue',
+      password_hash: 'admin123',
       full_name: 'Yinglima Admin',
       role: 'ADMIN',
       status: 'ACTIVE',
+      phone: '+86 13800000000',
+      department: 'Management',
+      branch: 'Yinglima Machinery & Trade (China HQ)',
+      permissions: fullPermissions,
     },
   });
 
-  console.log('✔ Default Admin User seeded:', user.email);
+  const defaultStandardUserId = '00000000-0000-0000-0000-000000000002';
+  const standardUser = await prisma.user.upsert({
+    where: { id: defaultStandardUserId },
+    update: {
+      password_hash: 'user123',
+      phone: '+256 700000000',
+      department: 'Purchase / Procurement',
+      branch: 'F&B Uganda Ingredients Ltd',
+      permissions: fullPermissions,
+    },
+    create: {
+      id: defaultStandardUserId,
+      email: 'user@yinglima.com',
+      password_hash: 'user123',
+      full_name: 'Yinglima User',
+      role: 'EMPLOYEE',
+      status: 'ACTIVE',
+      phone: '+256 700000000',
+      department: 'Purchase / Procurement',
+      branch: 'F&B Uganda Ingredients Ltd',
+      permissions: fullPermissions,
+    },
+  });
+
+  console.log('✔ Default Admin User seeded:', adminUser.email);
+  console.log('✔ Default Standard User seeded:', standardUser.email);
 
   // 3. Seed Product Category & Subcategory
   const defaultCatId = '88888888-8888-8888-8888-888888888801';

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { findMemberByEmail, TeamMember, AccountType, PermissionSet, useTeamStore } from '../team/teamStore';
+import { teamApi } from '../../api/teamApi';
 
 /**
  * ── Mock Authentication ───────────────────────────────────────────────────
@@ -27,7 +28,7 @@ interface AuthContextValue {
   sessionId: string | null;
   isAuthenticated: boolean;
   rememberMe: boolean;
-  login: (email: string, password: string, remember: boolean) => { ok: boolean; error?: string };
+  login: (email: string, password: string, remember: boolean) => Promise<{ ok: boolean; error?: string }>;
   logout: () => void;
   refreshUser: () => void;
 }
@@ -112,8 +113,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [members]);
 
-  const login = (email: string, password: string, remember: boolean) => {
-    const member = findMemberByEmail(email);
+  const login = async (email: string, password: string, remember: boolean) => {
+    const latestMembers = await teamApi.getMembers();
+    const member = latestMembers.find((m) => m.email.toLowerCase() === email.trim().toLowerCase());
     if (!member || member.password !== password) {
       return { ok: false, error: 'Invalid email or password.' };
     }

@@ -10,7 +10,7 @@ export const LoginPage: React.FC = () => {
   const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim()) {
       setError('Please enter a valid Email Address.');
@@ -21,7 +21,7 @@ export const LoginPage: React.FC = () => {
       return;
     }
 
-    const res = login(email, password, rememberMe);
+    const res = await login(email, password, rememberMe);
     if (!res.ok) {
       setError(res.error || 'Invalid login credentials.');
     }

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { teamApi } from '../../api/teamApi';
 
 /**
  * ── Central Team / Access Store ──────────────────────────────────────────
@@ -153,52 +154,21 @@ const SEED_MEMBERS: TeamMember[] = [
   },
 ];
 
-function loadStore(): TeamMember[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return SEED_MEMBERS;
-    const parsed: TeamMember[] = JSON.parse(raw);
-    // Always guarantee the hardcoded default admin exists and is intact,
-    // even if someone's local storage predates this account or was edited.
-    const hasDefaultAdmin = parsed.some((m) => m.id === DEFAULT_ADMIN.id);
-    return hasDefaultAdmin ? parsed : [DEFAULT_ADMIN, ...parsed];
-  } catch {
-    return SEED_MEMBERS;
-  }
-}
-
-function persistStore(members: TeamMember[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(members));
-  } catch {
-    // localStorage unavailable — changes won't persist this session
-  }
-}
-
-// Simple pub/sub so multiple components using useTeamStore stay in sync
-// within the same tab. The browser's 'storage' event only fires in OTHER
-// tabs/windows when localStorage changes (never the tab that made the
-// change) — without listening for it, a login screen already open in one
-// tab would never see an employee an admin just created in another tab,
-// and every login attempt for that employee would fail with "Invalid email
-// or password" even though the credentials were entered correctly.
 type Listener = (members: TeamMember[]) => void;
 const listeners = new Set<Listener>();
-let cache: TeamMember[] = loadStore();
+let cache: TeamMember[] = SEED_MEMBERS;
 
-if (typeof window !== 'undefined') {
-  window.addEventListener('storage', (e) => {
-    if (e.key === STORAGE_KEY) {
-      cache = loadStore();
-      listeners.forEach((l) => l(cache));
-    }
-  });
+async function refreshMembers() {
+  const data = await teamApi.getMembers();
+  if (data) {
+    cache = data;
+    listeners.forEach((l) => l(cache));
+  }
 }
 
-function setCache(next: TeamMember[]) {
-  cache = next;
-  persistStore(next);
-  listeners.forEach((l) => l(next));
+// Initial pull on file load to make sure cached members are populated
+if (typeof window !== 'undefined') {
+  refreshMembers();
 }
 
 export function useTeamStore() {
@@ -207,55 +177,66 @@ export function useTeamStore() {
   useEffect(() => {
     const listener: Listener = (next) => setMembers(next);
     listeners.add(listener);
+    refreshMembers();
     return () => {
       listeners.delete(listener);
     };
   }, []);
 
-  const addMember = useCallback((member: Omit<TeamMember, 'id' | 'createdDate'>) => {
-    const newMember: TeamMember = {
-      ...member,
+  const addMember = useCallback(async (member: Omit<TeamMember, 'id' | 'createdDate'>) => {
+    const result = await teamApi.createMember({
       name: member.name.trim(),
       email: member.email.trim(),
-      id: `t${Date.now()}`,
-      createdDate: new Date().toISOString().split('T')[0],
-    };
-    setCache([...cache, newMember]);
-    return newMember;
+      phone: member.phone,
+      password: member.password,
+      accountType: member.accountType,
+      department: member.department,
+      branch: member.branch,
+      status: 'ACTIVE',
+      permissions: member.permissions,
+    });
+    await refreshMembers();
+    return result;
   }, []);
 
-  const updateMember = useCallback((id: string, patch: Partial<TeamMember>) => {
-    const normalizedPatch = {
-      ...patch,
-      ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
-      ...(patch.email !== undefined ? { email: patch.email.trim() } : {}),
-    };
-    setCache(cache.map((m) => (m.id === id ? { ...m, ...normalizedPatch } : m)));
+  const updateMember = useCallback(async (id: string, patch: Partial<TeamMember>) => {
+    await teamApi.updateMember(id, {
+      name: patch.name?.trim(),
+      email: patch.email?.trim(),
+      phone: patch.phone,
+      password: patch.password,
+      accountType: patch.accountType,
+      department: patch.department,
+      branch: patch.branch,
+      status: patch.status,
+      permissions: patch.permissions,
+    });
+    await refreshMembers();
   }, []);
 
-  const removeMember = useCallback((id: string) => {
+  const removeMember = useCallback(async (id: string) => {
     const target = cache.find((m) => m.id === id);
-    if (target?.isDefaultAdmin) return false; // never allow deleting the hardcoded admin
-    setCache(cache.filter((m) => m.id !== id));
+    if (target?.isDefaultAdmin) return false;
+    await teamApi.deleteMember(id);
+    await refreshMembers();
     return true;
   }, []);
 
   /** Promote/demote between Admin and Employee. The hardcoded default admin can't be demoted. */
-  const setAccountType = useCallback((id: string, type: AccountType) => {
+  const setAccountType = useCallback(async (id: string, type: AccountType) => {
     const target = cache.find((m) => m.id === id);
     if (target?.isDefaultAdmin && type === 'EMPLOYEE') return false;
-    setCache(
-      cache.map((m) =>
-        m.id === id
-          ? { ...m, accountType: type, permissions: type === 'ADMIN' ? fullPermissionSet() : m.permissions }
-          : m,
-      ),
-    );
+    await teamApi.updateMember(id, {
+      accountType: type,
+      permissions: type === 'ADMIN' ? fullPermissionSet() : target?.permissions,
+    });
+    await refreshMembers();
     return true;
   }, []);
 
-  const setPermissions = useCallback((id: string, permissions: PermissionSet) => {
-    setCache(cache.map((m) => (m.id === id ? { ...m, permissions } : m)));
+  const setPermissions = useCallback(async (id: string, permissions: PermissionSet) => {
+    await teamApi.updateMember(id, { permissions });
+    await refreshMembers();
   }, []);
 
   const findByEmail = useCallback((email: string) => cache.find((m) => m.email.toLowerCase() === email.trim().toLowerCase()), []);
