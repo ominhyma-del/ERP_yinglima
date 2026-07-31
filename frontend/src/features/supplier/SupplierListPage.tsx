@@ -407,11 +407,11 @@ export const SupplierListPage: React.FC = () => {
   const initialFormData = {
     name: '',
     product_categories: [] as string[],
-    supplier_type: 'Manufacturer',
+    supplier_type: 'Select',
     brand_name: '',
     country: 'China',
-    province: 'Zhejiang',
-    city: 'Wenzhou',
+    province: 'Select',
+    city: 'Select',
     address: '',
     town: '',
     contact_title: 'Mr',
@@ -1402,9 +1402,9 @@ export const SupplierListPage: React.FC = () => {
                       onChange={(e) => setFormData({ ...formData, supplier_type: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-medium"
                     >
+                      <option value="Select">Select Supplier Type</option>
                       <option value="Manufacturer">Manufacturer</option>
                       <option value="Trader">Trader</option>
-                      <option value="Select">Select</option>
                     </select>
                   </div>
 
@@ -1446,11 +1446,12 @@ export const SupplierListPage: React.FC = () => {
                       value={formData.province}
                       onChange={(e) => {
                         const newProv = e.target.value;
-                        const defaultCity = provinceCityMap[newProv]?.[0] || 'Wenzhou';
+                        const defaultCity = provinceCityMap[newProv]?.[0] || 'Select';
                         setFormData({ ...formData, province: newProv, city: defaultCity });
                       }}
                       className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-medium"
                     >
+                      <option value="Select">Select Province</option>
                       {Object.keys(provinceCityMap).map((prov) => (
                         <option key={prov} value={prov}>{prov}</option>
                       ))}
@@ -1467,7 +1468,8 @@ export const SupplierListPage: React.FC = () => {
                       onChange={(e) => setFormData({ ...formData, city: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-medium"
                     >
-                      {(provinceCityMap[formData.province] || ['Wenzhou', 'Ruian']).map((city) => (
+                      <option value="Select">Select City</option>
+                      {(provinceCityMap[formData.province] || []).map((city) => (
                         <option key={city} value={city}>{city}</option>
                       ))}
                     </select>
