@@ -8,8 +8,8 @@ import { DashboardPage } from './features/dashboard/DashboardPage';
 import { SupplierListPage } from './features/supplier/SupplierListPage';
 import { BuyerListPage } from './features/buyer/BuyerListPage';
 import { ProductMasterPage } from './features/product-master/ProductMasterPage';
-import { ProductStockPage } from './features/product/ProductStockPage';
 import { InquiryPlanningPage } from './features/inquiry/InquiryPlanningPage';
+import { AnalyticsPage } from './features/analytics/AnalyticsPage';
 import { TeamMembersPage } from './features/team/TeamMembersPage';
 import { RolesPermissionsPage } from './features/team/RolesPermissionsPage';
 import { AuditLogsPage } from './features/team/AuditLogsPage';
@@ -72,16 +72,13 @@ export function App() {
             {/* PURCHASE */}
             <Route path="/suppliers" element={<ProtectedRoute path="/suppliers"><SupplierListPage /></ProtectedRoute>} />
             <Route path="/localpurchase" element={<ProtectedRoute path="/localpurchase"><InquiryPlanningPage /></ProtectedRoute>} />
-            <Route path="/import-purchase" element={<ProtectedRoute path="/import-purchase"><SupplierListPage /></ProtectedRoute>} />
 
             {/* SALES & BUYERS */}
             <Route path="/buyers" element={<ProtectedRoute path="/buyers"><BuyerListPage /></ProtectedRoute>} />
-            <Route path="/quotation" element={<ProtectedRoute path="/quotation"><BuyerListPage /></ProtectedRoute>} />
 
             {/* PRODUCTS & STOCK */}
             <Route path="/products" element={<ProtectedRoute path="/products"><ProductMasterPage /></ProtectedRoute>} />
-            <Route path="/stock-transactions" element={<ProtectedRoute path="/stock-transactions"><ProductStockPage /></ProtectedRoute>} />
-            <Route path="/reorder-reports" element={<ProtectedRoute path="/reorder-reports"><ProductMasterPage /></ProtectedRoute>} />
+            <Route path="/analytics" element={<AnalyticsPage />} />
 
             {/* TEAM & ACCESS */}
             <Route path="/team" element={<ProtectedRoute path="/team"><TeamMembersPage /></ProtectedRoute>} />

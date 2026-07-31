@@ -1,8 +1,9 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   Users, Plus, Search, X, CheckCircle, Download, Upload, FileSpreadsheet,
   Trash2, Mail, Eye, EyeOff, ArrowLeft, Pencil, ShieldAlert, ShieldCheck,
   Building2, Calendar, KeyRound, AlertTriangle, RefreshCw, Crown, UserCog,
+  ArrowUpDown, ArrowUp, ArrowDown,
 } from 'lucide-react';
 import {
   useTeamStore, TeamMember, AccountType, Department, DEPARTMENTS, BRANCHES,
@@ -134,6 +135,62 @@ export const TeamMembersPage: React.FC = () => {
     const q = search.toLowerCase();
     return !q || m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q) || m.department.toLowerCase().includes(q);
   });
+
+  // Column Sorting State
+  const [sortField, setSortField] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      if (sortDirection === 'asc') {
+        setSortDirection('desc');
+      } else {
+        setSortField(null);
+        setSortDirection('asc');
+      }
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const sortedMembers = useMemo(() => {
+    if (!sortField) return filtered;
+    return [...filtered].sort((a: any, b: any) => {
+      let valA = a[sortField] ?? '';
+      let valB = b[sortField] ?? '';
+      if (typeof valA === 'string') valA = valA.toLowerCase();
+      if (typeof valB === 'string') valB = valB.toLowerCase();
+      if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+      if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [filtered, sortField, sortDirection]);
+
+  const renderSortHeader = (label: string, field: string) => {
+    const isActive = sortField === field;
+    return (
+      <th
+        onClick={() => handleSort(field)}
+        className="p-3.5 select-none cursor-pointer hover:bg-slate-200/70 transition-colors group"
+      >
+        <div className="flex items-center gap-1.5">
+          <span className="p-0.5 text-slate-500">
+            {isActive ? (
+              sortDirection === 'asc' ? (
+                <ArrowUp size={14} className="text-blue-600 font-bold" />
+              ) : (
+                <ArrowDown size={14} className="text-blue-600 font-bold" />
+              )
+            ) : (
+              <ArrowUpDown size={14} className="text-slate-400 group-hover:text-slate-700" />
+            )}
+          </span>
+          <span>{label}</span>
+        </div>
+      </th>
+    );
+  };
 
   const openDetail = (m: TeamMember) => {
     setSelectedId(m.id);
@@ -308,16 +365,16 @@ export const TeamMembersPage: React.FC = () => {
             <table className="w-full text-left text-xs text-slate-700">
               <thead className="bg-slate-100 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
                 <tr>
-                  <th className="p-3.5">Member Name & Email</th>
-                  <th className="p-3.5">Account Type</th>
-                  <th className="p-3.5">Department</th>
-                  <th className="p-3.5">Branch / Company</th>
-                  <th className="p-3.5">Status</th>
+                  {renderSortHeader('Member Name & Email', 'name')}
+                  {renderSortHeader('Account Type', 'accountType')}
+                  {renderSortHeader('Department', 'department')}
+                  {renderSortHeader('Branch / Company', 'branch')}
+                  {renderSortHeader('Status', 'status')}
                   <th className="p-3.5 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
-                {filtered.map((member) => (
+                {sortedMembers.map((member) => (
                   <tr key={member.id} className="hover:bg-slate-50 transition-colors">
                     <td className="p-3.5 cursor-pointer" onClick={() => openDetail(member)}>
                       <p className="font-bold text-blue-600 hover:underline">{member.name}</p>

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   FileSpreadsheet,
   ArrowLeft,
@@ -25,6 +25,9 @@ import {
   Filter,
   ChevronDown,
   RotateCcw,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import { inquiryApi } from '../../api/inquiryApi';
 
@@ -75,155 +78,18 @@ export const InquiryPlanningPage: React.FC = () => {
   const [userRole] = useState<'ADMIN' | 'USER'>('ADMIN');
   const [loggedInCompany] = useState<string>('Inhyma Machinery & Trade (China HQ / India)');
 
-  // 1ST LAYER SUMMARY: Company Consignments List
-  const [consignments, setConsignments] = useState([
-    {
-      id: 'c-1',
-      company: 'F&B Uganda Ingredients Ltd',
-      code: 'FB1',
-      status: 'PROPOSED', // PROPOSED, PARTIALLY_APPROVED, FULLY_APPROVED
-      total_cbm: 28.45,
-      total_weight: 14250,
-      proposed_date: '2025-04-20',
-      proposed_by: 'Yinglima Admin',
-    },
-    {
-      id: 'c-2',
-      company: 'F&B Uganda Ingredients Ltd',
-      code: 'FB2',
-      status: 'PARTIALLY_APPROVED',
-      total_cbm: 32.1,
-      total_weight: 16800,
-      proposed_date: '2025-04-21',
-      proposed_by: 'Uganda Buyer Team',
-    },
-    {
-      id: 'c-3',
-      company: 'One Stop General Trading Uganda',
-      code: 'OS1',
-      status: 'FULLY_APPROVED',
-      total_cbm: 45.0,
-      total_weight: 22500,
-      proposed_date: '2025-04-18',
-      proposed_by: 'One Stop Admin',
-    },
-    {
-      id: 'c-4',
-      company: 'Inhyma Machinery & Trade (China HQ / India)',
-      code: 'ING1',
-      status: 'PROPOSED',
-      total_cbm: 18.2,
-      total_weight: 8500,
-      proposed_date: '2025-04-22',
-      proposed_by: 'Gujarat Branch',
-    },
-  ]);
+  // 1ST LAYER SUMMARY: Company Consignments List (100% DB Driven)
+  const [consignments, setConsignments] = useState<any[]>([]);
 
-  // 2ND LAYER: Detailed Requirement Grid Line Items inside Consignment
-  const [gridItems, setGridItems] = useState([
-    {
-      id: 'item-1',
-      company: 'F&B Uganda Ingredients Ltd',
-      consignment_code: 'FB1',
-      product_name: 'Citric Acid Anhydrous 30-100 mesh',
-      product_code: 'PRD-ING-CA01',
-      uom: 'KG',
-      quantity: 5000,
-      unit_cbm: 0.035,
-      gross_weight: 25.2,
-      brand_preference: 'TTCA Brand Preferred',
-      product_specs: '25kg bag packaging with moisture inner liner',
-      procurement_remarks: 'Yinglima China Team: Supplier confirmed stock ready in Shandong port.',
-      item_status: 'APPROVED',
-      tally_post_status: 'PENDING',
-      license_warning: true,
-      license_remark: 'FSSAI / Uganda UNBS Food Safety License Required',
-      proposed_date: '2025-04-20',
-      proposed_by: 'Yinglima Admin',
-    },
-    {
-      id: 'item-2',
-      company: 'F&B Uganda Ingredients Ltd',
-      consignment_code: 'FB1',
-      product_name: 'Caustic Soda Flakes 99%',
-      product_code: 'PRD-CHM-CS02',
-      uom: 'KG',
-      quantity: 3000,
-      unit_cbm: 0.04,
-      gross_weight: 25.0,
-      brand_preference: 'Tianjin Bohai Brand',
-      product_specs: 'Standard UN approved hazardous chemical bags',
-      procurement_remarks: 'China Procurement: Price USD 620/MT FOB Qingdao.',
-      item_status: 'PROPOSED',
-      tally_post_status: 'PENDING',
-      license_warning: false,
-      license_remark: '',
-      proposed_date: '2025-04-20',
-      proposed_by: 'Yinglima Admin',
-    },
-    {
-      id: 'item-3',
-      company: 'F&B Uganda Ingredients Ltd',
-      consignment_code: 'FB1',
-      product_name: 'FR900 MSH Band Sealer',
-      product_code: 'PRD-BS-FR900',
-      uom: 'PCS',
-      quantity: 10,
-      unit_cbm: 0.16245,
-      gross_weight: 21.0,
-      brand_preference: 'Yinglima Original',
-      product_specs: '220V 50Hz stainless steel frame',
-      procurement_remarks: 'Stock available at Wenzhou factory.',
-      item_status: 'PROPOSED',
-      tally_post_status: 'PENDING',
-      license_warning: true,
-      license_remark: 'CE & Electrical Safety Certificate Required',
-      proposed_date: '2025-04-20',
-      proposed_by: 'Yinglima Admin',
-    },
-    {
-      id: 'item-4',
-      company: 'F&B Uganda Ingredients Ltd',
-      consignment_code: 'FB2',
-      product_name: 'Vacuum Packing Machine DZ400',
-      product_code: 'PRD-MC-DZ400',
-      uom: 'PCS',
-      quantity: 8,
-      unit_cbm: 0.35,
-      gross_weight: 75.0,
-      brand_preference: 'Yinglima Preferred',
-      product_specs: 'Double chamber vacuum sealer',
-      procurement_remarks: 'Ready for loading',
-      item_status: 'APPROVED',
-      tally_post_status: 'PENDING',
-      license_warning: false,
-      license_remark: '',
-      proposed_date: '2025-04-21',
-      proposed_by: 'Uganda Buyer Team',
-    },
-  ]);
+  // 2ND LAYER: Detailed Requirement Grid Line Items inside Consignment (100% DB Driven)
+  const [gridItems, setGridItems] = useState<any[]>([]);
 
   // Fetch live consignments & items from NestJS API connected to Supabase DB on mount
   useEffect(() => {
     async function loadApiInquiries() {
       const data = await inquiryApi.getConsignments();
-      if (data && Array.isArray(data) && data.length > 0) {
-        const formattedLayer1 = data.map((c: any) => ({
-          id: c.id,
-          company: c.company?.name || 'Uganda Ingredients Ltd',
-          code: c.consignment_code || c.code,
-          status: c.status || 'PROPOSED',
-          total_cbm: Number(c.total_cbm) || 0,
-          total_weight: Number(c.total_weight) || 0,
-          proposed_date: c.created_at ? c.created_at.split('T')[0] : '2025-04-20',
-          proposed_by: 'Yinglima Admin',
-        }));
-        setConsignments((prev) => {
-          const map = new Map<string, any>();
-          prev.forEach((item) => map.set(item.code, item));
-          formattedLayer1.forEach((item) => map.set(item.code, { ...map.get(item.code), ...item }));
-          return Array.from(map.values());
-        });
+      if (data && Array.isArray(data)) {
+        setConsignments(data);
       }
     }
     loadApiInquiries();
@@ -414,6 +280,110 @@ export const InquiryPlanningPage: React.FC = () => {
   const activeGridItems = gridItems
     .filter((item) => item.consignment_code === activeConsignmentCode)
     .sort((a, b) => (a.tally_post_status === 'PENDING' ? -1 : 1)); // Pending entries on top by default!
+
+  // Layer 1 Sorting State
+  const [l1SortField, setL1SortField] = useState<string | null>(null);
+  const [l1SortDirection, setL1SortDirection] = useState<'asc' | 'desc'>('asc');
+
+  const handleL1Sort = (field: string) => {
+    if (l1SortField === field) {
+      if (l1SortDirection === 'asc') setL1SortDirection('desc');
+      else { setL1SortField(null); setL1SortDirection('asc'); }
+    } else {
+      setL1SortField(field);
+      setL1SortDirection('asc');
+    }
+  };
+
+  const sortedLayer1Consignments = useMemo(() => {
+    if (!l1SortField) return filteredLayer1Consignments;
+    return [...filteredLayer1Consignments].sort((a, b) => {
+      let valA = a[l1SortField] ?? '';
+      let valB = b[l1SortField] ?? '';
+      if (typeof valA === 'string') valA = valA.toLowerCase();
+      if (typeof valB === 'string') valB = valB.toLowerCase();
+      if (valA < valB) return l1SortDirection === 'asc' ? -1 : 1;
+      if (valA > valB) return l1SortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [filteredLayer1Consignments, l1SortField, l1SortDirection]);
+
+  // Layer 2 Sorting State
+  const [l2SortField, setL2SortField] = useState<string | null>(null);
+  const [l2SortDirection, setL2SortDirection] = useState<'asc' | 'desc'>('asc');
+
+  const handleL2Sort = (field: string) => {
+    if (l2SortField === field) {
+      if (l2SortDirection === 'asc') setL2SortDirection('desc');
+      else { setL2SortField(null); setL2SortDirection('asc'); }
+    } else {
+      setL2SortField(field);
+      setL2SortDirection('asc');
+    }
+  };
+
+  const sortedGridItems = useMemo(() => {
+    if (!l2SortField) return activeGridItems;
+    return [...activeGridItems].sort((a, b) => {
+      let valA = a[l2SortField] ?? '';
+      let valB = b[l2SortField] ?? '';
+      if (typeof valA === 'string') valA = valA.toLowerCase();
+      if (typeof valB === 'string') valB = valB.toLowerCase();
+      if (valA < valB) return l2SortDirection === 'asc' ? -1 : 1;
+      if (valA > valB) return l2SortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [activeGridItems, l2SortField, l2SortDirection]);
+
+  const renderL1SortHeader = (label: string, field: string) => {
+    const isActive = l1SortField === field;
+    return (
+      <th
+        onClick={() => handleL1Sort(field)}
+        className="p-3.5 select-none cursor-pointer hover:bg-slate-200/70 transition-colors group"
+      >
+        <div className="flex items-center gap-1.5">
+          <span className="p-0.5 text-slate-500">
+            {isActive ? (
+              l1SortDirection === 'asc' ? (
+                <ArrowUp size={14} className="text-blue-600 font-bold" />
+              ) : (
+                <ArrowDown size={14} className="text-blue-600 font-bold" />
+              )
+            ) : (
+              <ArrowUpDown size={14} className="text-slate-400 group-hover:text-slate-700" />
+            )}
+          </span>
+          <span>{label}</span>
+        </div>
+      </th>
+    );
+  };
+
+  const renderL2SortHeader = (label: string, field: string) => {
+    const isActive = l2SortField === field;
+    return (
+      <th
+        onClick={() => handleL2Sort(field)}
+        className="p-3.5 select-none cursor-pointer hover:bg-slate-200/70 transition-colors group"
+      >
+        <div className="flex items-center gap-1.5">
+          <span className="p-0.5 text-slate-500">
+            {isActive ? (
+              l2SortDirection === 'asc' ? (
+                <ArrowUp size={14} className="text-blue-600 font-bold" />
+              ) : (
+                <ArrowDown size={14} className="text-blue-600 font-bold" />
+              )
+            ) : (
+              <ArrowUpDown size={14} className="text-slate-400 group-hover:text-slate-700" />
+            )}
+          </span>
+          <span>{label}</span>
+        </div>
+      </th>
+    );
+  };
 
   // Export CSV (Layer-Aware & Excel UTF-8 BOM formatted)
   const handleExportCSV = () => {
@@ -731,17 +701,17 @@ export const InquiryPlanningPage: React.FC = () => {
                 <thead className="bg-slate-100 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
                   <tr>
                     <th className="p-3.5"><input type="checkbox" className="rounded border-slate-300" /></th>
-                    <th className="p-3.5">Inquiry By (Buyer Company Name)</th>
-                    <th className="p-3.5">Inquiry Consignment Code</th>
-                    <th className="p-3.5">Status</th>
-                    <th className="p-3.5">Total CBM (m³)</th>
-                    <th className="p-3.5">Total Gross Weight (kg)</th>
-                    <th className="p-3.5">Date & Proposed By</th>
+                    {renderL1SortHeader('Inquiry By (Buyer Company Name)', 'company')}
+                    {renderL1SortHeader('Inquiry Consignment Code', 'code')}
+                    {renderL1SortHeader('Status', 'status')}
+                    {renderL1SortHeader('Total CBM (m³)', 'total_cbm')}
+                    {renderL1SortHeader('Total Gross Weight (kg)', 'total_weight')}
+                    {renderL1SortHeader('Date & Proposed By', 'proposed_date')}
                     <th className="p-3.5 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
-                  {filteredLayer1Consignments.map((item) => (
+                  {sortedLayer1Consignments.map((item) => (
                     <tr key={item.id} className="hover:bg-slate-50 transition-colors">
                       <td className="p-3.5"><input type="checkbox" className="rounded border-slate-300" /></td>
                       {/* Inquiry By (Company) - Clickable to open 2nd Layer */}
@@ -841,21 +811,21 @@ export const InquiryPlanningPage: React.FC = () => {
                 <thead className="bg-slate-100 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
                   <tr>
                     <th className="p-3.5"><input type="checkbox" className="rounded border-slate-300" /></th>
-                    <th className="p-3.5">Product Name</th>
-                    <th className="p-3.5">Quantity (Editable)</th>
-                    <th className="p-3.5">UOM</th>
-                    <th className="p-3.5">Brand Preference</th>
-                    <th className="p-3.5">Computed CBM</th>
-                    <th className="p-3.5">Computed Weight</th>
-                    <th className="p-3.5">Status</th>
-                    <th className="p-3.5">Tally Entry Posted?</th>
-                    <th className="p-3.5">China Procurement Remarks</th>
+                    {renderL2SortHeader('Product Name', 'product_name')}
+                    {renderL2SortHeader('Quantity (Editable)', 'quantity')}
+                    {renderL2SortHeader('UOM', 'uom')}
+                    {renderL2SortHeader('Brand Preference', 'brand_preference')}
+                    {renderL2SortHeader('Computed CBM', 'unit_cbm')}
+                    {renderL2SortHeader('Computed Weight', 'gross_weight')}
+                    {renderL2SortHeader('Status', 'item_status')}
+                    {renderL2SortHeader('Tally Entry Posted?', 'tally_post_status')}
+                    {renderL2SortHeader('China Procurement Remarks', 'procurement_remarks')}
                     <th className="p-3.5 text-right">Shift Consignment</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
-                  {activeGridItems.length > 0 ? (
-                    activeGridItems.map((item) => (
+                  {sortedGridItems.length > 0 ? (
+                    sortedGridItems.map((item) => (
                       <tr
                         key={item.id}
                         className={`transition-colors ${

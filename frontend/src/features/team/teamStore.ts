@@ -98,65 +98,11 @@ const DEFAULT_ADMIN: TeamMember = {
   isDefaultAdmin: true,
 };
 
-export const SEED_MEMBERS: TeamMember[] = [
-  DEFAULT_ADMIN,
-  {
-    id: 'user-default',
-    name: 'Yinglima User',
-    email: 'user@yinglima.com',
-    phone: '+256 700000000',
-    password: 'user123',
-    accountType: 'EMPLOYEE',
-    department: 'Purchase / Procurement',
-    branch: 'F&B Uganda Ingredients Ltd',
-    status: 'ACTIVE',
-    permissions: fullPermissionSet(),
-    createdDate: '2025-01-02',
-  },
-  {
-    id: 't2',
-    name: 'David Musoke',
-    email: 'david@fb-uganda.com',
-    phone: '+256 700123456',
-    password: 'David@123',
-    accountType: 'EMPLOYEE',
-    department: 'Purchase / Procurement',
-    branch: 'F&B Uganda Ingredients Ltd',
-    status: 'ACTIVE',
-    permissions: {
-      ...emptyPermissionSet(),
-      suppliers: { view: true, edit: true, delete: false },
-      inquiry: { view: true, edit: true, delete: false },
-      import_purchase: { view: true, edit: true, delete: false },
-      buyers: { view: true, edit: false, delete: false },
-      products: { view: true, edit: false, delete: false },
-      stock: { view: true, edit: true, delete: false },
-    },
-    createdDate: '2025-02-11',
-  },
-  {
-    id: 't3',
-    name: 'John Zhang',
-    email: 'zhang@yinglima.cn',
-    phone: '+86 13900112233',
-    password: 'Zhang@123',
-    accountType: 'EMPLOYEE',
-    department: 'Products & Stock',
-    branch: 'Yinglima Machinery & Trade (China HQ)',
-    status: 'ACTIVE',
-    permissions: {
-      ...emptyPermissionSet(),
-      suppliers: { view: true, edit: true, delete: false },
-      products: { view: true, edit: true, delete: false },
-      stock: { view: true, edit: false, delete: false },
-    },
-    createdDate: '2025-03-02',
-  },
-];
+export const SEED_MEMBERS: TeamMember[] = [];
 
 type Listener = (members: TeamMember[]) => void;
 const listeners = new Set<Listener>();
-let cache: TeamMember[] = SEED_MEMBERS;
+let cache: TeamMember[] = [];
 
 async function refreshMembers() {
   const data = await teamApi.getMembers();

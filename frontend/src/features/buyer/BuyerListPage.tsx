@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Users,
   Plus,
@@ -22,6 +22,9 @@ import {
   RotateCcw,
   Calendar,
   Building2,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import { buyerApi } from '../../api/buyerApi';
 
@@ -186,54 +189,10 @@ export const BuyerListPage: React.FC = () => {
   const [eyeModalContent, setEyeModalContent] = useState<{ title: string; items: string[] } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Default seed buyers
-  const DEFAULT_BUYERS = [
-    {
-      id: 'b-1',
-      name: 'Uganda Beverage Industries Ltd',
-      buyer_type: 'Manufacturer',
-      country: 'Uganda',
-      city: 'Kampala',
-      address: 'Plot 45 Industrial Area',
-      client_grade: 'A',
-      current_status: 'EXISTING',
-      potential: 'YES',
-      product_range_supplied: 'Carbonated Soft Drinks, Juice Concentrates',
-      product_categories: ['Food Ingredients'],
-      potential_subcategories: ['Citric Acid'],
-      contact_name: 'David Musoke',
-      designation: 'Procurement Director',
-      calling_number: '+256 700123456',
-      whatsapp_number: '+256 700123456',
-      email: 'david@ugandabev.co.ug',
-      contacts: [],
-    },
-    {
-      id: 'b-2',
-      name: 'Mukwano Industries Uganda',
-      buyer_type: 'Manufacturer',
-      country: 'Uganda',
-      city: 'Kampala',
-      address: 'Mukwano Complex Jinja Road',
-      client_grade: 'A',
-      current_status: 'NEW',
-      potential: 'UNSELECTED',
-      product_range_supplied: 'Soaps, Detergents, Cooking Oils',
-      product_categories: ['Chemicals'],
-      potential_subcategories: ['Caustic Soda'],
-      contact_name: 'Grace Akello',
-      designation: 'Supply Chain Manager',
-      calling_number: '+256 750987654',
-      whatsapp_number: '+256 750987654',
-      email: 'gakello@mukwano.com',
-      contacts: [],
-    },
-  ];
+  // Buyers State (100% DB Driven)
+  const [buyers, setBuyers] = useState<any[]>([]);
 
-  // Buyers State
-  const [buyers, setBuyers] = useState<any[]>(DEFAULT_BUYERS);
-
-  // 8 Exact Top Filters
+  // Top Filters
   const [filterDateRange, setFilterDateRange] = useState('');
   const [filterBuyerType, setFilterBuyerType] = useState('');
   const [filterCurrentStatus, setFilterCurrentStatus] = useState('');
@@ -288,13 +247,8 @@ export const BuyerListPage: React.FC = () => {
   // Load buyers from NestJS API on mount
   const loadApiBuyers = async () => {
     const data = await buyerApi.getBuyers();
-    if (data && Array.isArray(data) && data.length > 0) {
-      setBuyers((prev) => {
-        const map = new Map<string, any>();
-        prev.forEach((b) => map.set(b.name.trim().toLowerCase(), b));
-        data.forEach((b) => map.set(b.name.trim().toLowerCase(), { ...map.get(b.name.trim().toLowerCase()), ...b }));
-        return Array.from(map.values());
-      });
+    if (data && Array.isArray(data)) {
+      setBuyers(data);
     }
   };
 
@@ -470,6 +424,67 @@ export const BuyerListPage: React.FC = () => {
     }
     return true;
   });
+
+  // Column Sorting State
+  const [sortField, setSortField] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      if (sortDirection === 'asc') {
+        setSortDirection('desc');
+      } else {
+        setSortField(null);
+        setSortDirection('asc');
+      }
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const sortedBuyers = useMemo(() => {
+    if (!sortField) return filteredBuyers;
+    return [...filteredBuyers].sort((a, b) => {
+      let valA = a[sortField] ?? '';
+      let valB = b[sortField] ?? '';
+
+      if (Array.isArray(valA)) valA = valA.join(', ');
+      if (Array.isArray(valB)) valB = valB.join(', ');
+
+      if (typeof valA === 'string') valA = valA.toLowerCase();
+      if (typeof valB === 'string') valB = valB.toLowerCase();
+
+      if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+      if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [filteredBuyers, sortField, sortDirection]);
+
+  const renderSortHeader = (label: string, field: string) => {
+    const isActive = sortField === field;
+    return (
+      <th
+        onClick={() => handleSort(field)}
+        className="p-3.5 select-none cursor-pointer hover:bg-slate-200/70 transition-colors group"
+      >
+        <div className="flex items-center gap-1.5">
+          <span className="p-0.5 text-slate-500">
+            {isActive ? (
+              sortDirection === 'asc' ? (
+                <ArrowUp size={14} className="text-blue-600 font-bold" />
+              ) : (
+                <ArrowDown size={14} className="text-blue-600 font-bold" />
+              )
+            ) : (
+              <ArrowUpDown size={14} className="text-slate-400 group-hover:text-slate-700" />
+            )}
+          </span>
+          <span>{label}</span>
+        </div>
+      </th>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -767,20 +782,20 @@ export const BuyerListPage: React.FC = () => {
                 <thead className="bg-slate-100 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
                   <tr>
                     <th className="p-3.5 w-10 text-center">Select</th>
-                    <th className="p-3.5">Name of Company</th>
-                    <th className="p-3.5">Buyer Type</th>
-                    <th className="p-3.5">Product Category</th>
-                    <th className="p-3.5">Product Sub Category</th>
-                    <th className="p-3.5">Country</th>
-                    <th className="p-3.5">Current Status</th>
-                    <th className="p-3.5">Potential</th>
-                    <th className="p-3.5">Client Grade</th>
-                    <th className="p-3.5">Added On</th>
+                    {renderSortHeader('Name of Company', 'name')}
+                    {renderSortHeader('Buyer Type', 'buyer_type')}
+                    {renderSortHeader('Product Category', 'product_categories')}
+                    {renderSortHeader('Product Sub Category', 'potential_subcategories')}
+                    {renderSortHeader('Country', 'country')}
+                    {renderSortHeader('Current Status', 'current_status')}
+                    {renderSortHeader('Potential', 'potential')}
+                    {renderSortHeader('Client Grade', 'client_grade')}
+                    {renderSortHeader('Added On', 'created_at')}
                     <th className="p-3.5 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
-                  {filteredBuyers.map((item) => {
+                  {sortedBuyers.map((item) => {
                     const categories = item.product_categories || ['Food Ingredients'];
                     const subcategories = item.potential_subcategories || ['Citric Acid'];
                     const showCatEye = categories.length > 5;

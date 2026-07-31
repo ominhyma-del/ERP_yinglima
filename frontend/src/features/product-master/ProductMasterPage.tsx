@@ -5,13 +5,14 @@ import {
   Eye, Pencil, Trash2, ChevronLeft, ChevronRight, RefreshCw,
   Tags, Layers, Bookmark, Image as ImageIcon, FileText, Bold,
   Italic, List, Table2, Info, Clock, User, Calendar, Settings,
-  GripVertical, ListChecks,
+  GripVertical, ListChecks, ArrowUpDown, ArrowUp, ArrowDown,
 } from 'lucide-react';
 import { useBulkSelect } from './useBulkSelect';
 import {
   DEFAULT_FIELD_CONFIG, FieldOverrideMap, loadFieldOverrides,
   saveFieldOverrides, getEffectiveFields, FieldDef,
 } from './fieldConfig';
+import { productApi } from '../../api/productApi';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -68,55 +69,11 @@ const now = () => new Date().toISOString().replace('T', ' ').substring(0, 16);
 
 // ─── Initial data (mock — no backend wired yet, so this seeds state only) ────
 
-const INIT_CATEGORIES: Category[] = [
-  { id: 'c1', name: 'Packaging Machines', status: 'ACTIVE' },
-  { id: 'c2', name: 'Packaging Machine Spares', status: 'ACTIVE' },
-  { id: 'c3', name: 'Material Handling Equipments', status: 'ACTIVE' },
-  { id: 'c4', name: 'Material Handling Spares', status: 'ACTIVE' },
-  { id: 'c5', name: 'Consumable Category', status: 'ACTIVE' },
-  { id: 'c6', name: 'Service', status: 'ACTIVE' },
-];
-
-const INIT_SUBCATS: SubCategoryRow[] = [
-  { id: 's1', name: 'Band Sealer', categoryId: 'c1', category: 'Packaging Machines', status: 'ACTIVE' },
-  { id: 's2', name: 'Cup Sealers', categoryId: 'c1', category: 'Packaging Machines', status: 'ACTIVE' },
-  { id: 's3', name: 'Compressors', categoryId: 'c1', category: 'Packaging Machines', status: 'ACTIVE' },
-  { id: 's4', name: 'Weigh Filler (Spares)', categoryId: 'c2', category: 'Packaging Machine Spares', status: 'ACTIVE' },
-  { id: 's5', name: 'Flow Wrapper (Spares)', categoryId: 'c2', category: 'Packaging Machine Spares', status: 'ACTIVE' },
-  { id: 's6', name: 'Roller Conveyors', categoryId: 'c3', category: 'Material Handling Equipments', status: 'ACTIVE' },
-  { id: 's7', name: 'Ramps', categoryId: 'c3', category: 'Material Handling Equipments', status: 'ACTIVE' },
-  { id: 's8', name: 'Rider Stackers (Spares)', categoryId: 'c4', category: 'Material Handling Spares', status: 'ACTIVE' },
-];
-
-const INIT_BRANDS: BrandRow[] = [
-  { id: 'b1', name: 'Packlift', status: 'ACTIVE' },
-  { id: 'b2', name: 'Yinglima', status: 'ACTIVE' },
-];
-
-const INIT_PRODUCTS: Product[] = [
-  {
-    id: 'p1', name_tally: 'HPT Foot Release Pedal', name_invoice: 'Foot Release Pedal',
-    product_code: 'PRD-HPT-FRP', category: 'Material Handling Spares', subcategory: 'Rider Stackers (Spares)',
-    brand: 'Packlift', hsn_code: '84314990', vat_refund_pct: 13.0,
-    license_remarks: '', uom: 'PCS', status: 'ACTIVE', pkg_quantity: 1, pkg_net_weight: 0.8,
-    pkg_gross_weight: 1, length_cm: 20, width_cm: 15, height_cm: 8,
-    pkg_cbm: calcCBM(20, 15, 8), specifications: '',
-    current_stock: 0, created_by: 'Admin', created_date: '2025-01-10 09:15',
-    modified_by: 'Admin', modified_date: '2025-03-20 14:22',
-    audit: [{ action: 'Created', user: 'Admin', date: '2025-01-10 09:15' }],
-  },
-  {
-    id: 'p2', name_tally: 'Structured Black Belt (1800mm X 330mm)', name_invoice: 'Structured Black Belt',
-    product_code: 'PRD-SBB-1800', category: 'Packaging Machines', subcategory: 'Band Sealer',
-    brand: 'Yinglima', hsn_code: '39269010', vat_refund_pct: 10.0,
-    license_remarks: '', uom: 'PCS', status: 'ACTIVE', pkg_quantity: 1, pkg_net_weight: 0.9,
-    pkg_gross_weight: 1, length_cm: 180, width_cm: 33, height_cm: 2,
-    pkg_cbm: calcCBM(180, 33, 2), specifications: '',
-    current_stock: 25, created_by: 'Admin', created_date: '2025-02-05 11:30',
-    modified_by: 'Admin', modified_date: '2025-04-15 10:05',
-    audit: [{ action: 'Created', user: 'Admin', date: '2025-02-05 11:30' }],
-  },
-];
+// ─── Initial data (100% DB driven) ────
+const INIT_CATEGORIES: Category[] = [];
+const INIT_SUBCATS: SubCategoryRow[] = [];
+const INIT_BRANDS: BrandRow[] = [];
+const INIT_PRODUCTS: Product[] = [];
 
 // ─── Small shared UI bits ──────────────────────────────────────────────────────
 
@@ -379,6 +336,16 @@ export const ProductMasterPage: React.FC = () => {
 
   useEffect(() => { saveFieldOverrides(fieldOverrides); }, [fieldOverrides]);
 
+  useEffect(() => {
+    async function loadApiProducts() {
+      const data = await productApi.getProducts();
+      if (data && Array.isArray(data)) {
+        setProducts(data);
+      }
+    }
+    loadApiProducts();
+  }, []);
+
   // Shared toast / alerts
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => setToast({ msg, type });
@@ -438,8 +405,64 @@ export const ProductMasterPage: React.FC = () => {
     });
   }, [products, search, filterCat, filterSubCat, filterBrand, filterHSN, filterUOM, statusFilterTab]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  // Column Sorting State
+  const [sortField, setSortField] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      if (sortDirection === 'asc') {
+        setSortDirection('desc');
+      } else {
+        setSortField(null);
+        setSortDirection('asc');
+      }
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const sortedFiltered = useMemo(() => {
+    if (!sortField) return filtered;
+    return [...filtered].sort((a: any, b: any) => {
+      let valA = a[sortField] ?? '';
+      let valB = b[sortField] ?? '';
+      if (typeof valA === 'string') valA = valA.toLowerCase();
+      if (typeof valB === 'string') valB = valB.toLowerCase();
+      if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+      if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [filtered, sortField, sortDirection]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedFiltered.length / PAGE_SIZE));
+  const paginated = sortedFiltered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const renderSortHeader = (label: string, field: string) => {
+    const isActive = sortField === field;
+    return (
+      <th
+        onClick={() => handleSort(field)}
+        className="p-3 font-bold text-slate-500 uppercase tracking-wider select-none cursor-pointer hover:bg-slate-200/70 transition-colors group"
+      >
+        <div className="flex items-center gap-1.5">
+          <span className="p-0.5 text-slate-500">
+            {isActive ? (
+              sortDirection === 'asc' ? (
+                <ArrowUp size={14} className="text-blue-600 font-bold" />
+              ) : (
+                <ArrowDown size={14} className="text-blue-600 font-bold" />
+              )
+            ) : (
+              <ArrowUpDown size={14} className="text-slate-400 group-hover:text-slate-700" />
+            )}
+          </span>
+          <span>{label}</span>
+        </div>
+      </th>
+    );
+  };
   const bulkProducts = useBulkSelect(paginated);
 
   useEffect(() => setPage(1), [search, filterCat, filterSubCat, filterBrand, filterHSN, filterUOM, statusFilterTab]);
@@ -947,17 +970,17 @@ export const ProductMasterPage: React.FC = () => {
                         <th className="p-3 w-8">
                           <HeaderCheckbox checked={bulkProducts.allSelected} indeterminate={bulkProducts.someSelected} onChange={bulkProducts.toggleAll} />
                         </th>
-                        <th className="p-3 font-bold text-slate-500 uppercase tracking-wider">Product Name</th>
-                        <th className="p-3 font-bold text-slate-500 uppercase tracking-wider">Code</th>
-                        <th className="p-3 font-bold text-slate-500 uppercase tracking-wider">Category</th>
-                        <th className="p-3 font-bold text-slate-500 uppercase tracking-wider">Sub Category</th>
-                        <th className="p-3 font-bold text-slate-500 uppercase tracking-wider">Brand</th>
-                        <th className="p-3 font-bold text-slate-500 uppercase tracking-wider">HSN</th>
-                        <th className="p-3 font-bold text-slate-500 uppercase tracking-wider">UOM</th>
-                        <th className="p-3 font-bold text-slate-500 uppercase tracking-wider">Pkg Qty</th>
-                        <th className="p-3 font-bold text-slate-500 uppercase tracking-wider">Gross Wt</th>
-                        <th className="p-3 font-bold text-slate-500 uppercase tracking-wider">CBM</th>
-                        <th className="p-3 font-bold text-slate-500 uppercase tracking-wider">Status</th>
+                        {renderSortHeader('Product Name', 'name_tally')}
+                        {renderSortHeader('Code', 'product_code')}
+                        {renderSortHeader('Category', 'category')}
+                        {renderSortHeader('Sub Category', 'subcategory')}
+                        {renderSortHeader('Brand', 'brand')}
+                        {renderSortHeader('HSN', 'hsn_code')}
+                        {renderSortHeader('UOM', 'uom')}
+                        {renderSortHeader('Pkg Qty', 'pkg_quantity')}
+                        {renderSortHeader('Gross Wt', 'pkg_gross_weight')}
+                        {renderSortHeader('CBM', 'pkg_cbm')}
+                        {renderSortHeader('Status', 'status')}
                         <th className="p-3 font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
                       </tr>
                     </thead>

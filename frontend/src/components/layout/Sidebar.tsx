@@ -34,22 +34,19 @@ export const Sidebar: React.FC = () => {
       items: [
         { id: 'suppliers', label: 'Suppliers', icon: Truck, path: '/suppliers' },
         { id: 'localpurchase', label: 'Local Purchase / Inquiry', icon: FileSpreadsheet, path: '/localpurchase' },
-        { id: 'import-purchase', label: 'Import Purchase', icon: ShoppingBag, path: '/import-purchase' },
       ],
     },
     {
       title: 'SALES & BUYERS',
       items: [
         { id: 'buyers', label: 'Buyers (Clients)', icon: Users, path: '/buyers' },
-        { id: 'quotation', label: 'Quotation', icon: FileText, path: '/quotation' },
       ],
     },
     {
       title: 'PRODUCTS & STOCK',
       items: [
         { id: 'products', label: 'Product Master', icon: Package, path: '/products' },
-        { id: 'stock-transactions', label: 'Stock Transactions', icon: RefreshCw, path: '/stock-transactions' },
-        { id: 'reorder-reports', label: 'Re-Order Reports', icon: BarChart3, path: '/reorder-reports' },
+        { id: 'analytics', label: 'Analytics', icon: BarChart3, path: '/analytics' },
       ],
     },
     {

@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Truck, Plus, Filter, ShieldAlert, ArrowLeft, Download, Upload, FileSpreadsheet, X, CheckCircle, Eye, Trash2, Camera, Phone, Mail, MessageSquare, AlertCircle, Link as LinkIcon, Check, ChevronDown, UserPlus, Edit, Maximize2, FileText, Image as ImageIcon, Video, Search, RotateCcw } from 'lucide-react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { Truck, Plus, Filter, ShieldAlert, ArrowLeft, Download, Upload, FileSpreadsheet, X, CheckCircle, Eye, Trash2, Camera, Phone, Mail, MessageSquare, AlertCircle, Link as LinkIcon, Check, ChevronDown, UserPlus, Edit, Maximize2, FileText, Image as ImageIcon, Video, Search, RotateCcw, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { supplierApi } from '../../api/supplierApi';
 
 // Country Phone Dial Code Map
@@ -189,86 +189,15 @@ export const SupplierListPage: React.FC = () => {
     'Temperature Controllers',
   ];
 
-  // Default seed suppliers (fallback when DB is initialising)
-  const DEFAULT_SUPPLIERS = [
-    {
-      id: 's-1',
-      name: 'Zhejiang Packaging Machinery Ltd',
-      product_categories: ['Machines', 'Packaging Equipment'],
-      supplier_type: 'Manufacturer',
-      brand_name: 'Yinglima Machinery',
-      country: 'China',
-      province: 'Zhejiang',
-      city: 'Wenzhou',
-      address: 'No. 888 Industrial Zone',
-      contact_title: 'Mr',
-      contact_name: 'John Zhang',
-      designation: 'Export Director',
-      calling_number: '+86 13800138000',
-      whatsapp_number: '+86 13800138000',
-      wechat_number: '+86 13800138000',
-      emails: ['john@zhejiangpack.com'],
-      tax_id: '91330300MA12345678',
-      primary_website: 'www.zhejiangpack.com',
-      secondary_website: '',
-      key_strength_subcategories: ['Band Sealer', 'Vacuum Packers'],
-      grade: 'A',
-      current_status: 'EXISTING',
-      potential: 'YES',
-      potential_reason: 'High manufacturing capacity & automated lines',
-      secondary_products: ['Teflon Belts', 'Heating Blocks'],
-      visited_factory: 'Yes',
-      visit_remarks: 'Visited facility in March 2025.',
-      overall_remarks: 'Primary supplier for band sealers.',
-      contacts: [],
-    },
-    {
-      id: 's-2',
-      name: 'Shandong Citric Acid Chemical Co',
-      product_categories: ['Food Ingredients', 'Chemicals'],
-      supplier_type: 'Manufacturer',
-      brand_name: 'TTCA Brand',
-      country: 'China',
-      province: 'Shandong',
-      city: 'Weifang',
-      address: 'Chemical Industry Park',
-      contact_title: 'Mr',
-      contact_name: 'Li Wei',
-      designation: 'Sales Manager',
-      calling_number: '+86 13900139000',
-      whatsapp_number: '+86 13900139000',
-      wechat_number: '+86 13900139000',
-      emails: ['liwei@citric.cn'],
-      tax_id: '91370700MA98765432',
-      primary_website: 'www.citricacid-shandong.com',
-      secondary_website: '',
-      key_strength_subcategories: ['Citric Acid'],
-      grade: 'B',
-      current_status: 'NEW',
-      potential: 'UNSELECTED',
-      potential_reason: '',
-      secondary_products: ['Citric Acid Monohydrate'],
-      visited_factory: 'No',
-      visit_remarks: '',
-      overall_remarks: 'Food grade Citric Acid Anhydrous 30-100 mesh supplier.',
-      contacts: [],
-    },
-  ];
+  // Initial Suppliers state (100% database driven)
+  const [suppliers, setSuppliers] = useState<any[]>([]);
 
-  // Initial Suppliers state
-  const [suppliers, setSuppliers] = useState<any[]>(DEFAULT_SUPPLIERS);
-
-  // Fetch live suppliers from NestJS API connected to Supabase DB on mount
+  // Fetch live suppliers directly from Supabase DB via NestJS API
   useEffect(() => {
     async function loadApiSuppliers() {
       const data = await supplierApi.getSuppliers();
-      if (data && Array.isArray(data) && data.length > 0) {
-        setSuppliers((prev) => {
-          const map = new Map<string, any>();
-          prev.forEach((s) => map.set(s.name.trim().toLowerCase(), s));
-          data.forEach((s) => map.set(s.name.trim().toLowerCase(), { ...map.get(s.name.trim().toLowerCase()), ...s }));
-          return Array.from(map.values());
-        });
+      if (data && Array.isArray(data)) {
+        setSuppliers(data);
       }
     }
     loadApiSuppliers();
@@ -318,6 +247,67 @@ export const SupplierListPage: React.FC = () => {
 
     return true;
   });
+
+  // Column Sorting State
+  const [sortField, setSortField] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      if (sortDirection === 'asc') {
+        setSortDirection('desc');
+      } else {
+        setSortField(null);
+        setSortDirection('asc');
+      }
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const sortedSuppliers = useMemo(() => {
+    if (!sortField) return filteredSuppliers;
+    return [...filteredSuppliers].sort((a, b) => {
+      let valA = a[sortField] ?? '';
+      let valB = b[sortField] ?? '';
+
+      if (Array.isArray(valA)) valA = valA.join(', ');
+      if (Array.isArray(valB)) valB = valB.join(', ');
+
+      if (typeof valA === 'string') valA = valA.toLowerCase();
+      if (typeof valB === 'string') valB = valB.toLowerCase();
+
+      if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+      if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [filteredSuppliers, sortField, sortDirection]);
+
+  const renderSortHeader = (label: string, field: string) => {
+    const isActive = sortField === field;
+    return (
+      <th
+        onClick={() => handleSort(field)}
+        className="p-3.5 select-none cursor-pointer hover:bg-slate-200/70 transition-colors group"
+      >
+        <div className="flex items-center gap-1.5">
+          <span className="p-0.5 text-slate-500">
+            {isActive ? (
+              sortDirection === 'asc' ? (
+                <ArrowUp size={14} className="text-blue-600 font-bold" />
+              ) : (
+                <ArrowDown size={14} className="text-blue-600 font-bold" />
+              )
+            ) : (
+              <ArrowUpDown size={14} className="text-slate-400 group-hover:text-slate-700" />
+            )}
+          </span>
+          <span>{label}</span>
+        </div>
+      </th>
+    );
+  };
 
   const handleResetFilters = () => {
     setSearchTerm('');
@@ -1041,23 +1031,23 @@ export const SupplierListPage: React.FC = () => {
                 <thead className="bg-slate-100 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
                   <tr>
                     <th className="p-3.5"><input type="checkbox" className="rounded border-slate-300" /></th>
-                    <th className="p-3.5">Company Name</th>
-                    <th className="p-3.5">Product Category (Max 5)</th>
-                    <th className="p-3.5">Key Strength Sub Category</th>
-                    <th className="p-3.5">Secondary Products</th>
-                    <th className="p-3.5">Country</th>
-                    <th className="p-3.5">City, Province</th>
-                    <th className="p-3.5">Brand</th>
-                    <th className="p-3.5">Supplier Type</th>
-                    <th className="p-3.5">Current Status{inlineEditEnabled && ' (Editable)'}</th>
-                    <th className="p-3.5">Supplier's Grade{inlineEditEnabled && ' (Editable)'}</th>
-                    <th className="p-3.5">Potential{inlineEditEnabled && ' (Editable)'}</th>
+                    {renderSortHeader('Company Name', 'name')}
+                    {renderSortHeader('Product Category (Max 5)', 'product_categories')}
+                    {renderSortHeader('Key Strength Sub Category', 'key_strength_subcategories')}
+                    {renderSortHeader('Secondary Products', 'secondary_products')}
+                    {renderSortHeader('Country', 'country')}
+                    {renderSortHeader('City, Province', 'city')}
+                    {renderSortHeader('Brand', 'brand_name')}
+                    {renderSortHeader('Supplier Type', 'supplier_type')}
+                    {renderSortHeader(`Current Status${inlineEditEnabled ? ' (Editable)' : ''}`, 'current_status')}
+                    {renderSortHeader(`Supplier's Grade${inlineEditEnabled ? ' (Editable)' : ''}`, 'grade')}
+                    {renderSortHeader(`Potential${inlineEditEnabled ? ' (Editable)' : ''}`, 'potential')}
                     <th className="p-3.5 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
-                  {filteredSuppliers.length > 0 ? (
-                    filteredSuppliers.map((item) => (
+                  {sortedSuppliers.length > 0 ? (
+                    sortedSuppliers.map((item) => (
                       <tr key={item.id} className="hover:bg-slate-50 transition-colors">
                         <td className="p-3.5"><input type="checkbox" className="rounded border-slate-300" /></td>
                         <td
