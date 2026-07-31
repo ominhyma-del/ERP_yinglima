@@ -3,16 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { findMemberByEmail, TeamMember, AccountType, PermissionSet, useTeamStore, SEED_MEMBERS } from '../team/teamStore';
 import { teamApi } from '../../api/teamApi';
 import api from '../../lib/api';
-
-/**
- * ── Mock Authentication ───────────────────────────────────────────────────
- *
- * Frontend-only mock auth layer (session id, remember-me persistence,
- * logout) that authenticates against the shared team store in
- * `features/team/teamStore.ts` — the same data Team Members and Roles &
- * Permissions read/write. That means promoting someone to Admin there is
- * immediately reflected here the next time they log in.
- */
+import { WifiOff } from 'lucide-react';
 
 export interface AuthUser {
   id: string;
@@ -30,6 +21,7 @@ interface AuthContextValue {
   isAuthenticated: boolean;
   rememberMe: boolean;
   isInitializing: boolean;
+  isOnline: boolean;
   login: (email: string, password: string, remember: boolean) => Promise<{ ok: boolean; error?: string }>;
   logout: () => void;
   refreshUser: () => void;
@@ -49,34 +41,35 @@ function genSessionId() {
   return 'sess_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
 
-function initials(name: string) {
-  return name
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase())
-    .join('') || '??';
-}
+function toAuthUser(m: TeamMember): AuthUser {
+  const parts = m.name.trim().split(/\s+/);
+  let initials = 'U';
+  if (parts.length >= 2) {
+    initials = (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  } else if (parts.length === 1 && parts[0].length > 0) {
+    initials = parts[0].slice(0, 2).toUpperCase();
+  }
 
-function toAuthUser(member: TeamMember): AuthUser {
   return {
-    id: member.id,
-    name: member.name,
-    email: member.email,
-    accountType: member.accountType,
-    department: member.department,
-    avatarInitials: initials(member.name),
-    permissions: member.permissions,
+    id: m.id,
+    name: m.name,
+    email: m.email,
+    accountType: m.accountType,
+    department: m.department,
+    avatarInitials: initials,
+    permissions: m.permissions,
   };
 }
 
 function readStoredSession(): StoredSession | null {
   try {
-    const fromLocal = localStorage.getItem(SESSION_KEY);
-    if (fromLocal) return JSON.parse(fromLocal);
-    const fromSession = sessionStorage.getItem(SESSION_KEY);
-    if (fromSession) return JSON.parse(fromSession);
-  } catch {
+    const raw = localStorage.getItem(SESSION_KEY) || sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed.sessionId === 'string' && typeof parsed.memberId === 'string') {
+      return parsed;
+    }
+  } catch (err) {
     // ignore corrupted storage
   }
   return null;
@@ -88,29 +81,68 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [rememberMe, setRememberMe] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
+
+  // Network Offline / Online Monitoring State
+  const [isOnline, setIsOnline] = useState<boolean>(
+    typeof window !== 'undefined' ? navigator.onLine : true,
+  );
+
   const navigate = useNavigate();
 
-  // Restore session when members are loaded from backend
+  // Listen to Network Disconnect / Reconnect Events
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Restore session when members are loaded from backend (or from offline cache)
   useEffect(() => {
     async function restore() {
       try {
         const stored = readStoredSession();
-        if (stored) {
-          const latestMembers = await teamApi.getMembers();
-          let member = latestMembers.find((m) => m.id === stored.memberId);
-          if (!member) {
-            member = SEED_MEMBERS.find((m) => m.id === stored.memberId);
+        const cachedUserStr = localStorage.getItem('yinglima_auth_user');
+
+        if (stored || cachedUserStr) {
+          // 1. Immediately restore cached auth user so user NEVER gets logged out on network outage
+          if (cachedUserStr) {
+            try {
+              const cachedUser = JSON.parse(cachedUserStr);
+              setUser(cachedUser);
+              setSessionId(stored?.sessionId || 'sess_offline');
+              setRememberMe(!!localStorage.getItem(SESSION_KEY));
+            } catch (e) {}
           }
-          if (member) {
-            const authUser = toAuthUser(member);
-            setUser(authUser);
-            localStorage.setItem('yinglima_auth_user', JSON.stringify(authUser));
-            setSessionId(stored.sessionId);
-            setRememberMe(!!localStorage.getItem(SESSION_KEY));
+
+          // 2. Try fetching latest member details from network if online
+          try {
+            const latestMembers = await teamApi.getMembers();
+            if (Array.isArray(latestMembers) && stored?.memberId) {
+              let member = latestMembers.find((m) => m.id === stored.memberId);
+              if (!member) {
+                member = SEED_MEMBERS.find((m) => m.id === stored.memberId);
+              }
+              if (member) {
+                const authUser = toAuthUser(member);
+                setUser(authUser);
+                localStorage.setItem('yinglima_auth_user', JSON.stringify(authUser));
+                setSessionId(stored.sessionId);
+                setRememberMe(!!localStorage.getItem(SESSION_KEY));
+              }
+            }
+          } catch (netErr) {
+            console.warn('Network offline or DB unreachable during restore — keeping cached session active.');
           }
         }
       } catch (err) {
-        console.error('Session restore failed:', err);
+        console.error('Session restore error:', err);
       } finally {
         setIsInitializing(false);
       }
@@ -123,14 +155,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!user) return;
     const fresh = members.find((m) => m.id === user.id || m.email.toLowerCase() === user.email.toLowerCase());
     if (fresh) {
-      setUser(toAuthUser(fresh));
+      const authUser = toAuthUser(fresh);
+      setUser(authUser);
+      localStorage.setItem('yinglima_auth_user', JSON.stringify(authUser));
     }
   }, [members, user?.id, user?.email]);
 
   const login = async (email: string, password: string, remember: boolean) => {
     let latestMembers = await teamApi.getMembers();
     const cleanEmail = email.trim().toLowerCase();
-    let member = latestMembers.find((m) => m.email.toLowerCase() === cleanEmail);
+    let member = latestMembers?.find((m) => m.email.toLowerCase() === cleanEmail);
     const seedMatch = SEED_MEMBERS.find((m) => m.email.toLowerCase() === cleanEmail);
 
     if (!member) {
@@ -141,14 +175,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { ok: false, error: 'Invalid email or password.' };
     }
 
-    // Check password if available, otherwise check against seedMatch
-    const expectedPassword = member.password || seedMatch?.password || 'admin123';
-    if (password !== expectedPassword && password !== 'admin123' && password !== 'user123') {
+    if (member.password && member.password !== password) {
       return { ok: false, error: 'Invalid email or password.' };
     }
+
     if (member.status === 'INACTIVE') {
-      return { ok: false, error: 'This account has been deactivated. Contact your administrator.' };
+      return { ok: false, error: 'This account has been deactivated. Please contact an administrator.' };
     }
+
     const newSessionId = genSessionId();
     const session: StoredSession = { sessionId: newSessionId, memberId: member.id, createdAt: new Date().toISOString() };
 
@@ -180,9 +214,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
     } catch (e) {}
 
-    // Always land on a clean, permission-safe screen for the newly signed-in
-    // session, instead of whatever route was left in the address bar from a
-    // previous user's session.
     navigate('/dashboard', { replace: true });
 
     return { ok: true };
@@ -204,29 +235,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch (e) {}
     }
 
-    // Clear every trace of the session — both storage locations (regardless
-    // of which one "remember me" used), and all in-memory auth state — so
-    // the sign-out is complete rather than leaving a session half-active.
     localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem('yinglima_auth_user');
     sessionStorage.removeItem(SESSION_KEY);
     setUser(null);
     setSessionId(null);
     setRememberMe(false);
 
-    // Reset the URL back to root so a stale, permission-gated route isn't
-    // left in the address bar for whoever signs in next on this device.
-    navigate('/', { replace: true });
+    navigate('/login', { replace: true });
   };
 
   const refreshUser = () => {
     if (!user) return;
     const fresh = members.find((m) => m.id === user.id);
-    if (fresh) setUser(toAuthUser(fresh));
+    if (fresh) {
+      const authUser = toAuthUser(fresh);
+      setUser(authUser);
+      localStorage.setItem('yinglima_auth_user', JSON.stringify(authUser));
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ user, sessionId, isAuthenticated: !!user, rememberMe, isInitializing, login, logout, refreshUser }}>
+    <AuthContext.Provider
+      value={{ user, sessionId, isAuthenticated: !!user, rememberMe, isInitializing, isOnline, login, logout, refreshUser }}
+    >
       {children}
+
+      {/* FLOATING NETWORK DISCONNECT INDICATOR (PRESERVES USER LOGGED IN STATE) */}
+      {!isOnline && (
+        <div className="fixed bottom-4 right-4 z-[99999] bg-amber-500 text-white font-bold text-xs px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-bounce border border-amber-300">
+          <WifiOff size={20} className="shrink-0" />
+          <div>
+            <p className="font-extrabold text-sm">Network Not Connected</p>
+            <p className="text-[11px] font-medium opacity-95">Working Offline — User Session Preserved</p>
+          </div>
+        </div>
+      )}
     </AuthContext.Provider>
   );
 };

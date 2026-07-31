@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import api from '../../lib/api';
 import { useAuth } from '../auth/AuthContext';
+import { useTeamStore } from './teamStore';
 
 export const AuditLogsPage: React.FC = () => {
   const { user } = useAuth();
@@ -60,16 +61,30 @@ export const AuditLogsPage: React.FC = () => {
     fetchLiveAuditLogs();
   };
 
-  // Distinct User Emails / Names for Filter Dropdown
-  const uniqueUsers = useMemo(() => {
+  const { members } = useTeamStore();
+
+  // Distinct User Emails / Names for Filter Dropdown (combines registered team members + logs)
+  const allTeamMembers = useMemo(() => {
     const userMap = new Map<string, string>();
+
+    // 1. Include all registered team members from database store
+    if (Array.isArray(members) && members.length > 0) {
+      members.forEach((m) => {
+        userMap.set(m.email.toLowerCase(), m.name);
+      });
+    }
+
+    // 2. Also include any additional historical users from logs
     logs.forEach((log) => {
-      const email = log.user_email || log.user?.email || 'Unknown User';
+      const email = (log.user_email || log.user?.email || '').toLowerCase();
       const name = log.user_name || log.user?.full_name || email;
-      userMap.set(email, name);
+      if (email && !userMap.has(email)) {
+        userMap.set(email, name);
+      }
     });
+
     return Array.from(userMap.entries()).map(([email, name]) => ({ email, name }));
-  }, [logs]);
+  }, [members, logs]);
 
   // Distinct Action Types for Filter Dropdown
   const uniqueActions = useMemo(() => {
@@ -85,7 +100,9 @@ export const AuditLogsPage: React.FC = () => {
       // 1. User Filter
       if (selectedUserFilter !== 'ALL') {
         const userEmail = (log.user_email || log.user?.email || '').toLowerCase();
-        if (userEmail !== selectedUserFilter.toLowerCase()) return false;
+        const userName = (log.user_name || '').toLowerCase();
+        const filterVal = selectedUserFilter.toLowerCase();
+        if (userEmail !== filterVal && !userName.includes(filterVal)) return false;
       }
 
       // 2. Action Filter
@@ -189,8 +206,8 @@ export const AuditLogsPage: React.FC = () => {
             onChange={(e) => setSelectedUserFilter(e.target.value)}
             className="w-full bg-slate-50 border border-slate-300 text-slate-900 font-bold text-xs p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
           >
-            <option value="ALL">All Team Members ({uniqueUsers.length} Users)</option>
-            {uniqueUsers.map((u) => (
+            <option value="ALL">All Team Members ({allTeamMembers.length} Users)</option>
+            {allTeamMembers.map((u) => (
               <option key={u.email} value={u.email}>
                 {u.name} ({u.email})
               </option>
