@@ -291,8 +291,8 @@ export const BuyerListPage: React.FC = () => {
     if (data && Array.isArray(data) && data.length > 0) {
       setBuyers((prev) => {
         const map = new Map<string, any>();
-        prev.forEach((b) => map.set(b.id || b.name, b));
-        data.forEach((b) => map.set(b.id || b.name, { ...map.get(b.id || b.name), ...b }));
+        prev.forEach((b) => map.set(b.name.trim().toLowerCase(), b));
+        data.forEach((b) => map.set(b.name.trim().toLowerCase(), { ...map.get(b.name.trim().toLowerCase()), ...b }));
         return Array.from(map.values());
       });
     }

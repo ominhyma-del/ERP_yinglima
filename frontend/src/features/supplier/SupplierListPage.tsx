@@ -265,8 +265,8 @@ export const SupplierListPage: React.FC = () => {
       if (data && Array.isArray(data) && data.length > 0) {
         setSuppliers((prev) => {
           const map = new Map<string, any>();
-          prev.forEach((s) => map.set(s.id || s.name, s));
-          data.forEach((s) => map.set(s.id || s.name, { ...map.get(s.id || s.name), ...s }));
+          prev.forEach((s) => map.set(s.name.trim().toLowerCase(), s));
+          data.forEach((s) => map.set(s.name.trim().toLowerCase(), { ...map.get(s.name.trim().toLowerCase()), ...s }));
           return Array.from(map.values());
         });
       }
