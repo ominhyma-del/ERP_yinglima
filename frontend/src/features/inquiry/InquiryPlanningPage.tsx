@@ -515,18 +515,6 @@ export const InquiryPlanningPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* DARSH IMPEX FILTER TOGGLE BUTTON [ T ] */}
-          <button
-            onClick={() => setShowFilterPanel(!showFilterPanel)}
-            className={`p-2.5 rounded-lg flex items-center justify-center transition-all cursor-pointer shadow-xs ${
-              showFilterPanel
-                ? 'bg-slate-700 hover:bg-slate-800 text-white'
-                : 'bg-white border border-slate-300 hover:bg-slate-100 text-slate-700'
-            }`}
-            title="Toggle Filter Fields Box"
-          >
-            <Filter size={16} />
-          </button>
 
           <button
             onClick={() => handleOpenInquiryModal('QUICK')}
@@ -591,66 +579,64 @@ export const InquiryPlanningPage: React.FC = () => {
       {currentLayer === 1 && (
         <div className="space-y-4">
           {/* EXACT DARSH IMPEX COLLAPSIBLE FILTER PANEL */}
-          {showFilterPanel && (
-            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4 transition-all">
-              <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3.5 text-xs">
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Company Filter</label>
-                  <select
-                    value={activeCompanyFilter}
-                    onChange={(e) => setActiveCompanyFilter(e.target.value)}
-                    className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
-                  >
-                    <option value="ALL">All Companies</option>
-                    {Object.keys(companyConsignmentMasterMap).map((comp) => (
-                      <option key={comp} value={comp}>{comp}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Consignment Code</label>
-                  <select
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
-                  >
-                    <option value="">All Consignment Codes</option>
-                    <option value="FB1">FB1 (Uganda Shipment 1)</option>
-                    <option value="FB2">FB2 (Uganda Shipment 2)</option>
-                    <option value="OS1">OS1 (Uganda Shipment 1)</option>
-                    <option value="ING1">ING1 (Gujarat Shipment 1)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Status</label>
-                  <select
-                    className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
-                  >
-                    <option value="ALL">All Status</option>
-                    <option value="PROPOSED">Proposed</option>
-                    <option value="PARTIALLY_APPROVED">Partially Approved</option>
-                    <option value="FULLY_APPROVED">Fully Approved</option>
-                  </select>
-                </div>
+          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4 transition-all">
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3.5 text-xs">
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Company Filter</label>
+                <select
+                  value={activeCompanyFilter}
+                  onChange={(e) => setActiveCompanyFilter(e.target.value)}
+                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
+                >
+                  <option value="ALL">All Companies</option>
+                  {Object.keys(companyConsignmentMasterMap).map((comp) => (
+                    <option key={comp} value={comp}>{comp}</option>
+                  ))}
+                </select>
               </div>
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                <button
-                  onClick={() => {
-                    setSearchTerm('');
-                    setActiveCompanyFilter('ALL');
-                  }}
-                  className="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white font-semibold text-xs rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Consignment Code</label>
+                <select
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
                 >
-                  <RotateCcw size={14} /> Reset
-                </button>
-                <button
-                  onClick={() => {}}
-                  className="px-5 py-2 bg-amber-400 hover:bg-amber-500 text-slate-900 font-bold text-xs rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  <option value="">All Consignment Codes</option>
+                  <option value="FB1">FB1 (Uganda Shipment 1)</option>
+                  <option value="FB2">FB2 (Uganda Shipment 2)</option>
+                  <option value="OS1">OS1 (Uganda Shipment 1)</option>
+                  <option value="ING1">ING1 (Gujarat Shipment 1)</option>
+                </select>
+              </div>
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Status</label>
+                <select
+                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
                 >
-                  <Search size={14} /> Search
-                </button>
+                  <option value="ALL">All Status</option>
+                  <option value="PROPOSED">Proposed</option>
+                  <option value="PARTIALLY_APPROVED">Partially Approved</option>
+                  <option value="FULLY_APPROVED">Fully Approved</option>
+                </select>
               </div>
             </div>
-          )}
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                onClick={() => {
+                  setSearchTerm('');
+                  setActiveCompanyFilter('ALL');
+                }}
+                className="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white font-semibold text-xs rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <RotateCcw size={14} /> Reset
+              </button>
+              <button
+                onClick={() => {}}
+                className="px-5 py-2 bg-amber-400 hover:bg-amber-500 text-slate-900 font-bold text-xs rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Search size={14} /> Search
+              </button>
+            </div>
+          </div>
 
           {/* ACTIVE / INACTIVE SUB-TAB NAVIGATION MATCHING DARSH IMPEX */}
           <div className="flex items-center border-b border-slate-200 px-1 gap-8 text-xs font-bold pt-2">

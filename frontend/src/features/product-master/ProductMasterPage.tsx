@@ -5,7 +5,7 @@ import {
   Eye, Pencil, Trash2, ChevronLeft, ChevronRight, RefreshCw,
   Tags, Layers, Bookmark, Image as ImageIcon, FileText, Bold,
   Italic, List, Table2, Info, Clock, User, Calendar, Settings,
-  GripVertical, ListChecks, ArrowUpDown, ArrowUp, ArrowDown,
+  GripVertical, ListChecks, ArrowUpDown, ArrowUp, ArrowDown, ChevronDown,
 } from 'lucide-react';
 import { useBulkSelect } from './useBulkSelect';
 import { TableSkeleton } from '../../components/common/SkeletonLoader';
@@ -376,6 +376,7 @@ export const ProductMasterPage: React.FC = () => {
   const [confirmBulkDel, setConfirmBulkDel] = useState(false);
   const [quickCreate, setQuickCreate] = useState<'CATEGORY' | 'SUBCATEGORY' | 'BRAND' | null>(null);
   const [showImport, setShowImport] = useState(false);
+  const [showImpExpDropdown, setShowImpExpDropdown] = useState(false);
   const [importReport, setImportReport] = useState<{ added: string[]; skipped: string[] } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [suggestions, setSuggestions] = useState<Product[]>([]);
@@ -653,24 +654,109 @@ export const ProductMasterPage: React.FC = () => {
   const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const mockNew: Product = {
-      id: `p-imp-${Date.now()}`, name_tally: 'Vacuum Sealer DZ600', name_invoice: 'Continuous Vacuum Sealer DZ600',
-      product_code: 'PRD-MC-DZ600', category: 'Packaging Machines', subcategory: 'Band Sealer',
-      brand: 'Yinglima', hsn_code: '84223000', vat_refund_pct: 13.0,
-      license_remarks: '', uom: 'PCS', status: 'ACTIVE',
-      pkg_quantity: 1, pkg_net_weight: 80, pkg_gross_weight: 85,
-      length_cm: 120, width_cm: 80, height_cm: 110, pkg_cbm: calcCBM(120, 80, 110),
-      specifications: '', current_stock: 0,
-      created_by: 'Import', created_date: now(), modified_by: 'Import', modified_date: now(),
-      audit: [{ action: 'Imported', user: 'Import', date: now() }],
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      if (!text) return;
+      
+      const lines = text.split(/\r?\n/);
+      if (lines.length <= 1) return;
+      
+      const addedList: string[] = [];
+      const skippedList: string[] = [];
+      const importedProducts: Product[] = [];
+      
+      // Parse header to map columns
+      const headers = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim().toLowerCase());
+      
+      // Index mapping helper
+      const getIndex = (name: string) => headers.findIndex(h => h.includes(name));
+      const idxTally = getIndex('tally') >= 0 ? getIndex('tally') : 0;
+      const idxInvoice = getIndex('invoice') >= 0 ? getIndex('invoice') : 1;
+      const idxCode = getIndex('code') >= 0 ? getIndex('code') : 2;
+      const idxCategory = getIndex('category') >= 0 ? getIndex('category') : 3;
+      const idxSub = getIndex('sub') >= 0 ? getIndex('sub') : 4;
+      const idxBrand = getIndex('brand') >= 0 ? getIndex('brand') : 5;
+      const idxHsn = getIndex('hsn') >= 0 ? getIndex('hsn') : 6;
+      const idxRefund = getIndex('refund') >= 0 ? getIndex('refund') : 7;
+      const idxUom = getIndex('uom') >= 0 ? getIndex('uom') : 8;
+      const idxQty = getIndex('qty') >= 0 ? getIndex('qty') : 9;
+      const idxGross = getIndex('gross') >= 0 ? getIndex('gross') : 10;
+      const idxCbm = getIndex('cbm') >= 0 ? getIndex('cbm') : 11;
+      const idxStatus = getIndex('status') >= 0 ? getIndex('status') : 12;
+      
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        
+        // Simple CSV splitter that respects quoted strings
+        const cols: string[] = [];
+        let cur = '';
+        let inQuotes = false;
+        for (let j = 0; j < line.length; j++) {
+          const char = line[j];
+          if (char === '"') {
+            inQuotes = !inQuotes;
+          } else if (char === ',' && !inQuotes) {
+            cols.push(cur.trim());
+            cur = '';
+          } else {
+            cur += char;
+          }
+        }
+        cols.push(cur.trim());
+        
+        if (cols.length < 3 || !cols[idxTally]) continue;
+        
+        const nameTally = cols[idxTally].replace(/^"|"$/g, '');
+        const prodCode = (cols[idxCode] || `PRD-MC-${Date.now()}-${i}`).replace(/^"|"$/g, '');
+        
+        const dup = products.find(p => p.name_tally.toLowerCase() === nameTally.toLowerCase() && p.product_code.toLowerCase() === prodCode.toLowerCase());
+        if (dup) {
+          skippedList.push(`${nameTally} (${prodCode}) — duplicate`);
+          continue;
+        }
+        
+        const newProd: Product = {
+          id: `p-imp-${Date.now()}-${i}`,
+          name_tally: nameTally,
+          name_invoice: (cols[idxInvoice] || nameTally).replace(/^"|"$/g, ''),
+          product_code: prodCode,
+          category: (cols[idxCategory] || 'General').replace(/^"|"$/g, ''),
+          subcategory: (cols[idxSub] || 'General').replace(/^"|"$/g, ''),
+          brand: (cols[idxBrand] || 'Yinglima').replace(/^"|"$/g, ''),
+          hsn_code: (cols[idxHsn] || '84223000').replace(/^"|"$/g, ''),
+          vat_refund_pct: Number(cols[idxRefund]) || 0,
+          license_remarks: '',
+          uom: (cols[idxUom] || 'PCS').replace(/^"|"$/g, ''),
+          status: (cols[idxStatus]?.toUpperCase()?.replace(/^"|"$/g, '') === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE') as Status,
+          pkg_quantity: Number(cols[idxQty]) || 1,
+          pkg_net_weight: 0,
+          pkg_gross_weight: Number(cols[idxGross]) || 0,
+          length_cm: 0,
+          width_cm: 0,
+          height_cm: 0,
+          pkg_cbm: (cols[idxCbm] || '0.000000').replace(/^"|"$/g, ''),
+          specifications: '',
+          current_stock: 0,
+          created_by: 'Import',
+          created_date: now(),
+          modified_by: 'Import',
+          modified_date: now(),
+          audit: [{ action: 'Imported', user: 'Import', date: now() }],
+        };
+        
+        importedProducts.push(newProd);
+        addedList.push(`${nameTally} (${prodCode})`);
+      }
+      
+      if (importedProducts.length > 0) {
+        setProducts(prev => [...importedProducts, ...prev]);
+      }
+      setImportReport({ added: addedList, skipped: skippedList });
     };
-    const dup = products.find(p => p.name_tally === mockNew.name_tally && p.product_code === mockNew.product_code);
-    if (dup) {
-      setImportReport({ added: [], skipped: [`${mockNew.name_tally} (${mockNew.product_code}) — duplicate`] });
-    } else {
-      setProducts(prev => [mockNew, ...prev]);
-      setImportReport({ added: [`${mockNew.name_tally} (${mockNew.product_code})`], skipped: [] });
-    }
+    reader.readAsText(file);
   };
 
   const resetFilters = () => { setSearch(''); setFilterCat(''); setFilterSubCat(''); setFilterBrand(''); setFilterHSN(''); setFilterUOM(''); };
@@ -882,24 +968,51 @@ export const ProductMasterPage: React.FC = () => {
               {prodView === 'list' ? (
                 <>
                   <button onClick={() => setShowManageFields(true)} title="Customize which fields appear on the product form"
-                    className="px-3.5 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium text-xs rounded-lg flex items-center gap-1.5 shadow-sm transition-all cursor-pointer">
+                    className="px-3.5 py-2.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium text-xs rounded-lg flex items-center gap-1.5 shadow-sm transition-all cursor-pointer">
                     <Settings size={14} className="text-slate-500" /> Manage Fields
                   </button>
-                  {IS_ADMIN && (
-                    <button onClick={() => setShowImport(true)} className="px-3.5 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium text-xs rounded-lg flex items-center gap-1.5 shadow-sm transition-all cursor-pointer">
-                      <Upload size={14} className="text-blue-600" /> Import
+
+                  <button onClick={openAdd} className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-lg flex items-center gap-1.5 shadow-sm transition-all cursor-pointer">
+                    <Plus size={16} /> + ADD NEW
+                  </button>
+
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowImpExpDropdown(!showImpExpDropdown)}
+                      className="px-3.5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+                    >
+                      <span>Imp / Exp</span>
+                      <ChevronDown size={14} />
                     </button>
-                  )}
-                  <button onClick={handleExport} className="px-3.5 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium text-xs rounded-lg flex items-center gap-1.5 shadow-sm transition-all cursor-pointer">
-                    <Download size={14} className="text-emerald-600" /> Export
-                  </button>
-                  <button onClick={openAdd} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-lg flex items-center gap-2 shadow-sm transition-all cursor-pointer">
-                    <Plus size={15} /> Add Product
-                  </button>
+                    {showImpExpDropdown && (
+                      <div className="absolute right-0 mt-1 w-36 bg-white border border-slate-200 rounded-lg shadow-xl z-50 text-xs py-1">
+                        {IS_ADMIN && (
+                          <button
+                            onClick={() => {
+                              setShowImport(true);
+                              setShowImpExpDropdown(false);
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center gap-2 text-slate-700 font-semibold"
+                          >
+                            <Upload size={14} className="text-blue-600" /> Import
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            handleExport();
+                            setShowImpExpDropdown(false);
+                          }}
+                          className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center gap-2 text-slate-700 font-semibold"
+                        >
+                          <Download size={14} className="text-amber-600" /> Export CSV
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </>
               ) : (
-                <button onClick={() => { setProdView('list'); setSelectedProduct(null); }} className="px-3.5 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium text-xs rounded-lg flex items-center gap-1.5 shadow-sm cursor-pointer">
-                  <ArrowLeft size={14} /> Back to List
+                <button onClick={() => { setProdView('list'); setSelectedProduct(null); }} className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium text-xs rounded-lg flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer">
+                  <ArrowLeft size={15} /> BACK TO LIST
                 </button>
               )}
             </div>
@@ -1657,11 +1770,29 @@ export const ProductMasterPage: React.FC = () => {
               <>
                 <div className="text-xs text-slate-600 space-y-2">
                   <p>Upload a <strong>.csv</strong> or <strong>.xlsx</strong> file. Duplicate Name + Code combinations will be skipped with a report.</p>
-                  <div onClick={() => fileRef.current?.click()} className="border-2 border-dashed border-slate-300 hover:border-blue-400 bg-slate-50 p-8 rounded-xl text-center cursor-pointer space-y-2 transition-all">
+                  <div onClick={() => fileRef.current?.click()} className="border-2 border-dashed border-slate-300 hover:border-blue-400 bg-slate-50 p-8 rounded-xl text-center cursor-pointer space-y-2 transition-all relative">
                     <FileSpreadsheet size={32} className="mx-auto text-blue-500" />
                     <p className="font-semibold text-slate-700">Click to select file</p>
                     <p className="text-[11px] text-slate-400">Supports .csv, .xls, .xlsx</p>
                     <input ref={fileRef} type="file" accept=".csv,.xls,.xlsx" onChange={handleImportFile} className="hidden" />
+                  </div>
+                  <div className="flex items-center justify-between pt-2">
+                    <a
+                      href="#download-sample"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        const sampleHeaders = 'Product Name (Tally),Product Name (Invoice),Product Code,Category,Sub Category,Brand,HSN Code,VAT Refund %,UOM,Pkg Qty,Pkg Gross Wt (kg),Pkg CBM (m³),Status\n"Continuous Band Sealer FR900","Continuous Band Sealer FR-900","PRD-BAND-SEALER","Chemicals & Machinery","General Ingredients & Machines","Yinglima","84223000",0,"SETS",1,28.5,0.15,"ACTIVE"';
+                        const blob = new Blob([sampleHeaders], { type: 'text/csv' });
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'Yinglima_Product_Import_Sample.csv';
+                        a.click();
+                      }}
+                      className="text-xs text-blue-600 font-bold hover:underline flex items-center gap-1"
+                    >
+                      <Download size={13} /> Download CSV Sample Template
+                    </a>
                   </div>
                 </div>
                 <div className="flex justify-end pt-2 border-t border-slate-100">

@@ -719,18 +719,6 @@ export const SupplierListPage: React.FC = () => {
 
         {viewMode === 'list' ? (
           <div className="flex items-center gap-2">
-            {/* DARSH IMPEX FILTER TOGGLE BUTTON [ T ] */}
-            <button
-              onClick={() => setShowFilterPanel(!showFilterPanel)}
-              className={`p-2.5 rounded-lg flex items-center justify-center transition-all cursor-pointer shadow-xs ${
-                showFilterPanel
-                  ? 'bg-slate-700 hover:bg-slate-800 text-white'
-                  : 'bg-white border border-slate-300 hover:bg-slate-100 text-slate-700'
-              }`}
-              title="Toggle Filter Fields Box"
-            >
-              <Filter size={16} />
-            </button>
  
             {/* Inline Edit Toggle Button */}
             <button
@@ -890,97 +878,95 @@ export const SupplierListPage: React.FC = () => {
       {viewMode === 'list' && (
         <div className="space-y-4">
           {/* EXACT DARSH IMPEX COLLAPSIBLE FILTER PANEL */}
-          {showFilterPanel && (
-            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4 transition-all">
-              <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-5 gap-3.5 text-xs">
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Product Category</label>
-                  <select
-                    value={filterCategory}
-                    onChange={(e) => setFilterCategory(e.target.value)}
-                    className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
-                  >
-                    <option value="All">All</option>
-                    {categoryMasterOptions.map((cat) => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Key Strength Sub Category</label>
-                  <select
-                    value={filterSubCategory}
-                    onChange={(e) => setFilterSubCategory(e.target.value)}
-                    className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
-                  >
-                    <option value="All">All</option>
-                    {subcategoryMasterOptions.map((sub) => (
-                      <option key={sub} value={sub}>{sub}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Country</label>
-                  <select
-                    value={filterCountry}
-                    onChange={(e) => setFilterCountry(e.target.value)}
-                    className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
-                  >
-                    <option value="All">All</option>
-                    <option value="China">China</option>
-                    <option value="Uganda">Uganda</option>
-                    <option value="India">India</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Province</label>
-                  <select
-                    value={filterProvince}
-                    onChange={(e) => setFilterProvince(e.target.value)}
-                    className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
-                  >
-                    <option value="All">All</option>
-                    {Object.keys(provinceCityMap).map((prov) => (
-                      <option key={prov} value={prov}>{prov}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">City</label>
-                  <select
-                    value={filterCity}
-                    onChange={(e) => setFilterCity(e.target.value)}
-                    className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
-                  >
-                    <option value="All">All</option>
-                    <option value="Wenzhou">Wenzhou</option>
-                    <option value="Weifang">Weifang</option>
-                    <option value="Qingdao">Qingdao</option>
-                  </select>
-                </div>
+          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4 transition-all">
+            <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-5 gap-3.5 text-xs">
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Product Category</label>
+                <select
+                  value={filterCategory}
+                  onChange={(e) => setFilterCategory(e.target.value)}
+                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
+                >
+                  <option value="All">All</option>
+                  {categoryMasterOptions.map((cat) => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
               </div>
 
-              {/* FILTER ACTION BUTTONS (RESET & SEARCH BOTTOM RIGHT) */}
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                <button
-                  onClick={handleResetFilters}
-                  className="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white font-semibold text-xs rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Key Strength Sub Category</label>
+                <select
+                  value={filterSubCategory}
+                  onChange={(e) => setFilterSubCategory(e.target.value)}
+                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
                 >
-                  <RotateCcw size={14} /> Reset
-                </button>
-                <button
-                  onClick={() => {}}
-                  className="px-5 py-2 bg-amber-400 hover:bg-amber-500 text-slate-900 font-bold text-xs rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  <option value="All">All</option>
+                  {subcategoryMasterOptions.map((sub) => (
+                    <option key={sub} value={sub}>{sub}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Country</label>
+                <select
+                  value={filterCountry}
+                  onChange={(e) => setFilterCountry(e.target.value)}
+                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
                 >
-                  <Search size={14} /> Search
-                </button>
+                  <option value="All">All</option>
+                  <option value="China">China</option>
+                  <option value="Uganda">Uganda</option>
+                  <option value="India">India</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Province</label>
+                <select
+                  value={filterProvince}
+                  onChange={(e) => setFilterProvince(e.target.value)}
+                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
+                >
+                  <option value="All">All</option>
+                  {Object.keys(provinceCityMap).map((prov) => (
+                    <option key={prov} value={prov}>{prov}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">City</label>
+                <select
+                  value={filterCity}
+                  onChange={(e) => setFilterCity(e.target.value)}
+                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
+                >
+                  <option value="All">All</option>
+                  <option value="Wenzhou">Wenzhou</option>
+                  <option value="Weifang">Weifang</option>
+                  <option value="Qingdao">Qingdao</option>
+                </select>
               </div>
             </div>
-          )}
+
+            {/* FILTER ACTION BUTTONS (RESET & SEARCH BOTTOM RIGHT) */}
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                onClick={handleResetFilters}
+                className="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white font-semibold text-xs rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <RotateCcw size={14} /> Reset
+              </button>
+              <button
+                onClick={() => {}}
+                className="px-5 py-2 bg-amber-400 hover:bg-amber-500 text-slate-900 font-bold text-xs rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Search size={14} /> Search
+              </button>
+            </div>
+          </div>
 
           {/* ACTIVE / INACTIVE SUB-TAB NAVIGATION MATCHING DARSH IMPEX */}
           <div className="flex items-center border-b border-slate-200 px-1 gap-8 text-xs font-bold pt-2">
