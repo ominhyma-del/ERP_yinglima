@@ -18,13 +18,17 @@ import { AuditService } from './modules/audit/audit.service';
 import { UserController } from './modules/user/user.controller';
 import { UserService } from './modules/user/user.service';
 
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { TaskQueueModule } from './modules/queue/task-queue.module';
+import { LoggingModule } from './core/logging/logging.module';
+import { LoggingInterceptor } from './core/logging/logging.interceptor';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    LoggingModule,
     TaskQueueModule,
   ],
   controllers: [
@@ -38,6 +42,10 @@ import { TaskQueueModule } from './modules/queue/task-queue.module';
     UserController,
   ],
   providers: [
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: LoggingInterceptor,
+    },
     PrismaService,
     SupplierService,
     BuyerService,
