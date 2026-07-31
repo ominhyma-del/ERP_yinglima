@@ -8,6 +8,7 @@ import {
   GripVertical, ListChecks, ArrowUpDown, ArrowUp, ArrowDown,
 } from 'lucide-react';
 import { useBulkSelect } from './useBulkSelect';
+import { TableSkeleton } from '../../components/common/SkeletonLoader';
 import {
   DEFAULT_FIELD_CONFIG, FieldOverrideMap, loadFieldOverrides,
   saveFieldOverrides, getEffectiveFields, FieldDef,
@@ -336,12 +337,16 @@ export const ProductMasterPage: React.FC = () => {
 
   useEffect(() => { saveFieldOverrides(fieldOverrides); }, [fieldOverrides]);
 
+  const [isLoading, setIsLoading] = useState(true);
+
   useEffect(() => {
     async function loadApiProducts() {
+      setIsLoading(true);
       const data = await productApi.getProducts();
       if (data && Array.isArray(data)) {
         setProducts(data);
       }
+      setIsLoading(false);
     }
     loadApiProducts();
   }, []);
@@ -962,6 +967,9 @@ export const ProductMasterPage: React.FC = () => {
               />
 
               {/* Table */}
+              {isLoading ? (
+                <TableSkeleton rows={8} />
+              ) : (
               <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs text-slate-700">
@@ -1077,6 +1085,7 @@ export const ProductMasterPage: React.FC = () => {
                   </div>
                 </div>
               </div>
+              )}
             </div>
           )}
 

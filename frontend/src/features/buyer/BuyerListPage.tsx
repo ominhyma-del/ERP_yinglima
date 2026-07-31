@@ -27,6 +27,7 @@ import {
   ArrowDown,
 } from 'lucide-react';
 import { buyerApi } from '../../api/buyerApi';
+import { TableSkeleton } from '../../components/common/SkeletonLoader';
 
 // Country Phone Dial Code & Max Digit Length Master
 const countryMaster: Record<string, { code: string; maxDigits: number }> = {
@@ -244,12 +245,16 @@ export const BuyerListPage: React.FC = () => {
     email: '',
   });
 
+  const [isLoading, setIsLoading] = useState(true);
+
   // Load buyers from NestJS API on mount
   const loadApiBuyers = async () => {
+    setIsLoading(true);
     const data = await buyerApi.getBuyers();
     if (data && Array.isArray(data)) {
       setBuyers(data);
     }
+    setIsLoading(false);
   };
 
   useEffect(() => {
@@ -776,6 +781,9 @@ export const BuyerListPage: React.FC = () => {
           </div>
 
           {/* BUYER TABLE LIST (11 EXACT COLUMNS) */}
+          {isLoading ? (
+            <TableSkeleton rows={8} />
+          ) : (
           <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs text-slate-700">
@@ -943,6 +951,7 @@ export const BuyerListPage: React.FC = () => {
               </table>
             </div>
           </div>
+          )}
         </div>
       )}
 

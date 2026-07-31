@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Truck, Plus, Filter, ShieldAlert, ArrowLeft, Download, Upload, FileSpreadsheet, X, CheckCircle, Eye, Trash2, Camera, Phone, Mail, MessageSquare, AlertCircle, Link as LinkIcon, Check, ChevronDown, UserPlus, Edit, Maximize2, FileText, Image as ImageIcon, Video, Search, RotateCcw, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { supplierApi } from '../../api/supplierApi';
+import { TableSkeleton } from '../../components/common/SkeletonLoader';
 
 // Country Phone Dial Code Map
 const countryPhoneCodeMap: Record<string, string> = {
@@ -191,14 +192,17 @@ export const SupplierListPage: React.FC = () => {
 
   // Initial Suppliers state (100% database driven)
   const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Fetch live suppliers directly from Supabase DB via NestJS API
   useEffect(() => {
     async function loadApiSuppliers() {
+      setIsLoading(true);
       const data = await supplierApi.getSuppliers();
       if (data && Array.isArray(data)) {
         setSuppliers(data);
       }
+      setIsLoading(false);
     }
     loadApiSuppliers();
   }, []);
@@ -1025,6 +1029,9 @@ export const SupplierListPage: React.FC = () => {
           </div>
 
           {/* Supplier Data Table matching exact spec */}
+          {isLoading ? (
+            <TableSkeleton rows={8} />
+          ) : (
           <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs text-slate-700">
@@ -1199,6 +1206,7 @@ export const SupplierListPage: React.FC = () => {
               </table>
             </div>
           </div>
+          )}
         </div>
       )}
 

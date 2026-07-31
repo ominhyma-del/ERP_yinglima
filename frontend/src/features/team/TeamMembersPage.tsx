@@ -10,6 +10,7 @@ import {
   PERMISSION_MODULES, emptyPermissionSet, fullPermissionSet, PermissionSet,
 } from './teamStore';
 import { useAuth } from '../auth/AuthContext';
+import { TableSkeleton } from '../../components/common/SkeletonLoader';
 
 function genPassword() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%';
@@ -91,7 +92,7 @@ function MiniPermissionEditor({
 
 export const TeamMembersPage: React.FC = () => {
   const { user: currentUser } = useAuth();
-  const { members, addMember, updateMember, removeMember, setAccountType } = useTeamStore();
+  const { members, isLoading, addMember, updateMember, removeMember, setAccountType } = useTeamStore();
   const isAdmin = currentUser?.accountType === 'ADMIN';
 
   const [view, setView] = useState<'list' | 'detail' | 'edit'>('list');
@@ -361,6 +362,9 @@ export const TeamMembersPage: React.FC = () => {
             <span className="text-xs text-slate-500 font-semibold">{filtered.length} Member{filtered.length !== 1 ? 's' : ''}</span>
           </div>
 
+          {isLoading ? (
+            <TableSkeleton rows={6} />
+          ) : (
           <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
             <table className="w-full text-left text-xs text-slate-700">
               <thead className="bg-slate-100 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
@@ -416,6 +420,7 @@ export const TeamMembersPage: React.FC = () => {
               </tbody>
             </table>
           </div>
+          )}
         </>
       )}
 

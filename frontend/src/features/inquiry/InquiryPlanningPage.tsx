@@ -30,6 +30,7 @@ import {
   ArrowDown,
 } from 'lucide-react';
 import { inquiryApi } from '../../api/inquiryApi';
+import { TableSkeleton } from '../../components/common/SkeletonLoader';
 
 // Consignment master options mapping by company
 const companyConsignmentMasterMap: Record<string, { code: string; label: string }[]> = {
@@ -80,6 +81,7 @@ export const InquiryPlanningPage: React.FC = () => {
 
   // 1ST LAYER SUMMARY: Company Consignments List (100% DB Driven)
   const [consignments, setConsignments] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   // 2ND LAYER: Detailed Requirement Grid Line Items inside Consignment (100% DB Driven)
   const [gridItems, setGridItems] = useState<any[]>([]);
@@ -87,10 +89,12 @@ export const InquiryPlanningPage: React.FC = () => {
   // Fetch live consignments & items from NestJS API connected to Supabase DB on mount
   useEffect(() => {
     async function loadApiInquiries() {
+      setIsLoading(true);
       const data = await inquiryApi.getConsignments();
       if (data && Array.isArray(data)) {
         setConsignments(data);
       }
+      setIsLoading(false);
     }
     loadApiInquiries();
   }, []);
@@ -695,6 +699,9 @@ export const InquiryPlanningPage: React.FC = () => {
           </div>
 
           {/* 1ST LAYER COLUMNS IN LIST TABLE MATCHING SPEC */}
+          {isLoading ? (
+            <TableSkeleton rows={6} />
+          ) : (
           <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs text-slate-700">
@@ -778,6 +785,7 @@ export const InquiryPlanningPage: React.FC = () => {
               </table>
             </div>
           </div>
+          )}
         </div>
       )}
 

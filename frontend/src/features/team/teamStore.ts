@@ -119,11 +119,15 @@ if (typeof window !== 'undefined') {
 
 export function useTeamStore() {
   const [members, setMembers] = useState<TeamMember[]>(cache);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const listener: Listener = (next) => setMembers(next);
+    const listener: Listener = (next) => {
+      setMembers(next);
+      setIsLoading(false);
+    };
     listeners.add(listener);
-    refreshMembers();
+    refreshMembers().finally(() => setIsLoading(false));
     return () => {
       listeners.delete(listener);
     };
@@ -187,7 +191,7 @@ export function useTeamStore() {
 
   const findByEmail = useCallback((email: string) => cache.find((m) => m.email.toLowerCase() === email.trim().toLowerCase()), []);
 
-  return { members, addMember, updateMember, removeMember, setAccountType, setPermissions, findByEmail };
+  return { members, isLoading, addMember, updateMember, removeMember, setAccountType, setPermissions, findByEmail };
 }
 
 export function findMemberByEmail(email: string): TeamMember | undefined {

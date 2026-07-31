@@ -1,6 +1,6 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
 import { LoginPage } from './features/auth/LoginPage';
@@ -15,13 +15,10 @@ import { RolesPermissionsPage } from './features/team/RolesPermissionsPage';
 import { AuditLogsPage } from './features/team/AuditLogsPage';
 import { can } from './features/team/teamStore';
 import { ROUTE_PERMISSION } from './config/routeAccess';
+import { GhostPageLoader } from './components/common/SkeletonLoader';
 
 /**
- * Guards a route against direct URL access. Even though the Sidebar hides
- * links a user isn't permitted to see, someone could still type/bookmark
- * the URL directly (or land on a stale route left over from a previous
- * user's session on a shared machine). This makes the permission check
- * authoritative at the route level too, not just cosmetic in the nav.
+ * Guards a route against direct URL access.
  */
 function ProtectedRoute({ path, children }: { path: string; children: React.ReactNode }) {
   const { user } = useAuth();
@@ -29,6 +26,51 @@ function ProtectedRoute({ path, children }: { path: string; children: React.Reac
   const allowed = gate === null || gate === undefined ? true : can(user as any, gate, 'view');
   if (!allowed) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
+}
+
+function MainContent() {
+  const location = useLocation();
+  const [isNavigating, setIsNavigating] = useState(false);
+
+  useEffect(() => {
+    setIsNavigating(true);
+    const timer = setTimeout(() => {
+      setIsNavigating(false);
+    }, 280);
+    return () => clearTimeout(timer);
+  }, [location.pathname]);
+
+  if (isNavigating) {
+    return <GhostPageLoader />;
+  }
+
+  return (
+    <Routes>
+      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+
+      {/* DASHBOARD */}
+      <Route path="/dashboard" element={<DashboardPage />} />
+
+      {/* PURCHASE */}
+      <Route path="/suppliers" element={<ProtectedRoute path="/suppliers"><SupplierListPage /></ProtectedRoute>} />
+      <Route path="/localpurchase" element={<ProtectedRoute path="/localpurchase"><InquiryPlanningPage /></ProtectedRoute>} />
+
+      {/* SALES & BUYERS */}
+      <Route path="/buyers" element={<ProtectedRoute path="/buyers"><BuyerListPage /></ProtectedRoute>} />
+
+      {/* PRODUCTS & STOCK */}
+      <Route path="/products" element={<ProtectedRoute path="/products"><ProductMasterPage /></ProtectedRoute>} />
+      <Route path="/analytics" element={<AnalyticsPage />} />
+
+      {/* TEAM & ACCESS */}
+      <Route path="/team" element={<ProtectedRoute path="/team"><TeamMembersPage /></ProtectedRoute>} />
+      <Route path="/roles" element={<ProtectedRoute path="/roles"><RolesPermissionsPage /></ProtectedRoute>} />
+      <Route path="/audit-logs" element={<ProtectedRoute path="/audit-logs"><AuditLogsPage /></ProtectedRoute>} />
+
+      {/* Fallback */}
+      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+    </Routes>
+  );
 }
 
 export function App() {
@@ -63,31 +105,7 @@ export function App() {
         <Header currentCompany={currentCompany} setCompany={setCompany} />
 
         <main className="p-8 flex-1 overflow-y-auto max-w-7xl w-full mx-auto">
-          <Routes>
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-
-            {/* DASHBOARD */}
-            <Route path="/dashboard" element={<DashboardPage />} />
-
-            {/* PURCHASE */}
-            <Route path="/suppliers" element={<ProtectedRoute path="/suppliers"><SupplierListPage /></ProtectedRoute>} />
-            <Route path="/localpurchase" element={<ProtectedRoute path="/localpurchase"><InquiryPlanningPage /></ProtectedRoute>} />
-
-            {/* SALES & BUYERS */}
-            <Route path="/buyers" element={<ProtectedRoute path="/buyers"><BuyerListPage /></ProtectedRoute>} />
-
-            {/* PRODUCTS & STOCK */}
-            <Route path="/products" element={<ProtectedRoute path="/products"><ProductMasterPage /></ProtectedRoute>} />
-            <Route path="/analytics" element={<AnalyticsPage />} />
-
-            {/* TEAM & ACCESS */}
-            <Route path="/team" element={<ProtectedRoute path="/team"><TeamMembersPage /></ProtectedRoute>} />
-            <Route path="/roles" element={<ProtectedRoute path="/roles"><RolesPermissionsPage /></ProtectedRoute>} />
-            <Route path="/audit-logs" element={<ProtectedRoute path="/audit-logs"><AuditLogsPage /></ProtectedRoute>} />
-
-            {/* Fallback */}
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
-          </Routes>
+          <MainContent />
         </main>
       </div>
     </div>
