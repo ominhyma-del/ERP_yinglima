@@ -29,6 +29,7 @@ import { TransactionService } from './core/database/transaction.service';
 import { ResilienceModule } from './core/resilience/resilience.module';
 import { RetryService } from './core/resilience/retry.service';
 import { FallbackService } from './core/resilience/fallback.service';
+import { RecoveryService } from './core/resilience/recovery.service';
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { FallbackService } from './core/resilience/fallback.service';
     TransactionService,
     RetryService,
     FallbackService,
+    RecoveryService,
     SupplierService,
     BuyerService,
     ProductService,
