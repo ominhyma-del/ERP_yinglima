@@ -1,5 +1,6 @@
 import { Injectable, LoggerService } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { RequestContext } from '../context/request-context';
 
 export type LogLevel = 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR' | 'FATAL';
 
@@ -103,6 +104,7 @@ export class StructuredLoggerService implements LoggerService {
   private output(level: LogLevel, message: any, metadata?: any) {
     const sanitized = this.sanitize(metadata);
     const entry = {
+      requestId: RequestContext.currentRequestId(),
       timestamp: new Date().toISOString(),
       level,
       message: typeof message === 'string' ? message : JSON.stringify(message),

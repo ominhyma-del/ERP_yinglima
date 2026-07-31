@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { randomUUID } from 'crypto';
+import { RequestContext } from '../context/request-context';
 
 export type ErrorCategory =
   | 'VALIDATION_ERROR'
@@ -29,10 +30,9 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
-
     // 1. Request Context
     const requestId =
-      (request.headers['x-request-id'] as string) || `req-${randomUUID()}`;
+      (request.headers['x-request-id'] as string) || RequestContext.currentRequestId();
     const timestamp = new Date().toISOString();
     const path = request.url || request.originalUrl || '/';
     const method = request.method || 'GET';
