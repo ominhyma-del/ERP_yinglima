@@ -885,7 +885,7 @@ export const InquiryPlanningPage: React.FC = () => {
                         <p>By: {item.proposed_by}</p>
                       </td>
 
-                      <td className="p-3.5 text-right space-x-1">
+                      <td className="p-3.5 text-right space-x-1.5">
                         <button
                           onClick={() => {
                             setActiveConsignmentCode(item.code);
@@ -894,6 +894,20 @@ export const InquiryPlanningPage: React.FC = () => {
                           className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-bold cursor-pointer inline-flex items-center gap-1"
                         >
                           <Eye size={12} /> View Details (2nd Layer)
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (confirm(`Are you sure you want to delete consignment "${item.code}" and all its inquiry items?`)) {
+                              await inquiryApi.deleteConsignment(item.id);
+                              setConsignments((prev) => prev.filter((c) => c.id !== item.id));
+                              setImportNotification(`Consignment "${item.code}" deleted successfully.`);
+                              setTimeout(() => setImportNotification(null), 4000);
+                            }
+                          }}
+                          className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded text-[11px] font-bold cursor-pointer inline-flex items-center gap-1"
+                          title="Delete Consignment"
+                        >
+                          <Trash2 size={12} /> Delete
                         </button>
                       </td>
                     </tr>
@@ -1038,18 +1052,35 @@ export const InquiryPlanningPage: React.FC = () => {
                           </button>
                         </td>
 
-                        {/* Shift between FB1, FB2, OS1... */}
+                        {/* Action: Shift Consignment + Delete Item */}
                         <td className="p-3.5 text-right">
-                          <select
-                            value={item.consignment_code}
-                            onChange={(e) => handleShiftConsignment(item.id, e.target.value)}
-                            className="bg-blue-50 border border-blue-200 text-blue-800 text-xs p-1 rounded font-bold cursor-pointer outline-none"
-                          >
-                            <option value="FB1">Shift to FB1</option>
-                            <option value="FB2">Shift to FB2</option>
-                            <option value="OS1">Shift to OS1</option>
-                            <option value="ING1">Shift to ING1</option>
-                          </select>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <select
+                              value={item.consignment_code}
+                              onChange={(e) => handleShiftConsignment(item.id, e.target.value)}
+                              className="bg-blue-50 border border-blue-200 text-blue-800 text-xs p-1 rounded font-bold cursor-pointer outline-none"
+                            >
+                              <option value="FB1">Shift to FB1</option>
+                              <option value="FB2">Shift to FB2</option>
+                              <option value="OS1">Shift to OS1</option>
+                              <option value="ING1">Shift to ING1</option>
+                            </select>
+
+                            <button
+                              onClick={async () => {
+                                if (confirm(`Are you sure you want to delete inquiry item "${item.product_name}"?`)) {
+                                  await inquiryApi.deleteInquiryItem(item.id);
+                                  setGridItems((prev) => prev.filter((g) => g.id !== item.id));
+                                  setImportNotification(`Inquiry item "${item.product_name}" deleted successfully.`);
+                                  setTimeout(() => setImportNotification(null), 4000);
+                                }
+                              }}
+                              className="p-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded cursor-pointer"
+                              title="Delete Item"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))

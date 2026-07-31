@@ -110,4 +110,26 @@ export const inquiryApi = {
       return null;
     }
   },
+
+  // Delete Line Item
+  async deleteInquiryItem(id: string) {
+    try {
+      const response = await api.delete(`/inquiries/items/${id}`);
+      return response.data;
+    } catch (error) {
+      console.warn('API error deleting inquiry item:', error);
+      return null;
+    }
+  },
+
+  // Delete Consignment
+  async deleteConsignment(id: string) {
+    try {
+      const response = await api.delete(`/inquiries/consignments/${id}`);
+      return response.data;
+    } catch (error) {
+      console.warn('API error deleting consignment:', error);
+      return null;
+    }
+  },
 };

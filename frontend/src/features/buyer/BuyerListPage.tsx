@@ -1027,43 +1027,73 @@ export const BuyerListPage: React.FC = () => {
 
                         <td className="p-3.5 text-slate-500 font-mono text-[11px]">{item.created_at || '2026-07-30'}</td>
 
-                        {/* Action: ONLY EDIT BUTTON */}
+                        {/* Action: Edit, Delete (if New & No), or Make Inactive (if Existing or Yes) */}
                         <td className="p-3.5 text-right">
-                          <button
-                            onClick={() => {
-                              setEditingBuyerId(item.id);
-                              setFormData({
-                                name: item.name,
-                                product_categories: item.product_categories || [],
-                                potential_subcategories: item.potential_subcategories || [],
-                                buyer_type: item.buyer_type || 'Manufacturer',
-                                country: item.country || 'Uganda',
-                                city: item.city || '',
-                                address: item.address || '',
-                                contact_salutation: item.contact_salutation || 'Mr.',
-                                contact_name: item.contact_name || '',
-                                designation: item.designation || '',
-                                calling_number: item.calling_number || '',
-                                whatsapp_number: item.whatsapp_number || '',
-                                email: item.emails && item.emails[0] ? item.emails[0] : '',
-                                emails: item.emails || [],
-                                tax_id: item.tax_id || '',
-                                primary_website: item.primary_website || '',
-                                current_status: item.current_status || 'NEW',
-                                product_range_supplied: item.product_range || '',
-                                potential: item.potential || 'YES',
-                                potential_reason: item.potential_reason || '',
-                                client_grade: item.client_grade || 'A',
-                                currently_buying_from: item.currently_buying_from || '',
-                                overall_remarks: item.overall_remarks || '',
-                              });
-                              setFormContacts(item.contacts || []);
-                              setViewMode('add');
-                            }}
-                            className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-[11px] font-semibold flex items-center gap-1 ml-auto cursor-pointer"
-                          >
-                            <Edit size={12} /> Edit
-                          </button>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => {
+                                setEditingBuyerId(item.id);
+                                setFormData({
+                                  name: item.name,
+                                  product_categories: item.product_categories || [],
+                                  potential_subcategories: item.potential_subcategories || [],
+                                  buyer_type: item.buyer_type || 'Manufacturer',
+                                  country: item.country || 'Uganda',
+                                  city: item.city || '',
+                                  address: item.address || '',
+                                  contact_salutation: item.contact_salutation || 'Mr.',
+                                  contact_name: item.contact_name || '',
+                                  designation: item.designation || '',
+                                  calling_number: item.calling_number || '',
+                                  whatsapp_number: item.whatsapp_number || '',
+                                  email: item.emails && item.emails[0] ? item.emails[0] : '',
+                                  emails: item.emails || [],
+                                  tax_id: item.tax_id || '',
+                                  primary_website: item.primary_website || '',
+                                  current_status: item.current_status || 'NEW',
+                                  product_range_supplied: item.product_range || '',
+                                  potential: item.potential || 'YES',
+                                  potential_reason: item.potential_reason || '',
+                                  client_grade: item.client_grade || 'A',
+                                  currently_buying_from: item.currently_buying_from || '',
+                                  overall_remarks: item.overall_remarks || '',
+                                });
+                                setFormContacts(item.contacts || []);
+                                setViewMode('add');
+                              }}
+                              className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                            >
+                              <Edit size={12} /> Edit
+                            </button>
+
+                            {(() => {
+                              const isNew = item.current_status === 'NEW' || item.current_status === 'Select';
+                              const isNonPotential = item.potential === 'NO' || item.potential === 'Select' || item.potential === 'UNSELECTED';
+                              const canDeleteRecord = isNew && isNonPotential;
+
+                              if (canDeleteRecord) {
+                                return (
+                                  <button
+                                    onClick={() => handleDeleteBuyer(item.id)}
+                                    className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                                    title="Delete Buyer (Allowed for New non-potential buyers)"
+                                  >
+                                    <Trash2 size={12} /> Delete
+                                  </button>
+                                );
+                              } else {
+                                return (
+                                  <button
+                                    onClick={() => handleStatusChange(item.id, 'INACTIVE')}
+                                    className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                                    title="Existing/Potential Buyers cannot be deleted. Click to mark as Inactive."
+                                  >
+                                    Make Inactive
+                                  </button>
+                                );
+                              }
+                            })()}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1473,45 +1503,63 @@ export const BuyerListPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Contacts Table List */}
-              {formContacts.length > 0 && (
-                <div className="border border-slate-200 rounded-xl overflow-hidden text-xs">
-                  <table className="w-full text-left">
-                    <thead className="bg-slate-100 text-slate-600 font-bold uppercase text-[10px]">
-                      <tr>
-                        <th className="p-2.5">Salutation & Name</th>
-                        <th className="p-2.5">Designation</th>
-                        <th className="p-2.5">Country</th>
-                        <th className="p-2.5">Phone / WhatsApp</th>
-                        <th className="p-2.5">Email</th>
-                        <th className="p-2.5 text-right">Action</th>
+              {/* Contacts Table List (Live includes Main Form Primary Contact) */}
+              <div className="border border-slate-200 rounded-xl overflow-hidden text-xs">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-100 text-slate-600 font-bold uppercase text-[10px]">
+                    <tr>
+                      <th className="p-2.5">Salutation & Name</th>
+                      <th className="p-2.5">Designation</th>
+                      <th className="p-2.5">Country</th>
+                      <th className="p-2.5">Phone / WhatsApp</th>
+                      <th className="p-2.5">Email</th>
+                      <th className="p-2.5 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {/* Primary Contact Row from Main Form */}
+                    <tr className="bg-blue-50/50">
+                      <td className="p-2.5 font-bold text-slate-900 flex items-center gap-1.5">
+                        <span className="bg-blue-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">PRIMARY</span>
+                        {formData.contact_salutation} {formData.contact_name || 'Primary Contact'}
+                      </td>
+                      <td className="p-2.5 text-slate-700">{formData.designation || 'Procurement Manager'}</td>
+                      <td className="p-2.5">{formData.country}</td>
+                      <td className="p-2.5 text-slate-700 font-mono text-[11px]">
+                        {formData.calling_number ? `${currentCountryConfig.code}${formData.calling_number}` : ''}
+                        {formData.whatsapp_number ? ` / WA: ${currentCountryConfig.code}${formData.whatsapp_number}` : ''}
+                        {!formData.calling_number && !formData.whatsapp_number && 'N/A'}
+                      </td>
+                      <td className="p-2.5 text-blue-600">{formData.email || 'N/A'}</td>
+                      <td className="p-2.5 text-right text-slate-400 font-semibold text-[10px] italic">
+                        Main Contact
+                      </td>
+                    </tr>
+
+                    {/* Additional Contacts */}
+                    {formContacts.map((c) => (
+                      <tr key={c.id} className="hover:bg-slate-50">
+                        <td className="p-2.5 font-bold text-slate-900">{c.salutation} {c.full_name}</td>
+                        <td className="p-2.5 text-slate-700">{c.designation || 'Staff'}</td>
+                        <td className="p-2.5">{c.country}</td>
+                        <td className="p-2.5 text-slate-700 font-mono text-[11px]">
+                          {c.calling_number || c.whatsapp_number || 'N/A'}
+                        </td>
+                        <td className="p-2.5 text-blue-600">{c.email || 'N/A'}</td>
+                        <td className="p-2.5 text-right">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteContact(c.id)}
+                            className="text-rose-600 hover:underline text-[11px] font-bold cursor-pointer"
+                          >
+                            Delete
+                          </button>
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 font-medium">
-                      {formContacts.map((c) => (
-                        <tr key={c.id} className="hover:bg-slate-50">
-                          <td className="p-2.5 font-bold text-slate-900">{c.salutation} {c.full_name}</td>
-                          <td className="p-2.5 text-slate-700">{c.designation || 'Staff'}</td>
-                          <td className="p-2.5">{c.country}</td>
-                          <td className="p-2.5 text-slate-700 font-mono text-[11px]">
-                            {c.calling_number || c.whatsapp_number || 'N/A'}
-                          </td>
-                          <td className="p-2.5 text-blue-600">{c.email || 'N/A'}</td>
-                          <td className="p-2.5 text-right">
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteContact(c.id)}
-                              className="text-rose-600 hover:underline text-[11px] font-bold cursor-pointer"
-                            >
-                              Delete
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
             {/* Submit Button */}

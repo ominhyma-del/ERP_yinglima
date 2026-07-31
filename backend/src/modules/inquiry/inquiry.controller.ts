@@ -8,6 +8,7 @@ import {
   UseInterceptors,
   HttpStatus,
   HttpCode,
+  Delete,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiHeader } from '@nestjs/swagger';
 import { InquiryService } from './inquiry.service';
@@ -68,5 +69,17 @@ export class InquiryController {
   @ApiOperation({ summary: 'Approve line item' })
   approveItem(@Param('id') id: string, @CurrentTenant() tenant: TenantContext) {
     return this.inquiryService.approveItem(id, tenant);
+  }
+
+  @Delete('items/:id')
+  @ApiOperation({ summary: 'Delete line item' })
+  deleteItem(@Param('id') id: string, @CurrentTenant() tenant: TenantContext) {
+    return this.inquiryService.deleteItem(id, tenant);
+  }
+
+  @Delete('consignments/:id')
+  @ApiOperation({ summary: 'Delete entire consignment' })
+  deleteConsignment(@Param('id') id: string, @CurrentTenant() tenant: TenantContext) {
+    return this.inquiryService.deleteConsignment(id, tenant);
   }
 }

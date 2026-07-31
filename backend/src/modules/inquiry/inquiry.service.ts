@@ -290,6 +290,55 @@ export class InquiryService {
     return item;
   }
 
+  async deleteItem(itemId: string, tenant: TenantContext) {
+    const existing = await this.prisma.inquiryItem.findFirst({
+      where: {
+        id: itemId,
+        consignment: {
+          company_id: tenant.companyId,
+        },
+      },
+    });
+
+    if (!existing) {
+      throw new NotFoundException(`Inquiry item ${itemId} not found.`);
+    }
+
+    const consignmentId = existing.consignment_id;
+    await this.prisma.inquiryItem.delete({
+      where: { id: itemId },
+    });
+
+    await this.recalculateConsignmentTotals(consignmentId);
+    await this.updateConsignmentAggregateStatus(consignmentId);
+
+    return { message: 'Inquiry item deleted successfully.' };
+  }
+
+  async deleteConsignment(consignmentId: string, tenant: TenantContext) {
+    const existing = await this.prisma.inquiryConsignment.findFirst({
+      where: {
+        id: consignmentId,
+        company_id: tenant.companyId,
+      },
+    });
+
+    if (!existing) {
+      throw new NotFoundException(`Consignment ${consignmentId} not found.`);
+    }
+
+    // Delete items first then consignment
+    await this.prisma.inquiryItem.deleteMany({
+      where: { consignment_id: consignmentId },
+    });
+
+    await this.prisma.inquiryConsignment.delete({
+      where: { id: consignmentId },
+    });
+
+    return { message: 'Consignment deleted successfully.' };
+  }
+
   private async recalculateConsignmentTotals(consignmentId: string) {
     const items = await this.prisma.inquiryItem.findMany({
       where: { consignment_id: consignmentId },
