@@ -379,8 +379,11 @@ export const BuyerListPage: React.FC = () => {
       contacts: [primaryContactObj, ...formContacts],
     };
 
-    setBuyers([buyerPayload, ...buyers]);
-    await buyerApi.createBuyer(buyerPayload);
+    if (editingBuyerId) {
+      await buyerApi.updateBuyer(editingBuyerId, buyerPayload);
+    } else {
+      await buyerApi.createBuyer(buyerPayload);
+    }
     await loadApiBuyers();
 
     setViewMode('list');

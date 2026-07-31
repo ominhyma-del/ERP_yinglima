@@ -142,6 +142,61 @@ export class BuyerService {
     return buyer;
   }
 
+  async update(id: string, dto: CreateBuyerDto, tenant: TenantContext) {
+    const existing = await this.findOne(id, tenant);
+
+    // Business Rule Enforcement: Status can ONLY transition ONE-WAY from NEW -> EXISTING
+    if (existing.current_status === PartyStatus.EXISTING && dto.current_status === PartyStatus.NEW) {
+      throw new BadRequestException(
+        'Invalid Status Transition: Buyer status cannot be changed back from "EXISTING" to "NEW". (One-way rule enforced)',
+      );
+    }
+
+    // Delete existing contacts and recreate with updated payload if provided
+    if (dto.contacts && dto.contacts.length > 0) {
+      await this.prisma.buyerContact.deleteMany({
+        where: { buyer_id: id },
+      });
+    }
+
+    return this.prisma.buyer.update({
+      where: { id },
+      data: {
+        name: dto.name,
+        buyer_type: dto.buyer_type,
+        country: dto.country,
+        city: dto.city,
+        address: dto.address,
+        tax_id: dto.tax_id,
+        website: dto.website,
+        client_grade: dto.client_grade,
+        current_status: dto.current_status,
+        product_range_supplied: dto.product_range_supplied,
+        potential: dto.potential,
+        potential_reason: dto.potential_reason,
+        currently_buying_from: dto.currently_buying_from,
+        overall_remarks: dto.overall_remarks,
+        product_categories: dto.product_categories,
+        potential_subcategories: dto.potential_subcategories,
+        updated_by: tenant.userId,
+        contacts: dto.contacts && dto.contacts.length > 0 ? {
+          create: dto.contacts.map((c) => ({
+            salutation: c.salutation,
+            full_name: c.full_name,
+            designation: c.designation,
+            country: c.country || dto.country || 'Uganda',
+            calling_number: c.calling_number,
+            whatsapp_number: c.whatsapp_number,
+            email: c.email,
+          })),
+        } : undefined,
+      },
+      include: {
+        contacts: true,
+      },
+    });
+  }
+
   async updateStatus(id: string, newStatus: PartyStatus, tenant: TenantContext) {
     const buyer = await this.findOne(id, tenant);
 

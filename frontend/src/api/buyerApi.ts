@@ -83,7 +83,7 @@ export const buyerApi = {
         website: data.primary_website || '',
         client_grade: data.client_grade === 'Select' || !data.client_grade ? null : data.client_grade,
         current_status: (data.current_status || 'NEW').toUpperCase() === 'EXISTING' ? 'EXISTING' : 'NEW',
-        potential: (data.potential || 'YES').toUpperCase() === 'NO' ? 'NO' : 'YES',
+        potential: data.potential === 'NO' ? 'NO' : data.potential === 'YES' ? 'YES' : 'UNSELECTED',
         potential_reason: data.potential_reason || '',
         product_range_supplied: data.product_range_supplied || 'Food & Beverage Processing',
         currently_buying_from: data.currently_buying_from || '',
@@ -115,6 +115,45 @@ export const buyerApi = {
       return response.data;
     } catch (error) {
       console.warn('API error creating buyer:', error);
+      return null;
+    }
+  },
+
+  // Update full Buyer Profile in Supabase DB via NestJS API
+  async updateBuyer(id: string, data: BuyerDto) {
+    try {
+      const payload = {
+        name: data.name,
+        buyer_type: (data.buyer_type || 'MANUFACTURER').toUpperCase() === 'TRADER' ? 'TRADER' : 'MANUFACTURER',
+        country: data.country || 'Uganda',
+        city: data.city || 'Kampala',
+        address: data.address || '',
+        tax_id: data.tax_id || '',
+        website: data.primary_website || '',
+        client_grade: data.client_grade === 'Select' || !data.client_grade ? null : data.client_grade,
+        current_status: (data.current_status || 'NEW').toUpperCase() === 'EXISTING' ? 'EXISTING' : 'NEW',
+        potential: data.potential === 'NO' ? 'NO' : data.potential === 'YES' ? 'YES' : 'UNSELECTED',
+        potential_reason: data.potential_reason || '',
+        product_range_supplied: data.product_range_supplied || '',
+        currently_buying_from: data.currently_buying_from || '',
+        overall_remarks: data.overall_remarks || '',
+        product_categories: data.product_categories || [],
+        potential_subcategories: data.potential_subcategories || [],
+        contacts: data.contacts && data.contacts.length > 0 ? data.contacts.map((c: any) => ({
+          salutation: c.salutation || 'Mr.',
+          full_name: c.full_name || 'Contact Person',
+          designation: c.designation || 'Staff',
+          country: c.country || data.country || 'Uganda',
+          calling_number: c.calling_number || '',
+          whatsapp_number: c.whatsapp_number || '',
+          email: c.email || '',
+        })) : [],
+      };
+
+      const response = await api.patch(`/buyers/${id}`, payload);
+      return response.data;
+    } catch (error) {
+      console.warn('API error updating buyer profile:', error);
       return null;
     }
   },

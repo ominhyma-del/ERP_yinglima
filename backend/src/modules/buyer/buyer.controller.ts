@@ -43,6 +43,16 @@ export class BuyerController {
     return this.buyerService.findOne(id, tenant);
   }
 
+  @Patch(':id')
+  @ApiOperation({ summary: 'Update Buyer profile by ID' })
+  update(
+    @Param('id') id: string,
+    @Body() dto: CreateBuyerDto,
+    @CurrentTenant() tenant: TenantContext,
+  ) {
+    return this.buyerService.update(id, dto, tenant);
+  }
+
   @Patch(':id/status')
   @ApiOperation({ summary: 'Update Current Status (NEW -> EXISTING 1-way rule)' })
   updateStatus(
