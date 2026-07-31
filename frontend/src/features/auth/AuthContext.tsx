@@ -101,7 +101,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             member = SEED_MEMBERS.find((m) => m.id === stored.memberId);
           }
           if (member) {
-            setUser(toAuthUser(member));
+            const authUser = toAuthUser(member);
+            setUser(authUser);
+            localStorage.setItem('yinglima_auth_user', JSON.stringify(authUser));
             setSessionId(stored.sessionId);
             setRememberMe(!!localStorage.getItem(SESSION_KEY));
           }
@@ -157,7 +159,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.removeItem(SESSION_KEY);
     }
 
-    setUser(toAuthUser(member));
+    const authUser = toAuthUser(member);
+    setUser(authUser);
+    localStorage.setItem('yinglima_auth_user', JSON.stringify(authUser));
     setSessionId(newSessionId);
     setRememberMe(remember);
 

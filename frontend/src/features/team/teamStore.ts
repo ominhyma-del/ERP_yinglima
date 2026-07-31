@@ -164,10 +164,10 @@ export function useTeamStore() {
     await refreshMembers();
   }, []);
 
-  const removeMember = useCallback(async (id: string) => {
+  const removeMember = useCallback(async (id: string, targetUserId?: string) => {
     const target = cache.find((m) => m.id === id);
     if (target?.isDefaultAdmin) return false;
-    await teamApi.deleteMember(id);
+    await teamApi.deleteMember(id, targetUserId);
     await refreshMembers();
     return true;
   }, []);

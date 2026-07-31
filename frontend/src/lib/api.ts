@@ -16,10 +16,21 @@ const api = axios.create({
   },
 });
 
-// Interceptor to inject active company/tenant ID
+// Interceptor to inject active company/tenant ID & Logged-in user name
 api.interceptors.request.use((config) => {
   const activeCompanyId = localStorage.getItem('activeCompanyId') || '11111111-1111-1111-1111-111111111111';
   config.headers['x-company-id'] = activeCompanyId;
+
+  const authUserStr = typeof window !== 'undefined' ? localStorage.getItem('yinglima_auth_user') : null;
+  if (authUserStr) {
+    try {
+      const authUser = JSON.parse(authUserStr);
+      if (authUser?.name) {
+        config.headers['x-user-name'] = authUser.name;
+        config.headers['x-user-id'] = authUser.id || '00000000-0000-0000-0000-000000000001';
+      }
+    } catch (e) {}
+  }
   return config;
 });
 

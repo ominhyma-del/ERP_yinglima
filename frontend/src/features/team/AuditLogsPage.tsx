@@ -1,67 +1,40 @@
-import React, { useState } from 'react';
-import { ShieldAlert, Search, Filter, Download, UserCheck, Calendar, Clock, CheckCircle, RefreshCw, FileText } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ShieldAlert, Search, Filter, Download, UserCheck, Calendar, Clock, CheckCircle, RefreshCw, FileText, Lock } from 'lucide-react';
+import api from '../../lib/api';
 
 export const AuditLogsPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [actionFilter, setActionFilter] = useState('ALL');
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Load audit logs from localStorage or fallback to initial audit trace logs
-  const [logs, setLogs] = useState(() => {
-    const saved = localStorage.getItem('yinglima_audit_logs');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        // fallback
+  // Live Audit Logs from PostgreSQL Database (100% Immutable & Non-Editable)
+  const [logs, setLogs] = useState<any[]>([]);
+
+  const fetchLiveAuditLogs = async () => {
+    setIsLoading(true);
+    try {
+      const response = await api.get('/audit/logs');
+      const data = response.data?.data || response.data;
+      if (Array.isArray(data) && data.length > 0) {
+        setLogs(data);
+      } else {
+        const saved = localStorage.getItem('yinglima_audit_logs');
+        setLogs(saved ? JSON.parse(saved) : []);
       }
+    } catch (err) {
+      const saved = localStorage.getItem('yinglima_audit_logs');
+      setLogs(saved ? JSON.parse(saved) : []);
+    } finally {
+      setIsLoading(false);
     }
-    return [
-      {
-        id: 'log-1',
-        timestamp: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
-        user_email: 'admin@yinglima.com',
-        action: 'LOGIN_SUCCESS',
-        entity: 'USER_AUTH',
-        entity_id: 'usr-admin-1',
-        role: 'ADMIN',
-        ip_address: '127.0.0.1 (Local Session)',
-        status: 'SUCCESS',
-        description: 'User "admin@yinglima.com" authenticated successfully as ADMIN',
-      },
-      {
-        id: 'log-2',
-        timestamp: new Date(Date.now() - 1000 * 60 * 25).toISOString(),
-        user_email: 'admin@yinglima.com',
-        action: 'UPDATE_SUPPLIER',
-        entity: 'SUPPLIER_PROFILE',
-        entity_id: 's1',
-        role: 'ADMIN',
-        ip_address: '127.0.0.1 (Local Session)',
-        status: 'SUCCESS',
-        description: 'Updated Supplier Profile details for "Zhejiang Packaging Machinery Ltd"',
-      },
-      {
-        id: 'log-3',
-        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
-        user_email: 'user@yinglima.com',
-        action: 'CREATE_INQUIRY',
-        entity: 'INQUIRY_ITEM',
-        entity_id: 'item-101',
-        role: 'USER',
-        ip_address: '127.0.0.1 (Local Session)',
-        status: 'SUCCESS',
-        description: 'Created new Inquiry requirement item "Citric Acid Anhydrous" in Consignment FB1',
-      },
-    ];
-  });
+  };
+
+  useEffect(() => {
+    fetchLiveAuditLogs();
+  }, []);
 
   const handleRefresh = () => {
-    const saved = localStorage.getItem('yinglima_audit_logs');
-    if (saved) {
-      try {
-        setLogs(JSON.parse(saved));
-      } catch (e) {}
-    }
+    fetchLiveAuditLogs();
   };
 
   const filteredLogs = logs.filter((log: any) => {

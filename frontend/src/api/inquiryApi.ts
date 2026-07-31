@@ -25,6 +25,9 @@ export const inquiryApi = {
     try {
       const response = await api.get('/inquiries/layer1-summary');
       const rawList = response.data?.data || response.data;
+      const authUserStr = typeof window !== 'undefined' ? localStorage.getItem('yinglima_auth_user') : null;
+      const activeUserName = authUserStr ? JSON.parse(authUserStr)?.name : 'rupesh';
+
       if (Array.isArray(rawList)) {
         return rawList.map((c: any) => ({
           id: c.id,
@@ -34,7 +37,7 @@ export const inquiryApi = {
           total_cbm: Number(c.total_cbm) || 0,
           total_weight: Number(c.total_weight) || 0,
           proposed_date: c.created_at ? c.created_at.split('T')[0] : '',
-          proposed_by: 'User',
+          proposed_by: c.proposed_by_name || c.created_by_name || activeUserName || 'rupesh',
         }));
       }
       return null;

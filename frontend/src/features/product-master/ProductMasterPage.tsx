@@ -559,6 +559,12 @@ export const ProductMasterPage: React.FC = () => {
     }
   };
 
+  const confirmDelete = async () => {
+    if (!confirmDel) return;
+    await handleDeleteRequest(confirmDel);
+    setConfirmDel(null);
+  };
+
   // ── Bulk actions (products) ───────────────────────────────────────────────
 
   const bulkSetStatus = (status: Status) => {

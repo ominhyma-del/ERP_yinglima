@@ -602,7 +602,8 @@ model InquiryItem {
 model AuditLog {
   id          String   @id @default(uuid()) @db.Uuid
   company_id  String   @db.Uuid
-  user_id     String   @db.Uuid
+  user_id     String?  @db.Uuid
+  user_name   String?
   entity_name String
   entity_id   String   @db.Uuid
   action      String
@@ -611,7 +612,7 @@ model AuditLog {
   ip_address  String?
   created_at  DateTime @default(now())
 
-  user        User     @relation(fields: [user_id], references: [id])
+  user        User?    @relation(fields: [user_id], references: [id], onDelete: SetNull)
 
   @@index([company_id, entity_name, entity_id])
   @@map("audit_logs")

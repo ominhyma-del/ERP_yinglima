@@ -63,14 +63,16 @@ export const teamApi = {
     }
   },
 
-  // Delete team member
-  async deleteMember(id: string) {
+  // Delete team member with mandatory data ownership transfer
+  async deleteMember(id: string, targetUserId?: string) {
     try {
-      const response = await api.delete(`/users/${id}`);
+      const response = await api.delete(`/users/${id}`, {
+        params: { targetUserId },
+      });
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       console.warn('API error deleting team member:', error);
-      return null;
+      throw error;
     }
   },
 };

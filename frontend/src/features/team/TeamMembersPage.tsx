@@ -259,20 +259,50 @@ export const TeamMembersPage: React.FC = () => {
     }
   };
 
+  const [deleteTransferModal, setDeleteTransferModal] = useState<{
+    isOpen: boolean;
+    userToDelete?: TeamMember;
+    targetUserId: string;
+  }>({ isOpen: false, targetUserId: '' });
+
+  const [minAdminRuleAlert, setMinAdminRuleAlert] = useState<string | null>(null);
+
   const handleDeleteRequest = (m: TeamMember) => {
     if (m.isDefaultAdmin) {
       setToast('The default admin account cannot be removed.');
       return;
     }
-    setConfirmDeleteId(m.id);
+
+    const activeAdmins = members.filter((x) => x.accountType === 'ADMIN' && x.status === 'ACTIVE');
+    if (m.accountType === 'ADMIN' && activeAdmins.length <= 1) {
+      setMinAdminRuleAlert(
+        `Action Blocked: Minimum 1 active Administrator is required in the system. You cannot delete the last remaining Admin account (${m.name}).`,
+      );
+      return;
+    }
+
+    const eligibleTarget = members.find((x) => x.id !== m.id && x.status === 'ACTIVE');
+    setDeleteTransferModal({
+      isOpen: true,
+      userToDelete: m,
+      targetUserId: eligibleTarget ? eligibleTarget.id : '',
+    });
   };
 
-  const confirmDelete = () => {
-    if (!confirmDeleteId) return;
-    removeMember(confirmDeleteId);
-    setConfirmDeleteId(null);
-    setToast('Team member removed.');
-    setView('list');
+  const confirmDeleteAndTransfer = async () => {
+    if (!deleteTransferModal.userToDelete || !deleteTransferModal.targetUserId) return;
+    const { userToDelete, targetUserId } = deleteTransferModal;
+    const targetUser = members.find((x) => x.id === targetUserId);
+
+    try {
+      await removeMember(userToDelete.id, targetUserId);
+      setDeleteTransferModal({ isOpen: false, targetUserId: '' });
+      setToast(`Account "${userToDelete.name}" deleted. All records transferred to "${targetUser?.name || 'Selected User'}".`);
+      setView('list');
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Failed to delete account.';
+      setMinAdminRuleAlert(Array.isArray(msg) ? msg.join('\n') : String(msg));
+    }
   };
 
   const handleExportCSV = () => {
@@ -357,6 +387,75 @@ export const TeamMembersPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* MINIMUM 1 ADMIN RULE ALERT */}
+      {minAdminRuleAlert && (
+        <div className="bg-rose-50 border border-rose-200 text-rose-800 p-4 rounded-xl flex items-center justify-between text-xs shadow-2xs">
+          <div className="flex items-center gap-2">
+            <ShieldAlert size={18} className="text-rose-600 flex-shrink-0" />
+            <span className="font-medium">{minAdminRuleAlert}</span>
+          </div>
+          <button onClick={() => setMinAdminRuleAlert(null)} className="font-bold underline text-rose-900 cursor-pointer">
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* USER DELETION & DATA OWNERSHIP TRANSFER MODAL */}
+      {deleteTransferModal.isOpen && deleteTransferModal.userToDelete && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-rose-100 animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <ShieldAlert size={20} className="text-rose-600" /> Delete User & Transfer Data Ownership
+              </h3>
+              <button onClick={() => setDeleteTransferModal({ isOpen: false, targetUserId: '' })} className="text-slate-400 hover:text-slate-700 cursor-pointer">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="bg-rose-50 border border-rose-200 p-3.5 rounded-xl text-xs text-rose-900 leading-relaxed font-medium">
+              You are about to delete <strong>{deleteTransferModal.userToDelete.name}</strong> ({deleteTransferModal.userToDelete.email}). 
+              <br /><br />
+              <strong>Mandatory Enterprise Rule:</strong> All historical database records (Suppliers, Buyers, Products, Inquiries) created by this user must be reassigned to a responsible active team member.
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-700 block">Select Responsible User / Admin to Receive Data:</label>
+              <select
+                value={deleteTransferModal.targetUserId}
+                onChange={(e) => setDeleteTransferModal((prev) => ({ ...prev, targetUserId: e.target.value }))}
+                className="w-full bg-slate-50 border border-slate-300 text-xs text-slate-900 p-3 rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {members
+                  .filter((m) => m.id !== deleteTransferModal.userToDelete?.id && m.status === 'ACTIVE')
+                  .map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} ({m.accountType} — {m.department || 'General'})
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setDeleteTransferModal({ isOpen: false, targetUserId: '' })}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteAndTransfer}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer transition-all flex items-center gap-1.5"
+              >
+                Transfer Data & Delete Account
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* TOP TITLE BAR */}
       <div className="flex items-center justify-between">
         <div>
@@ -670,21 +769,6 @@ export const TeamMembersPage: React.FC = () => {
                   </div>
                 </div>
               </div>
-
-              {/* Permissions (read-only summary) */}
-              <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-                <div className="px-5 py-3.5 border-b border-slate-100 flex items-center gap-2 bg-slate-50">
-                  <ShieldCheck size={15} className="text-blue-600" />
-                  <h3 className="text-sm font-bold text-slate-800">Module Permissions</h3>
-                </div>
-                <div className="p-5">
-                  {selectedMember.accountType === 'ADMIN' ? (
-                    <p className="text-xs text-slate-600">Admin accounts have full View / Edit / Delete access to every module.</p>
-                  ) : (
-                    <MiniPermissionEditor permissions={selectedMember.permissions} onChange={() => {}} />
-                  )}
-                </div>
-              </div>
             </div>
 
             <div className="space-y-4">
@@ -819,19 +903,6 @@ export const TeamMembersPage: React.FC = () => {
             )}
           </div>
 
-          {/* Permissions editor (only for Employees) */}
-          {editData.accountType === 'EMPLOYEE' && (
-            <div className="border-t border-slate-100 pt-5">
-              <label className="text-xs font-semibold text-slate-700 block mb-2 flex items-center gap-1.5">
-                <ShieldCheck size={13} className="text-slate-400" /> Module Permissions (View / Edit / Delete)
-              </label>
-              <MiniPermissionEditor
-                permissions={editData.permissions}
-                onChange={(p) => setEditData({ ...editData, permissions: p })}
-              />
-            </div>
-          )}
-
           {/* Password field */}
           <div className="border-t border-slate-100 pt-5">
             <label className="text-xs font-semibold text-slate-700 block mb-1 flex items-center gap-1.5">
@@ -964,17 +1035,7 @@ export const TeamMembersPage: React.FC = () => {
                 </select>
               </div>
 
-              {formData.accountType === 'EMPLOYEE' && (
-                <div>
-                  <label className="text-xs text-slate-700 font-semibold block mb-1.5 flex items-center gap-1.5">
-                    <ShieldCheck size={13} className="text-slate-400" /> Module Permissions
-                  </label>
-                  <MiniPermissionEditor
-                    permissions={formData.permissions}
-                    onChange={(p) => setFormData({ ...formData, permissions: p })}
-                  />
-                </div>
-              )}
+
 
               <div>
                 <label className="text-xs text-slate-700 font-semibold block mb-1 flex items-center gap-1.5">
@@ -1085,7 +1146,7 @@ export const TeamMembersPage: React.FC = () => {
             </div>
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
               <button onClick={() => setConfirmDeleteId(null)} className="px-4 py-2 bg-slate-100 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-200 cursor-pointer">Cancel</button>
-              <button onClick={confirmDelete} className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-lg cursor-pointer">Remove</button>
+              <button onClick={confirmDeleteAndTransfer} className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-lg cursor-pointer">Remove</button>
             </div>
           </div>
         </div>
