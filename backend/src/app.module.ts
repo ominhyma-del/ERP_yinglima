@@ -33,6 +33,9 @@ import { RecoveryService } from './core/resilience/recovery.service';
 
 import { HealthModule } from './modules/health/health.module';
 
+import { LifecycleModule } from './core/lifecycle/lifecycle.module';
+import { GracefulShutdownService } from './core/lifecycle/graceful-shutdown.service';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -43,6 +46,7 @@ import { HealthModule } from './modules/health/health.module';
     LoggingModule,
     TaskQueueModule,
     HealthModule,
+    LifecycleModule,
   ],
   controllers: [
     SupplierController,

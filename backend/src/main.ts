@@ -27,6 +27,9 @@ async function bootstrap() {
     }),
   );
 
+  // Enable NestJS Graceful Shutdown Hooks for SIGTERM / SIGINT
+  app.enableShutdownHooks();
+
   // Global Exception Filter
   app.useGlobalFilters(new GlobalExceptionFilter());
 
