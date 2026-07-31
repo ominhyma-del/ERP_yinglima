@@ -116,20 +116,32 @@ function HeaderCheckbox({ checked, indeterminate, onChange }: { checked: boolean
 
 /** Floating bulk-action bar shown once >=1 row selected, Bitrix24-style */
 function BulkActionBar({
-  count, onClear, onActivate, onDeactivate, onDelete, deleteDisabled, deleteTitle,
+  count, onClear, onActivate, onDeactivate, onDelete, onMerge, deleteDisabled, deleteTitle,
 }: {
-  count: number; onClear: () => void; onActivate?: () => void; onDeactivate?: () => void;
-  onDelete: () => void; deleteDisabled?: boolean; deleteTitle?: string;
+  count: number;
+  onClear: () => void;
+  onActivate?: () => void;
+  onDeactivate?: () => void;
+  onDelete: () => void;
+  onMerge?: () => void;
+  deleteDisabled?: boolean;
+  deleteTitle?: string;
 }) {
   if (count === 0) return null;
   return (
-    <div className="flex items-center justify-between bg-blue-600 text-white px-4 py-2.5 rounded-xl shadow-md text-xs font-semibold">
-      <div className="flex items-center gap-2">
-        <ListChecks size={15} />
-        <span>{count} selected</span>
+    <div className="bg-slate-900 text-white px-4 py-2.5 rounded-xl flex items-center justify-between text-xs shadow-lg animate-in fade-in slide-in-from-top-1 duration-150">
+      <div className="flex items-center gap-2 font-medium">
+        <CheckCircle size={15} className="text-emerald-400" />
+        <span>{count} item{count !== 1 ? 's' : ''} selected</span>
+        <span className="text-slate-500">|</span>
         <button onClick={onClear} className="underline opacity-80 hover:opacity-100 cursor-pointer font-normal">Clear</button>
       </div>
       <div className="flex items-center gap-2">
+        {onMerge && (
+          <button onClick={onMerge} disabled={count < 2} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg cursor-pointer transition-colors flex items-center gap-1 font-bold text-white">
+            <Layers size={12} /> Merge Selected
+          </button>
+        )}
         {onActivate && (
           <button onClick={onActivate} className="px-3 py-1.5 bg-white/15 hover:bg-white/25 rounded-lg cursor-pointer transition-colors">Set Active</button>
         )}
@@ -378,6 +390,10 @@ export const ProductMasterPage: React.FC = () => {
   const [showImport, setShowImport] = useState(false);
   const [showImpExpDropdown, setShowImpExpDropdown] = useState(false);
   const [importReport, setImportReport] = useState<{ added: string[]; skipped: string[] } | null>(null);
+
+  const [showProductMergeModal, setShowProductMergeModal] = useState(false);
+  const [targetProductMergeId, setTargetProductMergeId] = useState<string>('');
+
   const fileRef = useRef<HTMLInputElement>(null);
   const [suggestions, setSuggestions] = useState<Product[]>([]);
 
@@ -470,6 +486,28 @@ export const ProductMasterPage: React.FC = () => {
     );
   };
   const bulkProducts = useBulkSelect(paginated);
+
+  const selectedProductIds = Array.from(bulkProducts.selected);
+
+  const handleOpenProductMerge = () => {
+    if (selectedProductIds.length < 2) {
+      alert('Please select at least 2 products to merge.');
+      return;
+    }
+    setTargetProductMergeId(selectedProductIds[0]);
+    setShowProductMergeModal(true);
+  };
+
+  const handleExecuteProductMerge = () => {
+    if (!targetProductMergeId) return;
+    const targetProduct = products.find((p) => p.id === targetProductMergeId);
+    if (!targetProduct) return;
+
+    setProducts((prev) => prev.filter((p) => p.id === targetProductMergeId || !selectedProductIds.includes(p.id)));
+    bulkProducts.clear();
+    setShowProductMergeModal(false);
+    setToast({ msg: `Merged products into "${targetProduct.name_tally}".`, type: 'success' });
+  };
 
   useEffect(() => setPage(1), [search, filterCat, filterSubCat, filterBrand, filterHSN, filterUOM, statusFilterTab]);
   useEffect(() => { bulkProducts.clear(); }, [page, statusFilterTab]);
@@ -1072,6 +1110,7 @@ export const ProductMasterPage: React.FC = () => {
               <BulkActionBar
                 count={bulkProducts.selectedCount}
                 onClear={bulkProducts.clear}
+                onMerge={handleOpenProductMerge}
                 onActivate={statusFilterTab === 'INACTIVE' ? () => bulkSetStatus('ACTIVE') : undefined}
                 onDeactivate={statusFilterTab === 'ACTIVE' ? () => bulkSetStatus('INACTIVE') : undefined}
                 onDelete={() => setConfirmBulkDel(true)}
@@ -1903,6 +1942,57 @@ export const ProductMasterPage: React.FC = () => {
       {confirmBulkSubDel && <ConfirmDialog msg={`Delete ${bulkSubs.selectedCount} selected sub categor${bulkSubs.selectedCount === 1 ? 'y' : 'ies'}?`} onConfirm={confirmBulkDeleteSub} onCancel={() => setConfirmBulkSubDel(false)} />}
       {confirmBrandDel && <ConfirmDialog msg="Delete this brand permanently?" onConfirm={confirmDeleteBrand} onCancel={() => setConfirmBrandDel(null)} />}
       {confirmBulkBrandDel && <ConfirmDialog msg={`Delete ${bulkBrands.selectedCount} selected brand(s)?`} onConfirm={confirmBulkDeleteBrand} onCancel={() => setConfirmBulkBrandDel(false)} />}
+
+      {/* MERGE PRODUCTS MODAL */}
+      {showProductMergeModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-xl border border-slate-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Layers size={18} className="text-blue-600" /> Merge Selected Products ({bulkProducts.selectedCount})
+              </h3>
+              <button onClick={() => setShowProductMergeModal(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
+                <X size={16} />
+              </button>
+            </div>
+            <p className="text-xs text-slate-600">
+              Select the <strong>primary product record</strong> to keep. Secondary product duplicate records will be merged and removed.
+            </p>
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-700 block">Primary Product Record to Keep:</label>
+              <select
+                value={targetProductMergeId}
+                onChange={(e) => setTargetProductMergeId(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-300 text-xs text-slate-900 p-2.5 rounded-xl font-semibold outline-none focus:border-blue-500"
+              >
+                {products
+                  .filter((p) => selectedProductIds.includes(p.id))
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name_tally} ({p.product_code})
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowProductMergeModal(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteProductMerge}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
+              >
+                <Layers size={14} /> Confirm Merge
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
     </div>

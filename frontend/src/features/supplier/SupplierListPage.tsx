@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Truck, Plus, Filter, ShieldAlert, ArrowLeft, Download, Upload, FileSpreadsheet, X, CheckCircle, Eye, Trash2, Camera, Phone, Mail, MessageSquare, AlertCircle, Link as LinkIcon, Check, ChevronDown, UserPlus, Edit, Maximize2, FileText, Image as ImageIcon, Video, Search, RotateCcw, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { Truck, Plus, Filter, ShieldAlert, ArrowLeft, Download, Upload, FileSpreadsheet, X, CheckCircle, Eye, Trash2, Camera, Phone, Mail, MessageSquare, AlertCircle, Link as LinkIcon, Check, ChevronDown, UserPlus, Edit, Maximize2, FileText, Image as ImageIcon, Video, Search, RotateCcw, ArrowUpDown, ArrowUp, ArrowDown, Layers } from 'lucide-react';
 import { supplierApi } from '../../api/supplierApi';
 import { TableSkeleton } from '../../components/common/SkeletonLoader';
 
@@ -311,6 +311,75 @@ export const SupplierListPage: React.FC = () => {
         </div>
       </th>
     );
+  };
+
+  // Bulk selection & Merge State
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [showMergeModal, setShowMergeModal] = useState(false);
+  const [targetMergeId, setTargetMergeId] = useState<string>('');
+
+  const isAllSelected = sortedSuppliers.length > 0 && sortedSuppliers.every((s) => selectedIds.includes(s.id));
+
+  const toggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(sortedSuppliers.map((s) => s.id));
+    }
+  };
+
+  const toggleSelectOne = (id: string) => {
+    if (selectedIds.includes(id)) {
+      setSelectedIds(selectedIds.filter((i) => i !== id));
+    } else {
+      setSelectedIds([...selectedIds, id]);
+    }
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedIds.length === 0) return;
+    if (confirm(`Are you sure you want to delete ${selectedIds.length} selected supplier(s)?`)) {
+      setSuppliers((prev) => prev.filter((s) => !selectedIds.includes(s.id)));
+      setSelectedIds([]);
+      setImportNotification(`${selectedIds.length} supplier(s) deleted.`);
+    }
+  };
+
+  const handleOpenMerge = () => {
+    if (selectedIds.length < 2) {
+      alert('Please select at least 2 records to merge.');
+      return;
+    }
+    setTargetMergeId(selectedIds[0]);
+    setShowMergeModal(true);
+  };
+
+  const handleExecuteMerge = () => {
+    if (!targetMergeId) return;
+    const targetSupplier = suppliers.find((s) => s.id === targetMergeId);
+    if (!targetSupplier) return;
+
+    const mergeItems = suppliers.filter((s) => selectedIds.includes(s.id));
+    const mergedCategories = Array.from(new Set(mergeItems.flatMap((s) => s.product_categories || [])));
+    const mergedSubcats = Array.from(new Set(mergeItems.flatMap((s) => s.key_strength_subcategories || [])));
+
+    setSuppliers((prev) =>
+      prev
+        .map((s) =>
+          s.id === targetMergeId
+            ? {
+                ...s,
+                product_categories: mergedCategories,
+                key_strength_subcategories: mergedSubcats,
+              }
+            : s,
+        )
+        .filter((s) => s.id === targetMergeId || !selectedIds.includes(s.id)),
+    );
+
+    setSelectedIds([]);
+    setShowMergeModal(false);
+    setImportNotification(`Merged ${mergeItems.length} suppliers into "${targetSupplier.name}".`);
   };
 
   const handleResetFilters = () => {
@@ -1014,6 +1083,37 @@ export const SupplierListPage: React.FC = () => {
             )}
           </div>
 
+          {/* BULK ACTION BAR */}
+          {selectedIds.length > 0 && (
+            <div className="bg-blue-50 border border-blue-200 p-3 rounded-xl flex items-center justify-between text-xs shadow-2xs">
+              <div className="flex items-center gap-2 font-bold text-blue-900">
+                <CheckCircle size={16} className="text-blue-600" />
+                <span>{selectedIds.length} supplier(s) selected</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleOpenMerge}
+                  disabled={selectedIds.length < 2}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-lg flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <Layers size={14} /> Merge Selected ({selectedIds.length})
+                </button>
+                <button
+                  onClick={handleBulkDelete}
+                  className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <Trash2 size={14} /> Delete Selected ({selectedIds.length})
+                </button>
+                <button
+                  onClick={() => setSelectedIds([])}
+                  className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-lg cursor-pointer"
+                >
+                  Deselect All
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Supplier Data Table matching exact spec */}
           {isLoading ? (
             <TableSkeleton rows={8} />
@@ -1023,7 +1123,14 @@ export const SupplierListPage: React.FC = () => {
               <table className="w-full text-left text-xs text-slate-700">
                 <thead className="bg-slate-100 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
                   <tr>
-                    <th className="p-3.5"><input type="checkbox" className="rounded border-slate-300" /></th>
+                    <th className="p-3.5 text-center w-10">
+                      <input
+                        type="checkbox"
+                        checked={isAllSelected}
+                        onChange={toggleSelectAll}
+                        className="rounded border-slate-300 cursor-pointer w-4 h-4"
+                      />
+                    </th>
                     {renderSortHeader('Company Name', 'name')}
                     {renderSortHeader('Product Category (Max 5)', 'product_categories')}
                     {renderSortHeader('Key Strength Sub Category', 'key_strength_subcategories')}
@@ -1041,8 +1148,15 @@ export const SupplierListPage: React.FC = () => {
                 <tbody className="divide-y divide-slate-100 font-medium">
                   {sortedSuppliers.length > 0 ? (
                     sortedSuppliers.map((item) => (
-                      <tr key={item.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="p-3.5"><input type="checkbox" className="rounded border-slate-300" /></td>
+                      <tr key={item.id} className={`transition-colors ${selectedIds.includes(item.id) ? 'bg-blue-50/60' : 'hover:bg-slate-50'}`}>
+                        <td className="p-3.5 text-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.includes(item.id)}
+                            onChange={() => toggleSelectOne(item.id)}
+                            className="rounded border-slate-300 cursor-pointer w-4 h-4"
+                          />
+                        </td>
                         <td
                           onClick={() => {
                             setSelectedSupplier(item);
@@ -2136,6 +2250,56 @@ export const SupplierListPage: React.FC = () => {
             <div className="flex justify-end pt-2">
               <button onClick={() => setExpandedFieldModal(null)} className="px-4 py-2 bg-slate-100 text-slate-800 text-xs font-semibold rounded-lg">
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* MERGE SUPPLIERS MODAL */}
+      {showMergeModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-xl border border-slate-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Layers size={18} className="text-blue-600" /> Merge Selected Suppliers ({selectedIds.length})
+              </h3>
+              <button onClick={() => setShowMergeModal(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
+                <X size={16} />
+              </button>
+            </div>
+            <p className="text-xs text-slate-600">
+              Select the <strong>primary target record</strong> to keep. Data (categories & subcategories) from other selected records will be merged into this primary supplier, and duplicate records will be removed.
+            </p>
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-700 block">Primary Supplier Record to Keep:</label>
+              <select
+                value={targetMergeId}
+                onChange={(e) => setTargetMergeId(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-300 text-xs text-slate-900 p-2.5 rounded-xl font-semibold outline-none focus:border-blue-500"
+              >
+                {suppliers
+                  .filter((s) => selectedIds.includes(s.id))
+                  .map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.city}, {s.country})
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowMergeModal(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteMerge}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
+              >
+                <Layers size={14} /> Confirm Merge
               </button>
             </div>
           </div>

@@ -389,6 +389,58 @@ export const InquiryPlanningPage: React.FC = () => {
     );
   };
 
+  // Bulk selection & Merge State for Layer 1
+  const [selectedL1Ids, setSelectedL1Ids] = useState<string[]>([]);
+  const [showL1MergeModal, setShowL1MergeModal] = useState(false);
+  const [targetL1MergeId, setTargetL1MergeId] = useState<string>('');
+
+  const isAllL1Selected = sortedLayer1Consignments.length > 0 && sortedLayer1Consignments.every((c) => selectedL1Ids.includes(c.id));
+
+  const toggleSelectAllL1 = () => {
+    if (isAllL1Selected) {
+      setSelectedL1Ids([]);
+    } else {
+      setSelectedL1Ids(sortedLayer1Consignments.map((c) => c.id));
+    }
+  };
+
+  const toggleSelectOneL1 = (id: string) => {
+    if (selectedL1Ids.includes(id)) {
+      setSelectedL1Ids(selectedL1Ids.filter((i) => i !== id));
+    } else {
+      setSelectedL1Ids([...selectedL1Ids, id]);
+    }
+  };
+
+  const handleBulkDeleteL1 = () => {
+    if (selectedL1Ids.length === 0) return;
+    if (confirm(`Are you sure you want to delete ${selectedL1Ids.length} selected consignment(s)?`)) {
+      setConsignments((prev) => prev.filter((c) => !selectedL1Ids.includes(c.id)));
+      setSelectedL1Ids([]);
+      setImportNotification(`${selectedL1Ids.length} consignment(s) deleted.`);
+    }
+  };
+
+  const handleOpenMergeL1 = () => {
+    if (selectedL1Ids.length < 2) {
+      alert('Please select at least 2 consignments to merge.');
+      return;
+    }
+    setTargetL1MergeId(selectedL1Ids[0]);
+    setShowL1MergeModal(true);
+  };
+
+  const handleExecuteMergeL1 = () => {
+    if (!targetL1MergeId) return;
+    const targetConsignment = consignments.find((c) => c.id === targetL1MergeId);
+    if (!targetConsignment) return;
+
+    setConsignments((prev) => prev.filter((c) => c.id === targetL1MergeId || !selectedL1Ids.includes(c.id)));
+    setSelectedL1Ids([]);
+    setShowL1MergeModal(false);
+    setImportNotification(`Merged consignments into "${targetConsignment.code}".`);
+  };
+
   // Export CSV (Layer-Aware & Excel UTF-8 BOM formatted)
   const handleExportCSV = () => {
     let headers: string[] = [];
@@ -684,6 +736,37 @@ export const InquiryPlanningPage: React.FC = () => {
             </div>
           </div>
 
+          {/* BULK ACTION BAR LAYER 1 */}
+          {selectedL1Ids.length > 0 && (
+            <div className="bg-blue-50 border border-blue-200 p-3 rounded-xl flex items-center justify-between text-xs shadow-2xs">
+              <div className="flex items-center gap-2 font-bold text-blue-900">
+                <CheckCircle size={16} className="text-blue-600" />
+                <span>{selectedL1Ids.length} consignment(s) selected</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleOpenMergeL1}
+                  disabled={selectedL1Ids.length < 2}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-lg flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <Layers size={14} /> Merge Selected ({selectedL1Ids.length})
+                </button>
+                <button
+                  onClick={handleBulkDeleteL1}
+                  className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <Trash2 size={14} /> Delete Selected ({selectedL1Ids.length})
+                </button>
+                <button
+                  onClick={() => setSelectedL1Ids([])}
+                  className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-lg cursor-pointer"
+                >
+                  Deselect All
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* 1ST LAYER COLUMNS IN LIST TABLE MATCHING SPEC */}
           {isLoading ? (
             <TableSkeleton rows={6} />
@@ -693,7 +776,14 @@ export const InquiryPlanningPage: React.FC = () => {
               <table className="w-full text-left text-xs text-slate-700">
                 <thead className="bg-slate-100 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
                   <tr>
-                    <th className="p-3.5"><input type="checkbox" className="rounded border-slate-300" /></th>
+                    <th className="p-3.5 text-center w-10">
+                      <input
+                        type="checkbox"
+                        checked={isAllL1Selected}
+                        onChange={toggleSelectAllL1}
+                        className="rounded border-slate-300 cursor-pointer w-4 h-4"
+                      />
+                    </th>
                     {renderL1SortHeader('Inquiry By (Buyer Company Name)', 'company')}
                     {renderL1SortHeader('Inquiry Consignment Code', 'code')}
                     {renderL1SortHeader('Status', 'status')}
@@ -705,8 +795,15 @@ export const InquiryPlanningPage: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
                   {sortedLayer1Consignments.map((item) => (
-                    <tr key={item.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="p-3.5"><input type="checkbox" className="rounded border-slate-300" /></td>
+                    <tr key={item.id} className={`transition-colors ${selectedL1Ids.includes(item.id) ? 'bg-blue-50/60' : 'hover:bg-slate-50'}`}>
+                      <td className="p-3.5 text-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedL1Ids.includes(item.id)}
+                          onChange={() => toggleSelectOneL1(item.id)}
+                          className="rounded border-slate-300 cursor-pointer w-4 h-4"
+                        />
+                      </td>
                       {/* Inquiry By (Company) - Clickable to open 2nd Layer */}
                       <td
                         onClick={() => {
@@ -1205,6 +1302,56 @@ export const InquiryPlanningPage: React.FC = () => {
                 className="px-4 py-2 bg-slate-100 text-slate-800 text-xs font-semibold rounded-lg hover:bg-slate-200"
               >
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* MERGE CONSIGNMENTS MODAL */}
+      {showL1MergeModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-xl border border-slate-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Layers size={18} className="text-blue-600" /> Merge Selected Consignments ({selectedL1Ids.length})
+              </h3>
+              <button onClick={() => setShowL1MergeModal(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
+                <X size={16} />
+              </button>
+            </div>
+            <p className="text-xs text-slate-600">
+              Select the <strong>primary consignment record</strong> to keep. The line items from other selected consignments will be merged into this primary consignment.
+            </p>
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-700 block">Primary Consignment to Keep:</label>
+              <select
+                value={targetL1MergeId}
+                onChange={(e) => setTargetL1MergeId(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-300 text-xs text-slate-900 p-2.5 rounded-xl font-semibold outline-none focus:border-blue-500"
+              >
+                {consignments
+                  .filter((c) => selectedL1Ids.includes(c.id))
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.code} ({c.company})
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowL1MergeModal(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteMergeL1}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
+              >
+                <Layers size={14} /> Confirm Merge
               </button>
             </div>
           </div>

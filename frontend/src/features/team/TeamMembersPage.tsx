@@ -3,7 +3,7 @@ import {
   Users, Plus, Search, X, CheckCircle, Download, Upload, FileSpreadsheet,
   Trash2, Mail, Eye, EyeOff, ArrowLeft, Pencil, ShieldAlert, ShieldCheck,
   Building2, Calendar, KeyRound, AlertTriangle, RefreshCw, Crown, UserCog,
-  ArrowUpDown, ArrowUp, ArrowDown,
+  ArrowUpDown, ArrowUp, ArrowDown, Layers,
 } from 'lucide-react';
 import {
   useTeamStore, TeamMember, AccountType, Department, DEPARTMENTS, BRANCHES,
@@ -303,6 +303,58 @@ export const TeamMembersPage: React.FC = () => {
     }
   };
 
+  // Bulk selection & Merge State
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [showMergeModal, setShowMergeModal] = useState(false);
+  const [targetMergeId, setTargetMergeId] = useState<string>('');
+
+  const isAllSelected = sortedMembers.length > 0 && sortedMembers.every((m) => selectedIds.includes(m.id));
+
+  const toggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(sortedMembers.map((m) => m.id));
+    }
+  };
+
+  const toggleSelectOne = (id: string) => {
+    if (selectedIds.includes(id)) {
+      setSelectedIds(selectedIds.filter((i) => i !== id));
+    } else {
+      setSelectedIds([...selectedIds, id]);
+    }
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedIds.length === 0) return;
+    if (confirm(`Are you sure you want to delete ${selectedIds.length} selected team member(s)?`)) {
+      selectedIds.forEach((id) => removeMember(id));
+      setSelectedIds([]);
+      setImportNotification(`${selectedIds.length} member(s) deleted.`);
+    }
+  };
+
+  const handleOpenMerge = () => {
+    if (selectedIds.length < 2) {
+      alert('Please select at least 2 team members to merge.');
+      return;
+    }
+    setTargetMergeId(selectedIds[0]);
+    setShowMergeModal(true);
+  };
+
+  const handleExecuteMerge = () => {
+    if (!targetMergeId) return;
+    const targetMember = members.find((m) => m.id === targetMergeId);
+    if (!targetMember) return;
+
+    selectedIds.filter((id) => id !== targetMergeId).forEach((id) => removeMember(id));
+    setSelectedIds([]);
+    setShowMergeModal(false);
+    setImportNotification(`Merged team member accounts into "${targetMember.name}".`);
+  };
+
   return (
     <div className="space-y-6">
       {/* TOP TITLE BAR */}
@@ -333,6 +385,56 @@ export const TeamMembersPage: React.FC = () => {
             <ArrowLeft size={14} /> Back to List
           </button>
         )}
+        {/* MERGE TEAM MEMBERS MODAL */}
+        {showMergeModal && (
+          <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-xl border border-slate-200">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <Layers size={18} className="text-blue-600" /> Merge Selected Team Members ({selectedIds.length})
+                </h3>
+                <button onClick={() => setShowMergeModal(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
+                  <X size={16} />
+                </button>
+              </div>
+              <p className="text-xs text-slate-600">
+                Select the <strong>primary team member account</strong> to keep. Other duplicate selected account entries will be removed.
+              </p>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-700 block">Primary Account Record to Keep:</label>
+                <select
+                  value={targetMergeId}
+                  onChange={(e) => setTargetMergeId(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 text-xs text-slate-900 p-2.5 rounded-xl font-semibold outline-none focus:border-blue-500"
+                >
+                  {members
+                    .filter((m) => selectedIds.includes(m.id))
+                    .map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name} ({m.email})
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowMergeModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExecuteMerge}
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <Layers size={14} /> Confirm Merge
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {importNotification && (
@@ -362,6 +464,37 @@ export const TeamMembersPage: React.FC = () => {
             <span className="text-xs text-slate-500 font-semibold">{filtered.length} Member{filtered.length !== 1 ? 's' : ''}</span>
           </div>
 
+          {/* BULK ACTION BAR */}
+          {selectedIds.length > 0 && (
+            <div className="bg-blue-50 border border-blue-200 p-3 rounded-xl flex items-center justify-between text-xs shadow-2xs">
+              <div className="flex items-center gap-2 font-bold text-blue-900">
+                <CheckCircle size={16} className="text-blue-600" />
+                <span>{selectedIds.length} team member(s) selected</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleOpenMerge}
+                  disabled={selectedIds.length < 2}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-lg flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <Layers size={14} /> Merge Selected ({selectedIds.length})
+                </button>
+                <button
+                  onClick={handleBulkDelete}
+                  className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <Trash2 size={14} /> Delete Selected ({selectedIds.length})
+                </button>
+                <button
+                  onClick={() => setSelectedIds([])}
+                  className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-lg cursor-pointer"
+                >
+                  Deselect All
+                </button>
+              </div>
+            </div>
+          )}
+
           {isLoading ? (
             <TableSkeleton rows={6} />
           ) : (
@@ -369,6 +502,14 @@ export const TeamMembersPage: React.FC = () => {
             <table className="w-full text-left text-xs text-slate-700">
               <thead className="bg-slate-100 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
                 <tr>
+                  <th className="p-3.5 text-center w-10">
+                    <input
+                      type="checkbox"
+                      checked={isAllSelected}
+                      onChange={toggleSelectAll}
+                      className="rounded border-slate-300 cursor-pointer w-4 h-4"
+                    />
+                  </th>
                   {renderSortHeader('Member Name & Email', 'name')}
                   {renderSortHeader('Account Type', 'accountType')}
                   {renderSortHeader('Department', 'department')}
@@ -379,7 +520,15 @@ export const TeamMembersPage: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
                 {sortedMembers.map((member) => (
-                  <tr key={member.id} className="hover:bg-slate-50 transition-colors">
+                  <tr key={member.id} className={`transition-colors ${selectedIds.includes(member.id) ? 'bg-blue-50/60' : 'hover:bg-slate-50'}`}>
+                    <td className="p-3.5 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(member.id)}
+                        onChange={() => toggleSelectOne(member.id)}
+                        className="rounded border-slate-300 cursor-pointer w-4 h-4"
+                      />
+                    </td>
                     <td className="p-3.5 cursor-pointer" onClick={() => openDetail(member)}>
                       <p className="font-bold text-blue-600 hover:underline">{member.name}</p>
                       <p className="text-[11px] text-slate-500 font-mono flex items-center gap-1 mt-0.5">
