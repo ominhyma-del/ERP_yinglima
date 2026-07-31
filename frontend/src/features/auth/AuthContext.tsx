@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { findMemberByEmail, TeamMember, AccountType, PermissionSet, useTeamStore, SEED_MEMBERS } from '../team/teamStore';
 import { teamApi } from '../../api/teamApi';
+import api from '../../lib/api';
 
 /**
  * ── Mock Authentication ───────────────────────────────────────────────────
@@ -165,21 +166,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSessionId(newSessionId);
     setRememberMe(remember);
 
-    // Audit trace logging
-    const auditLogs = JSON.parse(localStorage.getItem('yinglima_audit_logs') || '[]');
-    const newLog = {
-      id: `log-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      user_email: email,
-      action: 'LOGIN_SUCCESS',
-      entity: 'USER_AUTH',
-      entity_id: member.id,
-      role: member.accountType,
-      ip_address: '127.0.0.1 (Local Session)',
-      status: 'SUCCESS',
-      description: `User "${email}" authenticated successfully as ${member.accountType}`,
-    };
-    localStorage.setItem('yinglima_audit_logs', JSON.stringify([newLog, ...auditLogs]));
+    // Audit trace logging to Backend PostgreSQL DB
+    try {
+      api.post('/audit/log', {
+        user_id: member.id,
+        user_name: member.name,
+        user_email: email,
+        action: 'LOGIN_SUCCESS',
+        entity: 'USER_AUTH',
+        entity_id: member.id,
+        role: member.accountType,
+        description: `User "${member.name}" (${email}) authenticated successfully as ${member.accountType}`,
+      });
+    } catch (e) {}
 
     // Always land on a clean, permission-safe screen for the newly signed-in
     // session, instead of whatever route was left in the address bar from a
@@ -191,20 +190,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = () => {
     if (user) {
-      const auditLogs = JSON.parse(localStorage.getItem('yinglima_audit_logs') || '[]');
-      const newLog = {
-        id: `log-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        user_email: user.email,
-        action: 'LOGOUT_SUCCESS',
-        entity: 'USER_AUTH',
-        entity_id: user.id,
-        role: user.accountType,
-        ip_address: '127.0.0.1 (Local Session)',
-        status: 'SUCCESS',
-        description: `User "${user.email}" signed out successfully`,
-      };
-      localStorage.setItem('yinglima_audit_logs', JSON.stringify([newLog, ...auditLogs]));
+      try {
+        api.post('/audit/log', {
+          user_id: user.id,
+          user_name: user.name,
+          user_email: user.email,
+          action: 'LOGOUT_SUCCESS',
+          entity: 'USER_AUTH',
+          entity_id: user.id,
+          role: user.accountType,
+          description: `User "${user.name}" (${user.email}) signed out successfully`,
+        });
+      } catch (e) {}
     }
 
     // Clear every trace of the session — both storage locations (regardless

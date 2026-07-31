@@ -64,6 +64,9 @@ export const Sidebar: React.FC = () => {
     : null;
 
   const isVisible = (itemPath: string) => {
+    if (itemPath === '/audit-logs') {
+      return user?.accountType === 'ADMIN';
+    }
     const gate = ROUTE_PERMISSION[itemPath];
     if (gate === null || gate === undefined) return true;
     if (!memberForCheck) return false;
