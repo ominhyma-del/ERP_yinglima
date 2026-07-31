@@ -31,6 +31,8 @@ import { RetryService } from './core/resilience/retry.service';
 import { FallbackService } from './core/resilience/fallback.service';
 import { RecoveryService } from './core/resilience/recovery.service';
 
+import { HealthModule } from './modules/health/health.module';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -40,6 +42,7 @@ import { RecoveryService } from './core/resilience/recovery.service';
     ResilienceModule,
     LoggingModule,
     TaskQueueModule,
+    HealthModule,
   ],
   controllers: [
     SupplierController,
