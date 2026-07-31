@@ -26,6 +26,8 @@ import { RequestContextMiddleware } from './core/context/request-context.middlew
 
 import { PrismaModule } from './core/database/prisma.module';
 import { TransactionService } from './core/database/transaction.service';
+import { ResilienceModule } from './core/resilience/resilience.module';
+import { RetryService } from './core/resilience/retry.service';
 
 @Module({
   imports: [
@@ -33,6 +35,7 @@ import { TransactionService } from './core/database/transaction.service';
       isGlobal: true,
     }),
     PrismaModule,
+    ResilienceModule,
     LoggingModule,
     TaskQueueModule,
   ],
@@ -53,6 +56,7 @@ import { TransactionService } from './core/database/transaction.service';
     },
     PrismaService,
     TransactionService,
+    RetryService,
     SupplierService,
     BuyerService,
     ProductService,
