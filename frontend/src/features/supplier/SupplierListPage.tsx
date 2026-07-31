@@ -4,6 +4,7 @@ import { supplierApi } from '../../api/supplierApi';
 import { TableSkeleton } from '../../components/common/SkeletonLoader';
 import { useAuth } from '../../context/AuthContext';
 import { can } from '../team/teamStore';
+import { offlineOutbox } from '../../lib/offlineOutbox';
 
 // Country Phone Dial Code Map
 const countryPhoneCodeMap: Record<string, string> = {
@@ -759,14 +760,30 @@ export const SupplierListPage: React.FC = () => {
       setSuppliers(suppliers.map((s) => (s.id === editingSupplierId ? updatedSupplierObj : s)));
       setImportNotification(`Successfully updated supplier profile for "${companyName}"!`);
     } else {
-      // Persist to Supabase Cloud DB via NestJS Backend API
+      // Persist to Supabase Cloud DB via NestJS Backend API with Network Resilience
       setSuppliers([updatedSupplierObj, ...suppliers]);
-      await supplierApi.createSupplier(updatedSupplierObj);
-      const apiList = await supplierApi.getSuppliers();
-      if (apiList && Array.isArray(apiList) && apiList.length > 0) {
-        setSuppliers(apiList);
+      try {
+        const res = await supplierApi.createSupplier(updatedSupplierObj);
+        if (!res) {
+          offlineOutbox.enqueue({
+            url: '/api/suppliers',
+            method: 'POST',
+            payload: updatedSupplierObj,
+            description: `Create Supplier Profile (${companyName})`,
+          });
+          setImportNotification(`Saved locally! Wi-Fi/network dropped — queued in Outbox to sync automatically.`);
+        } else {
+          setImportNotification(`Successfully created & saved new supplier profile "${companyName}" to Supabase Database!`);
+        }
+      } catch (err) {
+        offlineOutbox.enqueue({
+          url: '/api/suppliers',
+          method: 'POST',
+          payload: updatedSupplierObj,
+          description: `Create Supplier Profile (${companyName})`,
+        });
+        setImportNotification(`Saved locally! Network connection interrupted — queued in Outbox to sync when online.`);
       }
-      setImportNotification(`Successfully created & saved new supplier profile "${companyName}" to Supabase Database!`);
     }
 
     setViewMode('list');

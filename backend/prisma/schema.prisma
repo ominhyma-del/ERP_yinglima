@@ -516,3 +516,31 @@ model AuditLog {
   @@index([company_id, entity_name, entity_id])
   @@map("audit_logs")
 }
+
+// ==========================================
+// CUSTOM PERSISTENT QUEUE SYSTEM
+// ==========================================
+enum QueueTaskStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model TaskQueue {
+  id           String          @id @default(uuid()) @db.Uuid
+  task_type    String
+  payload      Json
+  status       QueueTaskStatus @default(PENDING)
+  retries      Int             @default(0)
+  max_retries  Int             @default(5)
+  error_log    String?
+  scheduled_at DateTime        @default(now())
+  processed_at DateTime?
+  created_at   DateTime        @default(now())
+  updated_at   DateTime        @updatedAt
+
+  @@index([status, scheduled_at])
+  @@index([task_type])
+  @@map("task_queues")
+}

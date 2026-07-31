@@ -16,6 +16,7 @@ import { AuditLogsPage } from './features/team/AuditLogsPage';
 import { can } from './features/team/teamStore';
 import { ROUTE_PERMISSION } from './config/routeAccess';
 import { GhostPageLoader } from './components/common/SkeletonLoader';
+import { OfflineBanner } from './components/common/OfflineBanner';
 
 /**
  * Guards a route against direct URL access.
@@ -108,6 +109,7 @@ export function App() {
           <MainContent />
         </main>
       </div>
+      <OfflineBanner />
     </div>
   );
 }

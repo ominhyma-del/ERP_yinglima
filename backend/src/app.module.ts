@@ -18,11 +18,14 @@ import { AuditService } from './modules/audit/audit.service';
 import { UserController } from './modules/user/user.controller';
 import { UserService } from './modules/user/user.service';
 
+import { TaskQueueModule } from './modules/queue/task-queue.module';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    TaskQueueModule,
   ],
   controllers: [
     SupplierController,
