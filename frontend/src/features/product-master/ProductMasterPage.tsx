@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Package, Plus, Filter, AlertTriangle, ShieldAlert, ArrowLeft,
   Download, Upload, FileSpreadsheet, X, CheckCircle, Lock, Search,
-  Eye, Pencil, Trash2, ChevronLeft, ChevronRight, RefreshCw,
+  Eye, Pencil, Trash2, ChevronLeft, ChevronRight, RefreshCw, RotateCcw,
   Tags, Layers, Bookmark, Image as ImageIcon, FileText, Bold,
   Italic, List, Table2, Info, Clock, User, Calendar, Settings,
   GripVertical, ListChecks, ArrowUpDown, ArrowUp, ArrowDown, ChevronDown,
@@ -378,6 +378,7 @@ export const ProductMasterPage: React.FC = () => {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [activeFormTab, setActiveFormTab] = useState<'general' | 'packaging' | 'specs' | 'docs'>('general');
   const [statusFilterTab, setStatusFilterTab] = useState<Status>('ACTIVE');
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
 
   const [search, setSearch] = useState('');
   const [filterCat, setFilterCat] = useState('');
@@ -1007,9 +1008,19 @@ export const ProductMasterPage: React.FC = () => {
               </h3>
               {prodView === 'list' && <p className="text-xs text-slate-500 mt-0.5">{filtered.length} product{filtered.length !== 1 ? 's' : ''} · Page {page} of {totalPages}</p>}
             </div>
-            <div className="flex items-center gap-2">
+             <div className="flex items-center gap-2">
               {prodView === 'list' ? (
                 <>
+                  <button onClick={() => setShowFilterPanel(!showFilterPanel)}
+                    className={`p-2.5 rounded-lg border transition-all cursor-pointer ${
+                      showFilterPanel
+                        ? 'bg-blue-50 border-blue-200 text-blue-600'
+                        : 'bg-white border-slate-300 hover:bg-slate-50 text-slate-700'
+                    }`}
+                    title="Toggle Filters Panel">
+                    <Filter size={15} />
+                  </button>
+
                   <button onClick={() => setShowManageFields(true)} title="Customize which fields appear on the product form"
                     className="px-3.5 py-2.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium text-xs rounded-lg flex items-center gap-1.5 shadow-sm transition-all cursor-pointer">
                     <Settings size={14} className="text-slate-500" /> Manage Fields
@@ -1078,39 +1089,60 @@ export const ProductMasterPage: React.FC = () => {
                 ))}
               </div>
 
-              {/* Filters */}
-              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-1.5 text-xs font-bold text-slate-500 uppercase tracking-wider">
-                    <Filter size={13} className="text-blue-600" /> Filters
-                  </span>
-                  <button onClick={resetFilters} className="text-xs text-blue-600 hover:underline flex items-center gap-1 cursor-pointer">
-                    <RefreshCw size={11} /> Reset
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2.5">
-                  <div className="relative col-span-2 md:col-span-2">
-                    <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name or code..."
-                      className="w-full pl-7 pr-3 py-2 bg-slate-50 border border-slate-200 text-xs text-slate-800 rounded-lg outline-none focus:border-blue-500 focus:bg-white" />
+              {/* Collapsible Filters */}
+              {showFilterPanel && (
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    <span className="flex items-center gap-2">
+                      <Filter size={14} className="text-blue-600" /> Top Filter Fields
+                    </span>
+                    <button onClick={resetFilters} className="text-[11px] text-blue-600 hover:underline flex items-center gap-1 normal-case cursor-pointer">
+                      <RotateCcw size={12} /> Reset Filters
+                    </button>
                   </div>
-                  <select value={filterCat} onChange={e => setFilterCat(e.target.value)} className="bg-slate-50 border border-slate-200 text-xs text-slate-700 px-2.5 py-2 rounded-lg outline-none focus:border-blue-500">
-                    <option value="">All Categories</option>
-                    {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                  </select>
-                  <select value={filterSubCat} onChange={e => setFilterSubCat(e.target.value)} className="bg-slate-50 border border-slate-200 text-xs text-slate-700 px-2.5 py-2 rounded-lg outline-none focus:border-blue-500">
-                    <option value="">All Sub Categories</option>
-                    {subcats.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                  </select>
-                  <select value={filterBrand} onChange={e => setFilterBrand(e.target.value)} className="bg-slate-50 border border-slate-200 text-xs text-slate-700 px-2.5 py-2 rounded-lg outline-none focus:border-blue-500">
-                    <option value="">All Brands</option>
-                    {brands.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
-                  </select>
-                  <select value={filterUOM} onChange={e => setFilterUOM(e.target.value)} className="bg-slate-50 border border-slate-200 text-xs text-slate-700 px-2.5 py-2 rounded-lg outline-none focus:border-blue-500">
-                    <option value="">All UOM</option>
-                    {UOM_LIST.map(u => <option key={u} value={u}>{u}</option>)}
-                  </select>
+                  <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-5 gap-2.5">
+                    <div>
+                      <label className="text-[10px] text-slate-500 font-bold block mb-0.5">Product Category</label>
+                      <select value={filterCat} onChange={e => setFilterCat(e.target.value)} className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-800 p-2 rounded-lg outline-none cursor-pointer">
+                        <option value="">All Categories</option>
+                        {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-500 font-bold block mb-0.5">Product Sub Category</label>
+                      <select value={filterSubCat} onChange={e => setFilterSubCat(e.target.value)} className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-800 p-2 rounded-lg outline-none cursor-pointer">
+                        <option value="">All Sub Categories</option>
+                        {subcats.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-500 font-bold block mb-0.5">Brand</label>
+                      <select value={filterBrand} onChange={e => setFilterBrand(e.target.value)} className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-800 p-2 rounded-lg outline-none cursor-pointer">
+                        <option value="">All Brands</option>
+                        {brands.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-500 font-bold block mb-0.5">UOM</label>
+                      <select value={filterUOM} onChange={e => setFilterUOM(e.target.value)} className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-800 p-2 rounded-lg outline-none cursor-pointer">
+                        <option value="">All UOM</option>
+                        {UOM_LIST.map(u => <option key={u} value={u}>{u}</option>)}
+                      </select>
+                    </div>
+                  </div>
                 </div>
+              )}
+
+              {/* Standalone Search Input */}
+              <div className="relative">
+                <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name or code..."
+                  className="w-full bg-white border border-slate-200 pl-10 pr-9 py-2.5 rounded-xl text-xs text-slate-800 outline-none focus:border-blue-500 shadow-2xs" />
+                {search && (
+                  <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 bg-slate-100 p-1 rounded-full cursor-pointer">
+                    <X size={12} />
+                  </button>
+                )}
               </div>
 
               {/* Bulk action bar */}

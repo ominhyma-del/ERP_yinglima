@@ -573,6 +573,17 @@ export const InquiryPlanningPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowFilterPanel(!showFilterPanel)}
+            className={`p-2.5 rounded-lg border transition-all cursor-pointer ${
+              showFilterPanel
+                ? 'bg-blue-50 border-blue-200 text-blue-600'
+                : 'bg-white border-slate-300 hover:bg-slate-50 text-slate-700'
+            }`}
+            title="Toggle Filters Panel"
+          >
+            <Filter size={15} />
+          </button>
 
           <button
             onClick={() => handleOpenInquiryModal('QUICK')}
@@ -637,64 +648,64 @@ export const InquiryPlanningPage: React.FC = () => {
       {currentLayer === 1 && (
         <div className="space-y-4">
           {/* EXACT DARSH IMPEX COLLAPSIBLE FILTER PANEL */}
-          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4 transition-all">
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3.5 text-xs">
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">Company Filter</label>
-                <select
-                  value={activeCompanyFilter}
-                  onChange={(e) => setActiveCompanyFilter(e.target.value)}
-                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
+          {showFilterPanel && (
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-wider">
+                <span className="flex items-center gap-2">
+                  <Filter size={14} className="text-blue-600" /> Top Filter Fields
+                </span>
+                <button
+                  onClick={() => {
+                    setSearchTerm('');
+                    setActiveCompanyFilter('ALL');
+                  }}
+                  className="text-[11px] text-blue-600 hover:underline flex items-center gap-1 normal-case cursor-pointer"
                 >
-                  <option value="ALL">All Companies</option>
-                  {Object.keys(companyConsignmentMasterMap).map((comp) => (
-                    <option key={comp} value={comp}>{comp}</option>
-                  ))}
-                </select>
+                  <RotateCcw size={12} /> Reset Filters
+                </button>
               </div>
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">Consignment Code</label>
-                <select
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
-                >
-                  <option value="">All Consignment Codes</option>
-                  <option value="FB1">FB1 (Uganda Shipment 1)</option>
-                  <option value="FB2">FB2 (Uganda Shipment 2)</option>
-                  <option value="OS1">OS1 (Uganda Shipment 1)</option>
-                  <option value="ING1">ING1 (Gujarat Shipment 1)</option>
-                </select>
-              </div>
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">Status</label>
-                <select
-                  className="w-full bg-white border border-slate-300 text-slate-800 p-2 rounded-lg outline-none focus:border-blue-500 font-medium"
-                >
-                  <option value="ALL">All Status</option>
-                  <option value="PROPOSED">Proposed</option>
-                  <option value="PARTIALLY_APPROVED">Partially Approved</option>
-                  <option value="FULLY_APPROVED">Fully Approved</option>
-                </select>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
+                <div>
+                  <label className="text-[10px] text-slate-500 font-bold block mb-0.5">Company Filter</label>
+                  <select
+                    value={activeCompanyFilter}
+                    onChange={(e) => setActiveCompanyFilter(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-800 p-2 rounded-lg outline-none cursor-pointer"
+                  >
+                    <option value="ALL">All Companies</option>
+                    {Object.keys(companyConsignmentMasterMap).map((comp) => (
+                      <option key={comp} value={comp}>{comp}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-500 font-bold block mb-0.5">Consignment Code</label>
+                  <select
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-800 p-2 rounded-lg outline-none cursor-pointer"
+                  >
+                    <option value="">All Consignment Codes</option>
+                    <option value="FB1">FB1 (Uganda Shipment 1)</option>
+                    <option value="FB2">FB2 (Uganda Shipment 2)</option>
+                    <option value="OS1">OS1 (Uganda Shipment 1)</option>
+                    <option value="ING1">ING1 (Gujarat Shipment 1)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-500 font-bold block mb-0.5">Status</label>
+                  <select
+                    className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-800 p-2 rounded-lg outline-none cursor-pointer"
+                  >
+                    <option value="ALL">All Status</option>
+                    <option value="PROPOSED">Proposed</option>
+                    <option value="PARTIALLY_APPROVED">Partially Approved</option>
+                    <option value="FULLY_APPROVED">Fully Approved</option>
+                  </select>
+                </div>
               </div>
             </div>
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-              <button
-                onClick={() => {
-                  setSearchTerm('');
-                  setActiveCompanyFilter('ALL');
-                }}
-                className="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white font-semibold text-xs rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
-              >
-                <RotateCcw size={14} /> Reset
-              </button>
-              <button
-                onClick={() => {}}
-                className="px-5 py-2 bg-amber-400 hover:bg-amber-500 text-slate-900 font-bold text-xs rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
-              >
-                <Search size={14} /> Search
-              </button>
-            </div>
-          </div>
+          )}
 
           {/* ACTIVE / INACTIVE SUB-TAB NAVIGATION MATCHING DARSH IMPEX */}
           <div className="flex items-center border-b border-slate-200 px-1 gap-8 text-xs font-bold pt-2">
