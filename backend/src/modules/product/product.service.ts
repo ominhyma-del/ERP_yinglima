@@ -152,19 +152,30 @@ export class ProductService {
   async remove(id: string, tenant: TenantContext) {
     const product = await this.findOne(id, tenant);
 
-    // Business Rule Enforcement:
-    // 1. Delete option ONLY if status is INACTIVE
-    // 2. Inactive status requires stock == 0
+    const stockNumber = Number(product.current_stock);
+    const linkedInquiryCount = await this.prisma.inquiryItem.count({
+      where: { product_id: id },
+    });
+
+    const blockingReasons: string[] = [];
+
     if (product.status !== RecordStatus.INACTIVE) {
-      throw new BadRequestException(
-        'Deletion Blocked: Product can only be deleted if its status is set to "INACTIVE" first.',
-      );
+      blockingReasons.push(`Product status is currently "${product.status}" (Deletion requires status to be "INACTIVE").`);
     }
 
-    const stockNumber = Number(product.current_stock);
     if (stockNumber !== 0) {
+      blockingReasons.push(`Current stock is ${stockNumber} (Stock must be exactly 0).`);
+    }
+
+    if (linkedInquiryCount > 0) {
+      blockingReasons.push(`Product is referenced in ${linkedInquiryCount} active Inquiry Item(s).`);
+    }
+
+    if (blockingReasons.length > 0) {
       throw new BadRequestException(
-        `Deletion Blocked: Cannot delete product while stock is ${stockNumber}. Stock must be 0.`,
+        `Cannot delete Product "${product.name_tally}". Mandatory conditions required to delete:\n• ` +
+          blockingReasons.join('\n• ') +
+          '\n\nRecommended Action: Deactivate product status, clear stock to 0, or unlink inquiry references.',
       );
     }
 

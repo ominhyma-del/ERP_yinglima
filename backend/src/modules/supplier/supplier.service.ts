@@ -174,15 +174,24 @@ export class SupplierService {
   async remove(id: string, tenant: TenantContext) {
     const supplier = await this.findOne(id, tenant);
 
-    // Business Deletion Rule Enforcement:
-    // Deletion is ALLOWED ONLY IF Current Status is "NEW" or "UNSELECTED" AND Potential is "NO" or "UNSELECTED".
-    // If Current Status is "EXISTING" OR Potential is "YES" (any one), DELETE IS BLOCKED. Can only make "INACTIVE".
-    const isStatusNewOrUnselected = supplier.current_status === PartyStatus.NEW;
-    const isPotentialNoOrUnselected = supplier.potential === PotentialStatus.NO || supplier.potential === PotentialStatus.UNSELECTED;
+    const isStatusNew = supplier.current_status === PartyStatus.NEW;
+    const isPotentialNo = supplier.potential === PotentialStatus.NO || supplier.potential === PotentialStatus.UNSELECTED;
 
-    if (!isStatusNewOrUnselected || !isPotentialNoOrUnselected) {
+    const blockingReasons: string[] = [];
+
+    if (!isStatusNew) {
+      blockingReasons.push(`Current Status is "${supplier.current_status}" (Deletion requires status to be "NEW").`);
+    }
+
+    if (!isPotentialNo) {
+      blockingReasons.push(`Potential is set to "${supplier.potential}" (Deletion requires Potential to be "NO" or unselected).`);
+    }
+
+    if (blockingReasons.length > 0) {
       throw new BadRequestException(
-        `Deletion Blocked: Supplier cannot be deleted because Current Status is "${supplier.current_status}" or Potential is "${supplier.potential}". You may only set this supplier status to "INACTIVE".`,
+        `Cannot delete Supplier "${supplier.name}". Mandatory conditions required to delete:\n• ` +
+          blockingReasons.join('\n• ') +
+          '\n\nRecommended Action: Set Current Status to "INACTIVE" to prevent new transactions.',
       );
     }
 

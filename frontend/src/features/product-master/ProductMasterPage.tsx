@@ -532,19 +532,31 @@ export const ProductMasterPage: React.FC = () => {
     showToast('Product status updated.');
   };
 
-  const handleDeleteRequest = (id: string) => {
-    if (!IS_ADMIN) { setRuleAlert('Only Admin users can delete products.'); return; }
-    const p = products.find(x => x.id === id)!;
-    if (p.status !== 'INACTIVE') { setRuleAlert(`"${p.name_tally}" must be set to INACTIVE before deletion.`); return; }
-    if (p.current_stock > 0) { setRuleAlert(`"${p.name_tally}" has stock of ${p.current_stock}. Cannot delete.`); return; }
-    setConfirmDel(id);
-  };
+  const [productDeleteWarningModal, setProductDeleteWarningModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    productId?: string;
+  }>({ isOpen: false, title: '', message: '' });
 
-  const confirmDelete = () => {
-    if (!confirmDel) return;
-    setProducts(prev => prev.filter(x => x.id !== confirmDel));
-    setConfirmDel(null);
-    showToast('Product deleted successfully.');
+  const handleDeleteRequest = async (id: string) => {
+    if (!IS_ADMIN) { setRuleAlert('Only Admin users can delete products.'); return; }
+    const p = products.find(x => x.id === id);
+    if (!p) return;
+
+    try {
+      await productApi.deleteProduct(id);
+      setProducts(prev => prev.filter(x => x.id !== id));
+      showToast(`Product "${p.name_tally}" deleted successfully.`);
+    } catch (err: any) {
+      const errMsg = err?.response?.data?.message || err?.message || 'Product cannot be deleted.';
+      setProductDeleteWarningModal({
+        isOpen: true,
+        title: `Deletion Blocked: ${p.name_tally}`,
+        message: Array.isArray(errMsg) ? errMsg.join('\n') : String(errMsg),
+        productId: id,
+      });
+    }
   };
 
   // ── Bulk actions (products) ───────────────────────────────────────────────
@@ -987,6 +999,54 @@ export const ProductMasterPage: React.FC = () => {
           );
         })}
       </div>
+
+      {/* PRODUCT DELETION CONDITION WARNING MODAL */}
+      {productDeleteWarningModal.isOpen && (
+        <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 border border-rose-100 animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center gap-3 text-rose-600">
+              <ShieldAlert size={28} />
+              <div>
+                <h3 className="font-bold text-base text-slate-900">{productDeleteWarningModal.title}</h3>
+                <p className="text-xs text-rose-600 font-semibold">Mandatory Conditions Not Met for Deletion</p>
+              </div>
+            </div>
+
+            <div className="bg-rose-50 border border-rose-200 p-4 rounded-xl text-xs text-slate-800 whitespace-pre-line leading-relaxed font-medium">
+              {productDeleteWarningModal.message}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              {productDeleteWarningModal.productId && (
+                <button
+                  onClick={async () => {
+                    const pid = productDeleteWarningModal.productId!;
+                    try {
+                      await productApi.toggleStatus(pid);
+                      setProducts((prev) =>
+                        prev.map((p) => (p.id === pid ? { ...p, status: 'INACTIVE' } : p)),
+                      );
+                      setProductDeleteWarningModal({ isOpen: false, title: '', message: '' });
+                      showToast('Product status updated to INACTIVE.');
+                    } catch (err: any) {
+                      setRuleAlert(err?.response?.data?.message || 'Failed to update status.');
+                    }
+                  }}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer transition-all"
+                >
+                  Set to Inactive Instead
+                </button>
+              )}
+              <button
+                onClick={() => setProductDeleteWarningModal({ isOpen: false, title: '', message: '' })}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer transition-all"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Global Rule Alert ───────────────────────────────────────────── */}
       {ruleAlert && (

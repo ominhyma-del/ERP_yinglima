@@ -41,4 +41,14 @@ export const productApi = {
       return [];
     }
   },
+
+  async deleteProduct(id: string) {
+    const response = await api.delete(`/products/${id}`);
+    return response.data;
+  },
+
+  async toggleStatus(id: string) {
+    const response = await api.patch(`/products/${id}/status`);
+    return response.data;
+  },
 };

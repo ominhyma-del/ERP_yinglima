@@ -618,18 +618,31 @@ export const SupplierListPage: React.FC = () => {
     setShowRuleAlert(null);
   };
 
-  // Delete Guard Rule Enforced
-  const handleDelete = (id: string) => {
-    const target = suppliers.find((s) => s.id === id);
-    const canDeleteStatus = target?.current_status === 'NEW' || target?.current_status === 'Select';
-    const canDeletePotential = target?.potential === 'NO' || target?.potential === 'Select' || target?.potential === 'UNSELECTED';
+  const [deleteWarningModal, setDeleteWarningModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    supplierId?: string;
+  }>({ isOpen: false, title: '', message: '' });
 
-    if (!canDeleteStatus || !canDeletePotential) {
-      setShowRuleAlert('DELETE_BLOCKED_SPEC');
-      return;
+  // Delete Guard Rule Enforced with API Call & Warning Modal
+  const handleDelete = async (id: string) => {
+    const target = suppliers.find((s) => s.id === id);
+    if (!target) return;
+
+    try {
+      await supplierApi.deleteSupplier(id);
+      setSuppliers((prev) => prev.filter((s) => s.id !== id));
+      setImportNotification(`Supplier "${target.name}" deleted successfully.`);
+    } catch (err: any) {
+      const errMsg = err?.response?.data?.message || err?.message || 'Supplier cannot be deleted.';
+      setDeleteWarningModal({
+        isOpen: true,
+        title: `Deletion Blocked: ${target.name}`,
+        message: Array.isArray(errMsg) ? errMsg.join('\n') : String(errMsg),
+        supplierId: id,
+      });
     }
-    setSuppliers((prev) => prev.filter((s) => s.id !== id));
-    setShowRuleAlert(null);
   };
 
   const handleExportCSV = () => {
@@ -941,6 +954,50 @@ export const SupplierListPage: React.FC = () => {
             <span>{importNotification}</span>
           </div>
           <button onClick={() => setImportNotification(null)} className="font-bold underline text-emerald-900">Dismiss</button>
+        </div>
+      )}
+
+      {/* DELETION CONDITION WARNING MODAL */}
+      {deleteWarningModal.isOpen && (
+        <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 border border-rose-100 animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center gap-3 text-rose-600">
+              <ShieldAlert size={28} />
+              <div>
+                <h3 className="font-bold text-base text-slate-900">{deleteWarningModal.title}</h3>
+                <p className="text-xs text-rose-600 font-semibold">Mandatory Conditions Not Met for Deletion</p>
+              </div>
+            </div>
+
+            <div className="bg-rose-50 border border-rose-200 p-4 rounded-xl text-xs text-slate-800 whitespace-pre-line leading-relaxed font-medium">
+              {deleteWarningModal.message}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              {deleteWarningModal.supplierId && (
+                <button
+                  onClick={async () => {
+                    const sid = deleteWarningModal.supplierId!;
+                    await supplierApi.updateStatus(sid, 'INACTIVE');
+                    setSuppliers((prev) =>
+                      prev.map((s) => (s.id === sid ? { ...s, current_status: 'INACTIVE' } : s)),
+                    );
+                    setDeleteWarningModal({ isOpen: false, title: '', message: '' });
+                    setImportNotification('Supplier status changed to INACTIVE.');
+                  }}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer transition-all"
+                >
+                  Set to Inactive Instead
+                </button>
+              )}
+              <button
+                onClick={() => setDeleteWarningModal({ isOpen: false, title: '', message: '' })}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer transition-all"
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
