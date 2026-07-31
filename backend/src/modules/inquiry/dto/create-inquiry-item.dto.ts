@@ -7,10 +7,20 @@ export class CreateInquiryItemDto {
   @IsString()
   consignment_code: string;
 
-  @ApiProperty({ example: '00000000-0000-0000-0000-000000000001' })
-  @IsNotEmpty()
+  @ApiPropertyOptional({ example: '00000000-0000-0000-0000-000000000001' })
+  @IsOptional()
   @IsUUID()
-  product_id: string;
+  product_id?: string;
+
+  @ApiPropertyOptional({ example: 'Citric Acid' })
+  @IsOptional()
+  @IsString()
+  product_name?: string;
+
+  @ApiPropertyOptional({ example: 'PRD-ING-CA01' })
+  @IsOptional()
+  @IsString()
+  product_code?: string;
 
   @ApiProperty({ example: 100 })
   @IsNotEmpty()

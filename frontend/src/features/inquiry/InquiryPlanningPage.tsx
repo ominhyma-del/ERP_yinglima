@@ -105,6 +105,19 @@ export const InquiryPlanningPage: React.FC = () => {
     loadApiInquiries();
   }, []);
 
+  // Fetch Layer 2 grid items from DB whenever consignment code or layer changes
+  useEffect(() => {
+    async function loadGridItems() {
+      if (activeConsignmentCode) {
+        const items = await inquiryApi.getInquiryItems(activeConsignmentCode);
+        if (items && Array.isArray(items)) {
+          setGridItems(items);
+        }
+      }
+    }
+    loadGridItems();
+  }, [activeConsignmentCode, currentLayer]);
+
   // Filter & Sub-Tab States matching Darsh Impex
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [subTab, setSubTab] = useState<'Active' | 'Inactive'>('Active');
@@ -211,8 +224,12 @@ export const InquiryPlanningPage: React.FC = () => {
     // Persist to Supabase Cloud DB via NestJS Backend API
     await inquiryApi.createInquiryItem(newItem);
     const updatedConsignments = await inquiryApi.getConsignments();
-    if (updatedConsignments && Array.isArray(updatedConsignments) && updatedConsignments.length > 0) {
+    if (updatedConsignments && Array.isArray(updatedConsignments)) {
       setConsignments(updatedConsignments);
+    }
+    const updatedGrid = await inquiryApi.getInquiryItems(formData.consignment_code);
+    if (updatedGrid && Array.isArray(updatedGrid)) {
+      setGridItems(updatedGrid);
     }
 
     // Ensure Consignment exists in 1st layer summary

@@ -81,14 +81,11 @@ export const inquiryApi = {
   // Create new Inquiry Item in Supabase DB via NestJS API
   async createInquiryItem(data: InquiryItemDto) {
     try {
-      const productId =
-        data.product_name?.toLowerCase().includes('sealer')
-          ? '99999999-9999-9999-9999-999999999902'
-          : '99999999-9999-9999-9999-999999999901';
-
       const payload = {
         consignment_code: data.consignment_code || 'FB1',
-        product_id: productId,
+        product_name: data.product_name,
+        product_code: data.product_code,
+        product_id: data.id && !data.id.startsWith('item-') ? data.id : undefined,
         quantity: Number(data.quantity) || 1,
         brand_preference: data.brand_preference || 'Standard Preferred',
         product_specs: data.product_specs || 'Standard Specification',

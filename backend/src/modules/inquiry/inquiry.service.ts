@@ -67,17 +67,79 @@ export class InquiryService {
   }
 
   async addItem(dto: CreateInquiryItemDto, tenant: TenantContext) {
-    // 1. Validate Product
-    const product = await this.prisma.product.findFirst({
-      where: {
-        id: dto.product_id,
-        company_id: tenant.companyId,
-        deleted_at: null,
-      },
-    });
+    // 1. Resolve Product from DB (by ID, Code, Name, or Fallback for Tenant)
+    let product: any = null;
+
+    if (dto.product_id) {
+      product = await this.prisma.product.findFirst({
+        where: { id: dto.product_id, company_id: tenant.companyId, deleted_at: null },
+      });
+    }
+
+    if (!product && dto.product_code) {
+      product = await this.prisma.product.findFirst({
+        where: { product_code: dto.product_code, company_id: tenant.companyId, deleted_at: null },
+      });
+    }
+
+    if (!product && dto.product_name) {
+      product = await this.prisma.product.findFirst({
+        where: {
+          name_tally: { contains: dto.product_name, mode: 'insensitive' },
+          company_id: tenant.companyId,
+          deleted_at: null,
+        },
+      });
+    }
 
     if (!product) {
-      throw new NotFoundException(`Product with ID ${dto.product_id} not found.`);
+      product = await this.prisma.product.findFirst({
+        where: { company_id: tenant.companyId, deleted_at: null },
+      });
+    }
+
+    if (!product) {
+      let defaultCategory = await this.prisma.productCategory.findFirst({
+        where: { company_id: tenant.companyId },
+      });
+      if (!defaultCategory) {
+        defaultCategory = await this.prisma.productCategory.create({
+          data: {
+            company_id: tenant.companyId,
+            name: 'General',
+            created_by: tenant.userId,
+          },
+        });
+      }
+
+      let defaultSubCategory = await this.prisma.productSubCategory.findFirst({
+        where: { category_id: defaultCategory.id },
+      });
+      if (!defaultSubCategory) {
+        defaultSubCategory = await this.prisma.productSubCategory.create({
+          data: {
+            company_id: tenant.companyId,
+            category_id: defaultCategory.id,
+            name: 'General',
+            created_by: tenant.userId,
+          },
+        });
+      }
+
+      product = await this.prisma.product.create({
+        data: {
+          company_id: tenant.companyId,
+          branch_id: tenant.branchId || undefined,
+          category_id: defaultCategory.id,
+          subcategory_id: defaultSubCategory.id,
+          name_tally: dto.product_name || 'Standard Inquiry Product',
+          name_invoice: dto.product_name || 'Standard Inquiry Product',
+          product_code: dto.product_code || `PRD-${Date.now().toString().slice(-6)}`,
+          uom: 'PCS',
+          hsn_code: '84223000',
+          created_by: tenant.userId,
+        },
+      });
     }
 
     // 2. License Required Highlight Detection
