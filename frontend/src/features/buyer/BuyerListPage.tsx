@@ -29,6 +29,8 @@ import {
 } from 'lucide-react';
 import { buyerApi } from '../../api/buyerApi';
 import { TableSkeleton } from '../../components/common/SkeletonLoader';
+import { useAuth } from '../../context/AuthContext';
+import { can } from '../team/teamStore';
 
 // Country Phone Dial Code & Max Digit Length Master
 const countryMaster: Record<string, { code: string; maxDigits: number }> = {
@@ -245,6 +247,10 @@ export const BuyerListPage: React.FC = () => {
     whatsapp_number: '',
     email: '',
   });
+
+  const { user: currentUser } = useAuth();
+  const canEdit = can(currentUser as any, 'buyers', 'edit');
+  const canDelete = can(currentUser as any, 'buyers', 'delete');
 
   const [isLoading, setIsLoading] = useState(true);
 
@@ -595,17 +601,19 @@ export const BuyerListPage: React.FC = () => {
               <Filter size={15} />
             </button>
 
-            <button
-              onClick={() => {
-                setEditingBuyerId(null);
-                setFormData({ ...initialFormData });
-                setFormContacts([]);
-                setViewMode('add');
-              }}
-              className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-lg flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
-            >
-              <Plus size={16} /> Add Buyer
-            </button>
+            {canEdit && (
+              <button
+                onClick={() => {
+                  setEditingBuyerId(null);
+                  setFormData({ ...initialFormData });
+                  setFormContacts([]);
+                  setViewMode('add');
+                }}
+                className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-lg flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+              >
+                <Plus size={16} /> Add Buyer
+              </button>
+            )}
 
             {/* IMP / EXP DROPDOWN BUTTON MATCHING SUPPLIERS / INQUIRY */}
             <div className="relative">

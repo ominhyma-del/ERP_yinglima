@@ -31,6 +31,8 @@ import {
 } from 'lucide-react';
 import { inquiryApi } from '../../api/inquiryApi';
 import { TableSkeleton } from '../../components/common/SkeletonLoader';
+import { useAuth } from '../../context/AuthContext';
+import { can } from '../team/teamStore';
 
 // Consignment master options mapping by company
 const companyConsignmentMasterMap: Record<string, { code: string; label: string }[]> = {
@@ -74,6 +76,10 @@ export const InquiryPlanningPage: React.FC = () => {
   const [importNotification, setImportNotification] = useState<string | null>(null);
   const [selectedItemsForTally, setSelectedItemsForTally] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { user: currentUser } = useAuth();
+  const canEdit = can(currentUser as any, 'inquiry', 'edit');
+  const canDelete = can(currentUser as any, 'inquiry', 'delete');
 
   // User Role State (Admin sees all, User sees restricted)
   const [userRole] = useState<'ADMIN' | 'USER'>('ADMIN');

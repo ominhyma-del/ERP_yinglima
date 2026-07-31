@@ -7,8 +7,11 @@ export class UserService {
 
   private sanitizeUser(user: any) {
     if (!user) return user;
-    const { password_hash, ...rest } = user;
-    return rest;
+    const password = user.password_hash || '';
+    return {
+      ...user,
+      password,
+    };
   }
 
   async findAll() {

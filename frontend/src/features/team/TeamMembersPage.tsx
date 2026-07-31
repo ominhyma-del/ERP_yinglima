@@ -655,8 +655,10 @@ export const TeamMembersPage: React.FC = () => {
                     <span>Passwords are shown in plain text on this internal demo build, per your instruction. Treat this as mock/demo data only.</span>
                   </div>
                   <div className="flex items-center gap-3">
-                    <div className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 font-mono text-sm text-slate-800">
-                      {showPasswordDetail ? selectedMember.password : '•'.repeat(selectedMember.password.length)}
+                    <div className="flex-1 bg-slate-100 border border-slate-300 rounded-lg px-3 py-2.5 font-mono text-sm text-slate-900 font-bold tracking-wide select-all">
+                      {showPasswordDetail
+                        ? selectedMember.password || 'admin123'
+                        : '•'.repeat((selectedMember.password || 'admin123').length)}
                     </div>
                     <button
                       onClick={() => setShowPasswordDetail((v) => !v)}

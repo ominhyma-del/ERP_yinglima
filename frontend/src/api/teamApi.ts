@@ -25,7 +25,7 @@ export const teamApi = {
           name: u.full_name,
           email: u.email,
           phone: u.phone || '',
-          password: u.password_hash || '',
+          password: u.password || u.password_hash || '',
           accountType: u.role || 'EMPLOYEE',
           department: u.department || '',
           branch: u.branch || '',

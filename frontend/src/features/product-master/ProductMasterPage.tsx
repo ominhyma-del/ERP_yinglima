@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import { useBulkSelect } from './useBulkSelect';
 import { TableSkeleton } from '../../components/common/SkeletonLoader';
+import { useAuth } from '../../context/AuthContext';
+import { can } from '../team/teamStore';
 import {
   DEFAULT_FIELD_CONFIG, FieldOverrideMap, loadFieldOverrides,
   saveFieldOverrides, getEffectiveFields, FieldDef,
@@ -330,7 +332,10 @@ function ManageFieldsPanel({
 // ─── Main Component ────────────────────────────────────────────────────────────
 
 export const ProductMasterPage: React.FC = () => {
-  const IS_ADMIN = true;
+  const { user: currentUser } = useAuth();
+  const IS_ADMIN = currentUser?.accountType === 'ADMIN';
+  const canEdit = can(currentUser as any, 'products', 'edit');
+  const canDelete = can(currentUser as any, 'products', 'delete');
 
   const [topTab, setTopTab] = useState<TopTab>('products');
 
@@ -1010,9 +1015,11 @@ export const ProductMasterPage: React.FC = () => {
                     <Settings size={14} className="text-slate-500" /> Manage Fields
                   </button>
 
-                  <button onClick={openAdd} className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-lg flex items-center gap-1.5 shadow-sm transition-all cursor-pointer">
-                    <Plus size={16} /> + ADD NEW
-                  </button>
+                  {canEdit && (
+                    <button onClick={openAdd} className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-lg flex items-center gap-1.5 shadow-sm transition-all cursor-pointer">
+                      <Plus size={16} /> + ADD NEW
+                    </button>
+                  )}
 
                   <div className="relative">
                     <button
@@ -1114,7 +1121,7 @@ export const ProductMasterPage: React.FC = () => {
                 onActivate={statusFilterTab === 'INACTIVE' ? () => bulkSetStatus('ACTIVE') : undefined}
                 onDeactivate={statusFilterTab === 'ACTIVE' ? () => bulkSetStatus('INACTIVE') : undefined}
                 onDelete={() => setConfirmBulkDel(true)}
-                deleteDisabled={!IS_ADMIN || !bulkDeletable}
+                deleteDisabled={!canDelete || !bulkDeletable}
                 deleteTitle={!bulkDeletable ? 'All selected products must be Inactive with 0 stock to delete' : undefined}
               />
 

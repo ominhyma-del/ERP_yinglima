@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Truck, Plus, Filter, ShieldAlert, ArrowLeft, Download, Upload, FileSpreadsheet, X, CheckCircle, Eye, Trash2, Camera, Phone, Mail, MessageSquare, AlertCircle, Link as LinkIcon, Check, ChevronDown, UserPlus, Edit, Maximize2, FileText, Image as ImageIcon, Video, Search, RotateCcw, ArrowUpDown, ArrowUp, ArrowDown, Layers } from 'lucide-react';
 import { supplierApi } from '../../api/supplierApi';
 import { TableSkeleton } from '../../components/common/SkeletonLoader';
+import { useAuth } from '../../context/AuthContext';
+import { can } from '../team/teamStore';
 
 // Country Phone Dial Code Map
 const countryPhoneCodeMap: Record<string, string> = {
@@ -189,6 +191,10 @@ export const SupplierListPage: React.FC = () => {
     'Teflon Belts',
     'Temperature Controllers',
   ];
+
+  const { user: currentUser } = useAuth();
+  const canEdit = can(currentUser as any, 'suppliers', 'edit');
+  const canDelete = can(currentUser as any, 'suppliers', 'delete');
 
   // Initial Suppliers state (100% database driven)
   const [suppliers, setSuppliers] = useState<any[]>([]);
@@ -804,19 +810,21 @@ export const SupplierListPage: React.FC = () => {
             </button>
 
             {/* + ADD NEW BUTTON */}
-            <button
-              onClick={() => {
-                setEditingSupplierId(null);
-                setFormData({ ...initialFormData });
-                setVisitAttachments([]);
-                setFormContacts([]);
-                setViewMode('add');
-                setFormStage(1);
-              }}
-              className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-lg flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
-            >
-              <Plus size={16} /> + ADD NEW
-            </button>
+            {canEdit && (
+              <button
+                onClick={() => {
+                  setEditingSupplierId(null);
+                  setFormData({ ...initialFormData });
+                  setVisitAttachments([]);
+                  setFormContacts([]);
+                  setViewMode('add');
+                  setFormStage(1);
+                }}
+                className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-lg flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+              >
+                <Plus size={16} /> + ADD NEW
+              </button>
+            )}
 
             {/* IMP / EXP DROPDOWN BUTTON */}
             <div className="relative">
