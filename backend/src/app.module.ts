@@ -28,6 +28,7 @@ import { PrismaModule } from './core/database/prisma.module';
 import { TransactionService } from './core/database/transaction.service';
 import { ResilienceModule } from './core/resilience/resilience.module';
 import { RetryService } from './core/resilience/retry.service';
+import { FallbackService } from './core/resilience/fallback.service';
 
 @Module({
   imports: [
@@ -57,6 +58,7 @@ import { RetryService } from './core/resilience/retry.service';
     PrismaService,
     TransactionService,
     RetryService,
+    FallbackService,
     SupplierService,
     BuyerService,
     ProductService,
