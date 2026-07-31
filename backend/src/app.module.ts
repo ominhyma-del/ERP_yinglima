@@ -24,11 +24,15 @@ import { LoggingModule } from './core/logging/logging.module';
 import { LoggingInterceptor } from './core/logging/logging.interceptor';
 import { RequestContextMiddleware } from './core/context/request-context.middleware';
 
+import { PrismaModule } from './core/database/prisma.module';
+import { TransactionService } from './core/database/transaction.service';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    PrismaModule,
     LoggingModule,
     TaskQueueModule,
   ],
@@ -48,6 +52,7 @@ import { RequestContextMiddleware } from './core/context/request-context.middlew
       useClass: LoggingInterceptor,
     },
     PrismaService,
+    TransactionService,
     SupplierService,
     BuyerService,
     ProductService,
