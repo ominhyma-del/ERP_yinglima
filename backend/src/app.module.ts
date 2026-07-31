@@ -22,6 +22,7 @@ import { APP_INTERCEPTOR } from '@nestjs/core';
 import { TaskQueueModule } from './modules/queue/task-queue.module';
 import { LoggingModule } from './core/logging/logging.module';
 import { LoggingInterceptor } from './core/logging/logging.interceptor';
+import { ResponseInterceptor } from './core/interceptors/response.interceptor';
 import { RequestContextMiddleware } from './core/context/request-context.middleware';
 
 import { PrismaModule } from './core/database/prisma.module';
@@ -59,6 +60,10 @@ import { GracefulShutdownService } from './core/lifecycle/graceful-shutdown.serv
     UserController,
   ],
   providers: [
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: ResponseInterceptor,
+    },
     {
       provide: APP_INTERCEPTOR,
       useClass: LoggingInterceptor,

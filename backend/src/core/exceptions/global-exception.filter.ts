@@ -55,12 +55,14 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     // 4. Client Response (Standardized JSON, zero stack leakage)
     response.status(statusCode).json({
       success: false,
+      message,
       requestId,
       timestamp,
+      data: null,
+      pagination: null,
+      errors: details.length > 0 ? details : [message],
       statusCode,
       errorCode,
-      message,
-      details,
       path,
       method,
     });
