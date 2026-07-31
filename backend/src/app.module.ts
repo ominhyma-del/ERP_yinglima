@@ -1,5 +1,6 @@
 import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { AppController } from './app.controller';
 import { PrismaService } from './core/database/prisma.service';
 import { SupplierService } from './modules/supplier/supplier.service';
 import { SupplierController } from './modules/supplier/supplier.controller';
@@ -18,11 +19,15 @@ import { AuditService } from './modules/audit/audit.service';
 import { UserController } from './modules/user/user.controller';
 import { UserService } from './modules/user/user.service';
 
-import { APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { TaskQueueModule } from './modules/queue/task-queue.module';
 import { LoggingModule } from './core/logging/logging.module';
 import { LoggingInterceptor } from './core/logging/logging.interceptor';
 import { ResponseInterceptor } from './core/interceptors/response.interceptor';
+import { JwtAuthGuard } from './core/guards/jwt-auth.guard';
+import { RolesGuard } from './core/guards/roles.guard';
+import { PermissionsGuard } from './core/guards/permissions.guard';
+import { AuthModule } from './modules/auth/auth.module';
 import { RequestContextMiddleware } from './core/context/request-context.middleware';
 
 import { PrismaModule } from './core/database/prisma.module';
@@ -48,8 +53,10 @@ import { GracefulShutdownService } from './core/lifecycle/graceful-shutdown.serv
     TaskQueueModule,
     HealthModule,
     LifecycleModule,
+    AuthModule,
   ],
   controllers: [
+    AppController,
     SupplierController,
     BuyerController,
     ProductController,
@@ -60,6 +67,18 @@ import { GracefulShutdownService } from './core/lifecycle/graceful-shutdown.serv
     UserController,
   ],
   providers: [
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: RolesGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: PermissionsGuard,
+    },
     {
       provide: APP_INTERCEPTOR,
       useClass: ResponseInterceptor,

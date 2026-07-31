@@ -23,4 +23,21 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Interceptor to automatically unwrap standardized NestJS API responses
+api.interceptors.response.use((response) => {
+  if (
+    response.data &&
+    typeof response.data === 'object' &&
+    'success' in response.data &&
+    'data' in response.data
+  ) {
+    const unwrappedData = response.data.data;
+    if (response.data.pagination && Array.isArray(unwrappedData)) {
+      (unwrappedData as any).pagination = response.data.pagination;
+    }
+    return { ...response, data: unwrappedData };
+  }
+  return response;
+});
+
 export default api;

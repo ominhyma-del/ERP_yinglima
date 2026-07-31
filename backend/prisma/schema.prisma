@@ -109,6 +109,12 @@ model User {
   department    String?
   branch        String?
   permissions   Json?
+  last_login_at DateTime?
+  failed_login_attempts Int @default(0)
+  locked_until          DateTime?
+  is_permanently_locked Boolean @default(false)
+  password_changed_at   DateTime?
+  password_expires_at   DateTime?
   created_at    DateTime     @default(now())
   updated_at    DateTime     @updatedAt
   deleted_at    DateTime?    @db.Timestamp
@@ -116,8 +122,99 @@ model User {
   user_companies UserCompany[]
   user_roles     UserRole[]
   audit_logs     AuditLog[]
+  sessions       UserSession[]
+  login_histories LoginHistory[]
+  password_histories PasswordHistory[]
+  security_audit_logs SecurityAuditLog[]
 
   @@map("users")
+}
+
+model PasswordHistory {
+  id            String   @id @default(uuid()) @db.Uuid
+  user_id       String   @db.Uuid
+  password_hash String
+  created_at    DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("password_histories")
+}
+
+model Permission {
+  id          String   @id @default(uuid()) @db.Uuid
+  module      String
+  feature     String
+  action      String
+  code        String   @unique
+  name        String
+  description String?
+  created_at  DateTime @default(now())
+
+  role_permissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  id            String     @id @default(uuid()) @db.Uuid
+  role_id       String     @db.Uuid
+  permission_id String     @db.Uuid
+
+  role          Role       @relation(fields: [role_id], references: [id], onDelete: Cascade)
+  permission    Permission @relation(fields: [permission_id], references: [id], onDelete: Cascade)
+
+  @@unique([role_id, permission_id])
+  @@map("role_permissions")
+}
+
+model SecurityAuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  user_id     String?  @db.Uuid
+  email       String
+  event_type  String
+  action      String
+  ip_address  String?
+  user_agent  String?
+  request_id  String?
+  status      String
+  details     Json?
+  created_at  DateTime @default(now())
+
+  user User? @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@map("security_audit_logs")
+}
+
+model UserSession {
+  id                 String   @id @default(uuid()) @db.Uuid
+  user_id            String   @db.Uuid
+  refresh_token_hash String
+  device_info        String?
+  ip_address         String?
+  user_agent         String?
+  is_active          Boolean  @default(true)
+  expires_at         DateTime
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("user_sessions")
+}
+
+model LoginHistory {
+  id          String   @id @default(uuid()) @db.Uuid
+  user_id     String?  @db.Uuid
+  email       String
+  ip_address  String?
+  user_agent  String?
+  status      String
+  created_at  DateTime @default(now())
+
+  user User? @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@map("login_histories")
 }
 
 model UserCompany {
@@ -137,12 +234,15 @@ model UserCompany {
 model Role {
   id          String   @id @default(uuid()) @db.Uuid
   name        String   @unique
+  code        String   @unique @default("USER")
   description String?
+  is_system   Boolean  @default(false)
   permissions String[]
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 
-  user_roles  UserRole[]
+  user_roles       UserRole[]
+  role_permissions RolePermission[]
 
   @@map("roles")
 }

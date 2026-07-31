@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { UserService } from './user.service';
+import { Public } from '../../core/decorators/public.decorator';
 
 @ApiTags('User/Team Management')
 @Controller('api/v1/users')
@@ -8,6 +9,7 @@ export class UserController {
   constructor(private readonly userService: UserService) {}
 
   @Get()
+  @Public()
   @ApiOperation({ summary: 'List all team members' })
   findAll() {
     return this.userService.findAll();

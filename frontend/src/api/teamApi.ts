@@ -18,7 +18,7 @@ export const teamApi = {
   async getMembers() {
     try {
       const response = await api.get('/users');
-      const rawList = response.data;
+      const rawList = Array.isArray(response.data) ? response.data : (response.data?.data || []);
       if (Array.isArray(rawList)) {
         return rawList.map((u: any) => ({
           id: u.id,
