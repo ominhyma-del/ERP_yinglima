@@ -10,6 +10,7 @@ import {
   FileSpreadsheet,
   X,
   CheckCircle,
+  AlertCircle,
   Eye,
   Trash2,
   Phone,
@@ -29,8 +30,12 @@ import {
 } from 'lucide-react';
 import { buyerApi } from '../../api/buyerApi';
 import { TableSkeleton } from '../../components/common/SkeletonLoader';
+import { BulkDeleteModal, BulkDeleteResultLike } from '../../components/common/BulkDeleteModal';
+import { MultiEmailInput } from '../../components/common/MultiEmailInput';
 import { useAuth } from '../../context/AuthContext';
 import { can } from '../team/teamStore';
+import { DuplicateToast, DuplicateNotification } from '../../components/common/DuplicateToast';
+import { Pagination } from '../../components/common/Pagination';
 
 // Country Phone Dial Code & Max Digit Length Master
 const countryMaster: Record<string, { code: string; maxDigits: number }> = {
@@ -166,9 +171,8 @@ const MultiSelectDropdown: React.FC<{
               <div
                 key={opt}
                 onClick={() => toggleOption(opt)}
-                className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
-                  isChecked ? 'bg-blue-50 text-blue-800 font-bold' : 'hover:bg-slate-50 text-slate-700'
-                }`}
+                className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${isChecked ? 'bg-blue-50 text-blue-800 font-bold' : 'hover:bg-slate-50 text-slate-700'
+                  }`}
               >
                 <span>{opt}</span>
                 {isChecked && <Check size={14} className="text-blue-600" />}
@@ -188,6 +192,7 @@ export const BuyerListPage: React.FC = () => {
   const [showRuleAlert, setShowRuleAlert] = useState<string | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
   const [importNotification, setImportNotification] = useState<string | null>(null);
+  const [duplicateToast, setDuplicateToast] = useState<DuplicateNotification | null>(null);
   const [showImpExpDropdown, setShowImpExpDropdown] = useState(false);
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [eyeModalContent, setEyeModalContent] = useState<{ title: string; items: string[] } | null>(null);
@@ -221,7 +226,6 @@ export const BuyerListPage: React.FC = () => {
     designation: '',
     calling_number: '',
     whatsapp_number: '',
-    email: '',
     emails: [] as string[],
     tax_id: '',
     primary_website: '',
@@ -253,15 +257,25 @@ export const BuyerListPage: React.FC = () => {
   const canDelete = can(currentUser as any, 'buyers', 'delete');
 
   const [isLoading, setIsLoading] = useState(true);
+  // BUG FIX: same issue as Supplier's list load — a failed fetch used to
+  // leave `buyers` as an empty array with no explanation, indistinguishable
+  // from "zero buyers exist". Now surfaces the real error as a banner.
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Load buyers from NestJS API on mount
   const loadApiBuyers = async () => {
     setIsLoading(true);
-    const data = await buyerApi.getBuyers();
-    if (data && Array.isArray(data)) {
-      setBuyers(data);
+    setLoadError(null);
+    try {
+      const data = await buyerApi.getBuyers();
+      if (data && Array.isArray(data)) {
+        setBuyers(data);
+      }
+    } catch (err: any) {
+      setLoadError(err?.message || 'Failed to load buyers. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   useEffect(() => {
@@ -280,12 +294,32 @@ export const BuyerListPage: React.FC = () => {
   // Phone max length for selected country
   const currentCountryConfig = countryMaster[formData.country] || { code: '+256 ', maxDigits: 9 };
 
+  // Same per-country max-digit config, but for the "Add Contacts of Buyer"
+  // sub-form's own Country field — this is a separate control from the
+  // main form's Country (a buyer can have contacts based in a different
+  // country than the company itself), so it needs its own lookup.
+  const subContactCountryConfig = countryMaster[newContact.country] || { code: '+256 ', maxDigits: 9 };
+
   // Add Contact to Contact List
   const handleAddContact = () => {
     if (!newContact.full_name.trim()) {
       alert('Please enter Full Name for contact person.');
       return;
     }
+
+    // Same per-country max-digit rule as the main form's Calling/WhatsApp
+    // fields (10 digit max per spec, country-dependent) — previously
+    // unenforced here since the Country field wasn't even rendered.
+    const subConfig = countryMaster[newContact.country] || { maxDigits: 9 };
+    if (newContact.calling_number && newContact.calling_number.length > subConfig.maxDigits) {
+      alert(`Calling Number must be at most ${subConfig.maxDigits} digits for ${newContact.country}.`);
+      return;
+    }
+    if (newContact.whatsapp_number && newContact.whatsapp_number.length > subConfig.maxDigits) {
+      alert(`WhatsApp Number must be at most ${subConfig.maxDigits} digits for ${newContact.country}.`);
+      return;
+    }
+
     setFormContacts([...formContacts, { id: `c-${Date.now()}`, ...newContact }]);
     setNewContact({
       salutation: 'Mr.',
@@ -315,20 +349,39 @@ export const BuyerListPage: React.FC = () => {
     await buyerApi.updateStatus(id, newStatus);
   };
 
-  // Deletion Guard Rule Check
+  // Deletion Guard Rule Check.
+  // BUG FIX: this used to update local state (hiding the row) BEFORE
+  // awaiting the actual API call, with no try/catch — so if the backend
+  // rejected the delete for any reason (stale local state vs DB, a
+  // network error, etc.) the row still visually vanished and the error
+  // was silently swallowed. It also duplicated the delete-rule logic
+  // client-side instead of trusting the backend's authoritative check.
+  // Now: call the backend first, only update local state on confirmed
+  // success, and show the real blocking message on failure — same
+  // pattern as Supplier's handleDelete.
+  const [deleteWarningModal, setDeleteWarningModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+  }>({ isOpen: false, title: '', message: '' });
+
   const handleDeleteBuyer = async (id: string) => {
     const target = buyers.find((b) => b.id === id);
-    const canDeleteStatus = target?.current_status === 'NEW' || target?.current_status === 'Select';
-    const canDeletePotential = target?.potential === 'NO' || target?.potential === 'Select' || target?.potential === 'UNSELECTED';
+    if (!target) return;
 
-    if (!canDeleteStatus || !canDeletePotential) {
-      setShowRuleAlert('DELETE_BLOCKED');
-      return;
+    try {
+      await buyerApi.deleteBuyer(id);
+      setBuyers((prev) => prev.filter((b) => b.id !== id));
+      setShowRuleAlert(null);
+      setImportNotification(`Buyer "${target.name}" deleted successfully.`);
+    } catch (err: any) {
+      const errMsg = err?.response?.data?.message || err?.message || 'Buyer cannot be deleted.';
+      setDeleteWarningModal({
+        isOpen: true,
+        title: `Deletion Blocked: ${target.name}`,
+        message: Array.isArray(errMsg) ? errMsg.join('\n') : String(errMsg),
+      });
     }
-
-    setBuyers((prev) => prev.filter((b) => b.id !== id));
-    setShowRuleAlert(null);
-    await buyerApi.deleteBuyer(id);
   };
 
   // Form Submit Handler
@@ -351,13 +404,18 @@ export const BuyerListPage: React.FC = () => {
     if (!editingBuyerId) {
       const isDuplicate = buyers.some((b) => {
         const matchName = b.name.trim().toLowerCase() === companyName.toLowerCase();
-        const matchCalling = callingNum && b.calling_number && b.calling_number.includes(callingNum);
-        const matchWhatsapp = whatsappNum && b.whatsapp_number && b.whatsapp_number.includes(whatsappNum);
+        const matchCalling = callingNum && callingNum.length > 5 && b.calling_number && b.calling_number.includes(callingNum);
+        const matchWhatsapp = whatsappNum && whatsappNum.length > 5 && b.whatsapp_number && b.whatsapp_number.includes(whatsappNum);
         return matchName || matchCalling || matchWhatsapp;
       });
 
       if (isDuplicate) {
-        setShowRuleAlert(`DUPLICATE_ENTRY: Buyer with Company Name "${companyName}" or Phone/WhatsApp number already exists!`);
+        setDuplicateToast({
+          title: 'Duplicate Buyer Prevented',
+          count: 1,
+          items: [`Company Name: "${companyName}"`],
+          message: `A buyer profile with company name "${companyName}" or matching phone number already exists in the system.`
+        });
         return;
       }
     }
@@ -370,7 +428,7 @@ export const BuyerListPage: React.FC = () => {
       country: formData.country,
       calling_number: formData.calling_number || '',
       whatsapp_number: formData.whatsapp_number || formData.calling_number || '',
-      email: formData.email || (formData.emails && formData.emails[0]) || '',
+      email: (formData.emails && formData.emails[0]) || '',
     };
 
     const buyerPayload: any = {
@@ -379,12 +437,26 @@ export const BuyerListPage: React.FC = () => {
       contacts: [primaryContactObj, ...formContacts],
     };
 
-    if (editingBuyerId) {
-      await buyerApi.updateBuyer(editingBuyerId, buyerPayload);
-    } else {
-      await buyerApi.createBuyer(buyerPayload);
+    try {
+      if (editingBuyerId) {
+        await buyerApi.updateBuyer(editingBuyerId, buyerPayload);
+      } else {
+        await buyerApi.createBuyer(buyerPayload);
+      }
+      await loadApiBuyers();
+    } catch (err: any) {
+      const errMsg = err?.response?.data?.message || err?.message || '';
+      if (errMsg.toLowerCase().includes('already exists') || err?.response?.status === 400 || err?.response?.status === 409) {
+        setDuplicateToast({
+          title: 'Duplicate Buyer Blocked by Backend DB',
+          count: 1,
+          items: [`${companyName}`],
+          message: Array.isArray(errMsg) ? errMsg.join(', ') : errMsg || `Buyer "${companyName}" already exists in Supabase DB.`,
+        });
+        return;
+      }
+      await loadApiBuyers();
     }
-    await loadApiBuyers();
 
     setViewMode('list');
     setEditingBuyerId(null);
@@ -472,9 +544,21 @@ export const BuyerListPage: React.FC = () => {
 
       if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
       if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
-      return 0;
     });
   }, [filteredBuyers, sortField, sortDirection]);
+
+  // Pagination State (Max 100 data per page)
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(100);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, filterBuyerType, filterCurrentStatus, filterCountry, filterPotential, filterClientGrade, filterProductCategory, filterProductSubCategory, filterDateRange]);
+
+  const paginatedBuyers = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return sortedBuyers.slice(startIndex, startIndex + pageSize);
+  }, [sortedBuyers, currentPage, pageSize]);
 
   const renderSortHeader = (label: string, field: string) => {
     const isActive = sortField === field;
@@ -524,12 +608,55 @@ export const BuyerListPage: React.FC = () => {
     }
   };
 
-  const handleBulkDelete = () => {
+  // BUG FIX: same issue as Supplier's bulk delete — this used to just hide
+  // the rows locally with no rule check and no backend call. Now it calls
+  // the real bulk-delete endpoint (identical Status/Potential rule as the
+  // single-row Delete button) and surfaces any blocked records via a
+  // popup so the user can explicitly skip or force-delete them.
+  const [bulkDeleteResult, setBulkDeleteResult] = useState<BulkDeleteResultLike | null>(null);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+  const handleBulkDelete = async () => {
     if (selectedIds.length === 0) return;
-    if (confirm(`Are you sure you want to delete ${selectedIds.length} selected buyer(s)?`)) {
-      setBuyers((prev) => prev.filter((b) => !selectedIds.includes(b.id)));
+    if (!confirm(`Are you sure you want to delete ${selectedIds.length} selected buyer(s)?`)) return;
+
+    setIsBulkDeleting(true);
+    try {
+      const result = await buyerApi.bulkDeleteBuyers(selectedIds);
+      applyBulkDeleteOutcome(result);
+    } catch (err: any) {
+      setImportNotification(err?.response?.data?.message || 'Bulk delete failed. Please try again.');
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
+  const applyBulkDeleteOutcome = (result: BulkDeleteResultLike) => {
+    const deletedIds = new Set(result.deleted.map((d) => d.id));
+    setBuyers((prev) => prev.filter((b) => !deletedIds.has(b.id)));
+
+    if (result.deleted.length > 0) {
+      setImportNotification(`${result.deleted.length} buyer(s) deleted successfully.`);
+    }
+
+    if (result.blocked.length > 0) {
+      setSelectedIds(result.blocked.map((b) => b.id));
+      setBulkDeleteResult(result);
+    } else {
       setSelectedIds([]);
-      setImportNotification(`${selectedIds.length} buyer(s) deleted.`);
+      setBulkDeleteResult(null);
+    }
+  };
+
+  const handleForceBulkDelete = async (blockedIds: string[]) => {
+    setIsBulkDeleting(true);
+    try {
+      const result = await buyerApi.bulkDeleteBuyers(blockedIds, { force: true, forceIds: blockedIds });
+      applyBulkDeleteOutcome(result);
+    } catch (err: any) {
+      setImportNotification(err?.response?.data?.message || 'Force delete failed. Please try again.');
+    } finally {
+      setIsBulkDeleting(false);
     }
   };
 
@@ -556,10 +683,10 @@ export const BuyerListPage: React.FC = () => {
         .map((b) =>
           b.id === targetMergeId
             ? {
-                ...b,
-                product_categories: mergedCategories,
-                potential_subcategories: mergedSubcats,
-              }
+              ...b,
+              product_categories: mergedCategories,
+              potential_subcategories: mergedSubcats,
+            }
             : b,
         )
         .filter((b) => b.id === targetMergeId || !selectedIds.includes(b.id)),
@@ -581,8 +708,8 @@ export const BuyerListPage: React.FC = () => {
                 ? `Edit Buyer Profile (${formData.name})`
                 : 'Add Buyer (Client) Data Form (Yinglima)'
               : viewMode === 'detail'
-              ? 'View Buyer Details'
-              : 'Buyers (Clients)'}
+                ? 'View Buyer Details'
+                : 'Buyers (Clients)'}
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
             Uganda & Global Client Directory, Potential Tracking & Purchasing Profiles
@@ -594,11 +721,10 @@ export const BuyerListPage: React.FC = () => {
             {/* FILTER ICON TOGGLE BUTTON */}
             <button
               onClick={() => setShowFilterPanel(!showFilterPanel)}
-              className={`p-2.5 rounded-lg border transition-all cursor-pointer ${
-                showFilterPanel
+              className={`p-2.5 rounded-lg border transition-all cursor-pointer ${showFilterPanel
                   ? 'bg-blue-50 border-blue-200 text-blue-600'
                   : 'bg-white border-slate-300 hover:bg-slate-50 text-slate-700'
-              }`}
+                }`}
               title="Toggle Filters Panel"
             >
               <Filter size={15} />
@@ -660,6 +786,19 @@ export const BuyerListPage: React.FC = () => {
           </button>
         )}
       </div>
+
+      {/* LOAD ERROR BANNER — same fix as SupplierListPage: a failed
+          initial fetch used to leave the list empty with no explanation,
+          indistinguishable from "zero buyers exist". */}
+      {loadError && (
+        <div className="bg-rose-50 border border-rose-200 text-rose-800 p-4 rounded-xl flex items-center justify-between text-xs shadow-2xs">
+          <div className="flex items-center gap-2">
+            <AlertCircle size={18} className="text-rose-600 shrink-0" />
+            <span className="whitespace-pre-line">{loadError}</span>
+          </div>
+          <button onClick={loadApiBuyers} className="font-bold underline text-rose-900 shrink-0 ml-3 cursor-pointer">Retry</button>
+        </div>
+      )}
 
       {/* NOTIFICATIONS & RULE ALERTS */}
       {importNotification && (
@@ -896,216 +1035,226 @@ export const BuyerListPage: React.FC = () => {
           {isLoading ? (
             <TableSkeleton rows={8} />
           ) : (
-          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-700">
-                <thead className="bg-slate-100 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
-                  <tr>
-                    <th className="p-3.5 w-10 text-center">
-                      <input
-                        type="checkbox"
-                        checked={isAllSelected}
-                        onChange={toggleSelectAll}
-                        className="rounded border-slate-300 cursor-pointer w-4 h-4"
-                      />
-                    </th>
-                    {renderSortHeader('Name of Company', 'name')}
-                    {renderSortHeader('Buyer Type', 'buyer_type')}
-                    {renderSortHeader('Product Category', 'product_categories')}
-                    {renderSortHeader('Product Sub Category', 'potential_subcategories')}
-                    {renderSortHeader('Country', 'country')}
-                    {renderSortHeader('Current Status', 'current_status')}
-                    {renderSortHeader('Potential', 'potential')}
-                    {renderSortHeader('Client Grade', 'client_grade')}
-                    {renderSortHeader('Added On', 'created_at')}
-                    <th className="p-3.5 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-medium">
-                  {sortedBuyers.map((item) => {
-                    const categories = item.product_categories || ['Food Ingredients'];
-                    const subcategories = item.potential_subcategories || ['Citric Acid'];
-                    const showCatEye = categories.length > 5;
-                    const showSubEye = subcategories.length > 5;
+            <div className="space-y-4">
+              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-slate-700">
+                  <thead className="bg-slate-100 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
+                    <tr>
+                      <th className="p-3.5 w-10 text-center">
+                        <input
+                          type="checkbox"
+                          checked={isAllSelected}
+                          onChange={toggleSelectAll}
+                          className="rounded border-slate-300 cursor-pointer w-4 h-4"
+                        />
+                      </th>
+                      {renderSortHeader('Name of Company', 'name')}
+                      {renderSortHeader('Buyer Type', 'buyer_type')}
+                      {renderSortHeader('Product Category', 'product_categories')}
+                      {renderSortHeader('Product Sub Category', 'potential_subcategories')}
+                      {renderSortHeader('Country', 'country')}
+                      {renderSortHeader('Current Status', 'current_status')}
+                      {renderSortHeader('Potential', 'potential')}
+                      {renderSortHeader('Client Grade', 'client_grade')}
+                      {renderSortHeader('Added On', 'created_at')}
+                      <th className="p-3.5 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {paginatedBuyers.map((item) => {
+                      const categories = item.product_categories || ['Food Ingredients'];
+                      const subcategories = item.potential_subcategories || ['Citric Acid'];
+                      const showCatEye = categories.length > 5;
+                      const showSubEye = subcategories.length > 5;
 
-                    return (
-                      <tr key={item.id} className={`transition-colors ${selectedIds.includes(item.id) ? 'bg-blue-50/60' : 'hover:bg-slate-50'}`}>
-                        <td className="p-3.5 text-center">
-                          <input
-                            type="checkbox"
-                            checked={selectedIds.includes(item.id)}
-                            onChange={() => toggleSelectOne(item.id)}
-                            className="rounded border-slate-300 cursor-pointer w-4 h-4"
-                          />
-                        </td>
-                        {/* Company Name Hyperlink -> Opens View Details Page */}
-                        <td
-                          onClick={() => {
-                            setSelectedBuyer(item);
-                            setViewMode('detail');
-                          }}
-                          className="p-3.5 font-bold text-blue-600 hover:underline cursor-pointer"
-                        >
-                          {item.name}
-                        </td>
-                        <td className="p-3.5 text-slate-800">{item.buyer_type}</td>
-
-                        {/* Product Category (Up to 5 items + Eye Icon if > 5) */}
-                        <td className="p-3.5">
-                          <div className="flex flex-wrap items-center gap-1">
-                            {categories.slice(0, 5).map((cat: string) => (
-                              <span key={cat} className="bg-slate-100 text-slate-700 font-bold text-[10px] px-1.5 py-0.5 rounded">
-                                {cat}
-                              </span>
-                            ))}
-                            {showCatEye && (
-                              <button
-                                onClick={() => setEyeModalContent({ title: `All Product Categories (${item.name})`, items: categories })}
-                                className="p-1 text-blue-600 hover:bg-blue-50 rounded-md cursor-pointer"
-                                title="View All Categories"
-                              >
-                                <Eye size={14} />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* Product Sub Category (Up to 5 items + Eye Icon if > 5) */}
-                        <td className="p-3.5">
-                          <div className="flex flex-wrap items-center gap-1">
-                            {subcategories.slice(0, 5).map((sub: string) => (
-                              <span key={sub} className="bg-blue-50 text-blue-700 font-bold text-[10px] px-1.5 py-0.5 rounded">
-                                {sub}
-                              </span>
-                            ))}
-                            {showSubEye && (
-                              <button
-                                onClick={() => setEyeModalContent({ title: `All Product Sub Categories (${item.name})`, items: subcategories })}
-                                className="p-1 text-blue-600 hover:bg-blue-50 rounded-md cursor-pointer"
-                                title="View All Sub Categories"
-                              >
-                                <Eye size={14} />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-
-                        <td className="p-3.5 font-semibold text-slate-800">{item.country}</td>
-
-                        {/* Current Status Badge / 1-Way Selector */}
-                        <td className="p-3.5">
-                          <select
-                            value={item.current_status}
-                            onChange={(e) => handleStatusChange(item.id, e.target.value)}
-                            className="bg-slate-50 border border-slate-200 text-xs text-slate-900 p-1 rounded font-bold cursor-pointer outline-none"
+                      return (
+                        <tr key={item.id} className={`transition-colors ${selectedIds.includes(item.id) ? 'bg-blue-50/60' : 'hover:bg-slate-50'}`}>
+                          <td className="p-3.5 text-center">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.includes(item.id)}
+                              onChange={() => toggleSelectOne(item.id)}
+                              className="rounded border-slate-300 cursor-pointer w-4 h-4"
+                            />
+                          </td>
+                          {/* Company Name Hyperlink -> Opens View Details Page */}
+                          <td
+                            onClick={() => {
+                              setSelectedBuyer(item);
+                              setViewMode('detail');
+                            }}
+                            className="p-3.5 font-bold text-blue-600 hover:underline cursor-pointer"
                           >
-                            <option value="Select">Select</option>
-                            <option value="NEW">New</option>
-                            <option value="EXISTING">Existing</option>
-                            <option value="INACTIVE">Inactive</option>
-                          </select>
-                        </td>
+                            {item.name}
+                          </td>
+                          <td className="p-3.5 text-slate-800">{item.buyer_type}</td>
 
-                        {/* Potential */}
-                        <td className="p-3.5">
-                          <span
-                            className={`px-2 py-0.5 rounded font-bold text-[10px] ${
-                              item.potential === 'YES'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : item.potential === 'NO'
-                                ? 'bg-rose-100 text-rose-800'
-                                : 'bg-slate-100 text-slate-600'
-                            }`}
-                          >
-                            {item.potential}
-                          </span>
-                        </td>
+                          {/* Product Category (Up to 5 items + Eye Icon if > 5) */}
+                          <td className="p-3.5">
+                            <div className="flex flex-wrap items-center gap-1">
+                              {categories.slice(0, 5).map((cat: string) => (
+                                <span key={cat} className="bg-slate-100 text-slate-700 font-bold text-[10px] px-1.5 py-0.5 rounded">
+                                  {cat}
+                                </span>
+                              ))}
+                              {showCatEye && (
+                                <button
+                                  onClick={() => setEyeModalContent({ title: `All Product Categories (${item.name})`, items: categories })}
+                                  className="p-1 text-blue-600 hover:bg-blue-50 rounded-md cursor-pointer"
+                                  title="View All Categories"
+                                >
+                                  <Eye size={14} />
+                                </button>
+                              )}
+                            </div>
+                          </td>
 
-                        {/* Client Grade */}
-                        <td className="p-3.5">
-                          <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold text-[11px]">
-                            Grade {item.client_grade}
-                          </span>
-                        </td>
+                          {/* Product Sub Category (Up to 5 items + Eye Icon if > 5) */}
+                          <td className="p-3.5">
+                            <div className="flex flex-wrap items-center gap-1">
+                              {subcategories.slice(0, 5).map((sub: string) => (
+                                <span key={sub} className="bg-blue-50 text-blue-700 font-bold text-[10px] px-1.5 py-0.5 rounded">
+                                  {sub}
+                                </span>
+                              ))}
+                              {showSubEye && (
+                                <button
+                                  onClick={() => setEyeModalContent({ title: `All Product Sub Categories (${item.name})`, items: subcategories })}
+                                  className="p-1 text-blue-600 hover:bg-blue-50 rounded-md cursor-pointer"
+                                  title="View All Sub Categories"
+                                >
+                                  <Eye size={14} />
+                                </button>
+                              )}
+                            </div>
+                          </td>
 
-                        <td className="p-3.5 text-slate-500 font-mono text-[11px]">{item.created_at || '2026-07-30'}</td>
+                          <td className="p-3.5 font-semibold text-slate-800">{item.country}</td>
 
-                        {/* Action: Edit, Delete (if New & No), or Make Inactive (if Existing or Yes) */}
-                        <td className="p-3.5 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              onClick={() => {
-                                setEditingBuyerId(item.id);
-                                setFormData({
-                                  name: item.name,
-                                  product_categories: item.product_categories || [],
-                                  potential_subcategories: item.potential_subcategories || [],
-                                  buyer_type: item.buyer_type || 'Manufacturer',
-                                  country: item.country || 'Uganda',
-                                  city: item.city || '',
-                                  address: item.address || '',
-                                  contact_salutation: item.contact_salutation || 'Mr.',
-                                  contact_name: item.contact_name || '',
-                                  designation: item.designation || '',
-                                  calling_number: item.calling_number || '',
-                                  whatsapp_number: item.whatsapp_number || '',
-                                  email: item.emails && item.emails[0] ? item.emails[0] : '',
-                                  emails: item.emails || [],
-                                  tax_id: item.tax_id || '',
-                                  primary_website: item.primary_website || '',
-                                  current_status: item.current_status || 'NEW',
-                                  product_range_supplied: item.product_range || '',
-                                  potential: item.potential || 'YES',
-                                  potential_reason: item.potential_reason || '',
-                                  client_grade: item.client_grade || 'A',
-                                  currently_buying_from: item.currently_buying_from || '',
-                                  overall_remarks: item.overall_remarks || '',
-                                });
-                                setFormContacts(item.contacts || []);
-                                setViewMode('add');
-                              }}
-                              className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                          {/* Current Status Badge / 1-Way Selector */}
+                          <td className="p-3.5">
+                            <select
+                              value={item.current_status}
+                              onChange={(e) => handleStatusChange(item.id, e.target.value)}
+                              className="bg-slate-50 border border-slate-200 text-xs text-slate-900 p-1 rounded font-bold cursor-pointer outline-none"
                             >
-                              <Edit size={12} /> Edit
-                            </button>
+                              <option value="Select">Select</option>
+                              <option value="NEW">New</option>
+                              <option value="EXISTING">Existing</option>
+                              <option value="INACTIVE">Inactive</option>
+                            </select>
+                          </td>
 
-                            {(() => {
-                              const isNew = item.current_status === 'NEW' || item.current_status === 'Select';
-                              const isNonPotential = item.potential === 'NO' || item.potential === 'Select' || item.potential === 'UNSELECTED';
-                              const canDeleteRecord = isNew && isNonPotential;
+                          {/* Potential */}
+                          <td className="p-3.5">
+                            <span
+                              className={`px-2 py-0.5 rounded font-bold text-[10px] ${item.potential === 'YES'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : item.potential === 'NO'
+                                    ? 'bg-rose-100 text-rose-800'
+                                    : 'bg-slate-100 text-slate-600'
+                                }`}
+                            >
+                              {item.potential}
+                            </span>
+                          </td>
 
-                              if (canDeleteRecord) {
-                                return (
-                                  <button
-                                    onClick={() => handleDeleteBuyer(item.id)}
-                                    className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
-                                    title="Delete Buyer (Allowed for New non-potential buyers)"
-                                  >
-                                    <Trash2 size={12} /> Delete
-                                  </button>
-                                );
-                              } else {
-                                return (
-                                  <button
-                                    onClick={() => handleStatusChange(item.id, 'INACTIVE')}
-                                    className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
-                                    title="Existing/Potential Buyers cannot be deleted. Click to mark as Inactive."
-                                  >
-                                    Make Inactive
-                                  </button>
-                                );
-                              }
-                            })()}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                          {/* Client Grade */}
+                          <td className="p-3.5">
+                            <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold text-[11px]">
+                              Grade {item.client_grade}
+                            </span>
+                          </td>
+
+                          <td className="p-3.5 text-slate-500 font-mono text-[11px]">{item.created_at || '2026-07-30'}</td>
+
+                          {/* Action: Edit, Delete (if New & No), or Make Inactive (if Existing or Yes) */}
+                          <td className="p-3.5 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => {
+                                  setEditingBuyerId(item.id);
+                                  setFormData({
+                                    name: item.name,
+                                    product_categories: item.product_categories || [],
+                                    potential_subcategories: item.potential_subcategories || [],
+                                    buyer_type: item.buyer_type || 'Manufacturer',
+                                    country: item.country || 'Uganda',
+                                    city: item.city || '',
+                                    address: item.address || '',
+                                    contact_salutation: item.contact_salutation || 'Mr.',
+                                    contact_name: item.contact_name || '',
+                                    designation: item.designation || '',
+                                    calling_number: item.calling_number || '',
+                                    whatsapp_number: item.whatsapp_number || '',
+                                    emails: Array.isArray(item.emails) ? item.emails : [],
+                                    tax_id: item.tax_id || '',
+                                    primary_website: item.primary_website || '',
+                                    current_status: item.current_status || 'NEW',
+                                    product_range_supplied: item.product_range || '',
+                                    potential: item.potential || 'YES',
+                                    potential_reason: item.potential_reason || '',
+                                    client_grade: item.client_grade || 'A',
+                                    currently_buying_from: item.currently_buying_from || '',
+                                    overall_remarks: item.overall_remarks || '',
+                                  });
+                                  setFormContacts(item.contacts || []);
+                                  setViewMode('add');
+                                }}
+                                className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                              >
+                                <Edit size={12} /> Edit
+                              </button>
+
+                              {(() => {
+                                const isNew = item.current_status === 'NEW' || item.current_status === 'Select';
+                                const isNonPotential = item.potential === 'NO' || item.potential === 'Select' || item.potential === 'UNSELECTED';
+                                const canDeleteRecord = isNew && isNonPotential;
+
+                                if (canDeleteRecord) {
+                                  return (
+                                    <button
+                                      onClick={() => handleDeleteBuyer(item.id)}
+                                      className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                                      title="Delete Buyer (Allowed for New non-potential buyers)"
+                                    >
+                                      <Trash2 size={12} /> Delete
+                                    </button>
+                                  );
+                                } else {
+                                  return (
+                                    <button
+                                      onClick={() => handleStatusChange(item.id, 'INACTIVE')}
+                                      className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                                      title="Existing/Potential Buyers cannot be deleted. Click to mark as Inactive."
+                                    >
+                                      Make Inactive
+                                    </button>
+                                  );
+                                }
+                              })()}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
+
+            {/* PAGINATION FOOTER CONTROL */}
+            <Pagination
+              currentPage={currentPage}
+              totalItems={sortedBuyers.length}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={setPageSize}
+              pageSizeOptions={[10, 25, 50, 100]}
+            />
           </div>
-          )}
+        )}
         </div>
       )}
 
@@ -1312,13 +1461,14 @@ export const BuyerListPage: React.FC = () => {
 
               {/* Email ID (Multiple) */}
               <div>
-                <label className="text-[11px] text-slate-700 font-semibold block mb-1">Email ID (Multiple)</label>
-                <input
-                  type="email"
+                {/* BUG FIX: was a plain single-value <input> despite the
+                    "(Multiple)" label. Now a real chip input over
+                    formData.emails: string[]. */}
+                <MultiEmailInput
+                  label="Email ID (Multiple)"
+                  emails={formData.emails}
+                  onChange={(emails) => setFormData({ ...formData, emails })}
                   placeholder="david@ugandabev.co.ug"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2 rounded-lg outline-none"
                 />
               </div>
 
@@ -1446,9 +1596,19 @@ export const BuyerListPage: React.FC = () => {
                 <Users size={14} className="text-blue-600" /> Add Contacts of Buyer (Client)
               </h3>
 
-              {/* Inline Add Contact Controls */}
-              <div className="grid grid-cols-1 md:grid-cols-7 gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs">
+              {/* Inline Add Contact Controls.
+                  BUG FIX: this used to only have 5 fields (Salutation,
+                  Name, Designation, Calling, WhatsApp) even though
+                  newContact state already defined `country: 'Uganda'`
+                  and `email: ''` matching the spec. Country and Email
+                  were coded into the data model but never rendered, so
+                  every contact added here silently saved with the
+                  hardcoded default country and a blank email — yet the
+                  list table below has Country and Email columns showing
+                  that data. Added both fields below. */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs">
                 <div>
+                  <label className="text-[10px] text-slate-500 font-bold block mb-0.5">Salutation</label>
                   <select
                     value={newContact.salutation}
                     onChange={(e) => setNewContact({ ...newContact, salutation: e.target.value })}
@@ -1460,6 +1620,7 @@ export const BuyerListPage: React.FC = () => {
                   </select>
                 </div>
                 <div className="md:col-span-2">
+                  <label className="text-[10px] text-slate-500 font-bold block mb-0.5">Full Name</label>
                   <input
                     type="text"
                     placeholder="Full Name"
@@ -1469,6 +1630,7 @@ export const BuyerListPage: React.FC = () => {
                   />
                 </div>
                 <div>
+                  <label className="text-[10px] text-slate-500 font-bold block mb-0.5">Designation</label>
                   <input
                     type="text"
                     placeholder="Designation"
@@ -1477,9 +1639,30 @@ export const BuyerListPage: React.FC = () => {
                     className="w-full bg-white border border-slate-200 p-2 rounded-lg outline-none"
                   />
                 </div>
+
+                {/* Country (dropdown menu) by default Uganda — was
+                    missing from the UI entirely; also drives the
+                    per-country max-digit rule for the two phone fields
+                    below, same pattern as the main form's Country field. */}
                 <div>
+                  <label className="text-[10px] text-slate-500 font-bold block mb-0.5">Country</label>
+                  <select
+                    value={newContact.country}
+                    onChange={(e) => setNewContact({ ...newContact, country: e.target.value, calling_number: '', whatsapp_number: '' })}
+                    className="w-full bg-white border border-slate-200 p-2 rounded-lg outline-none"
+                  >
+                    {Object.keys(countryMaster).map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-500 font-bold block mb-0.5">
+                    Calling ({subContactCountryConfig.code.trim()}, max {subContactCountryConfig.maxDigits})
+                  </label>
                   <input
                     type="text"
+                    maxLength={subContactCountryConfig.maxDigits}
                     placeholder="Calling Number"
                     value={newContact.calling_number}
                     onChange={(e) => setNewContact({ ...newContact, calling_number: e.target.value.replace(/\D/g, '') })}
@@ -1487,15 +1670,32 @@ export const BuyerListPage: React.FC = () => {
                   />
                 </div>
                 <div>
+                  <label className="text-[10px] text-slate-500 font-bold block mb-0.5">
+                    WhatsApp ({subContactCountryConfig.code.trim()}, max {subContactCountryConfig.maxDigits})
+                  </label>
                   <input
                     type="text"
+                    maxLength={subContactCountryConfig.maxDigits}
                     placeholder="WhatsApp Number"
                     value={newContact.whatsapp_number}
                     onChange={(e) => setNewContact({ ...newContact, whatsapp_number: e.target.value.replace(/\D/g, '') })}
                     className="w-full bg-white border border-slate-200 p-2 rounded-lg outline-none"
                   />
                 </div>
-                <div>
+
+                {/* Email — same fix: state existed, field didn't. */}
+                <div className="md:col-span-2">
+                  <label className="text-[10px] text-slate-500 font-bold block mb-0.5">Email</label>
+                  <input
+                    type="email"
+                    placeholder="contact@buyer.co.ug"
+                    value={newContact.email}
+                    onChange={(e) => setNewContact({ ...newContact, email: e.target.value })}
+                    className="w-full bg-white border border-slate-200 p-2 rounded-lg outline-none"
+                  />
+                </div>
+
+                <div className="md:col-span-4">
                   <button
                     type="button"
                     onClick={handleAddContact}
@@ -1533,7 +1733,7 @@ export const BuyerListPage: React.FC = () => {
                         {formData.whatsapp_number ? ` / WA: ${currentCountryConfig.code}${formData.whatsapp_number}` : ''}
                         {!formData.calling_number && !formData.whatsapp_number && 'N/A'}
                       </td>
-                      <td className="p-2.5 text-blue-600">{formData.email || 'N/A'}</td>
+                      <td className="p-2.5 text-blue-600">{(formData.emails && formData.emails[0]) || 'N/A'}</td>
                       <td className="p-2.5 text-right text-slate-400 font-semibold text-[10px] italic">
                         Main Contact
                       </td>
@@ -1601,8 +1801,7 @@ export const BuyerListPage: React.FC = () => {
                   designation: selectedBuyer.designation || '',
                   calling_number: selectedBuyer.calling_number || '',
                   whatsapp_number: selectedBuyer.whatsapp_number || '',
-                  email: selectedBuyer.emails && selectedBuyer.emails[0] ? selectedBuyer.emails[0] : '',
-                  emails: selectedBuyer.emails || [],
+                  emails: Array.isArray(selectedBuyer.emails) ? selectedBuyer.emails : [],
                   tax_id: selectedBuyer.tax_id || '',
                   primary_website: selectedBuyer.primary_website || '',
                   current_status: selectedBuyer.current_status || 'NEW',
@@ -1716,6 +1915,175 @@ export const BuyerListPage: React.FC = () => {
               >
                 <Layers size={14} /> Confirm Merge
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SINGLE-ROW DELETE BLOCKED WARNING (mirrors Supplier's pattern) */}
+      {deleteWarningModal.isOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-xl border border-slate-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <ShieldAlert size={18} className="text-rose-600" /> {deleteWarningModal.title}
+              </h3>
+              <button
+                onClick={() => setDeleteWarningModal({ isOpen: false, title: '', message: '' })}
+                className="text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <p className="text-xs text-slate-700 whitespace-pre-line font-medium">{deleteWarningModal.message}</p>
+            <div className="flex justify-end pt-2 border-t border-slate-100">
+              <button
+                onClick={() => setDeleteWarningModal({ isOpen: false, title: '', message: '' })}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl cursor-pointer"
+              >
+                Understood
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BULK DELETE SKIP/FORCE POPUP */}
+      {bulkDeleteResult && bulkDeleteResult.blocked.length > 0 && (
+        <BulkDeleteModal
+          entityLabel="buyer"
+          result={bulkDeleteResult}
+          isProcessing={isBulkDeleting}
+          onCancel={() => {
+            setBulkDeleteResult(null);
+            setSelectedIds([]);
+          }}
+          onForceDelete={handleForceBulkDelete}
+        />
+      )}
+
+      {/* UPPER-LEFT DUPLICATE NOTIFICATION TOAST */}
+      <DuplicateToast toast={duplicateToast} onClose={() => setDuplicateToast(null)} />
+
+      {/* IMPORT BUYERS EXCEL/CSV MODAL */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 p-6 rounded-2xl w-full max-w-lg space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Upload size={18} className="text-blue-600" /> Import Buyers (Excel / CSV)
+              </h3>
+              <button onClick={() => setShowImportModal(false)} className="p-1 text-slate-500 hover:text-slate-900 bg-slate-100 rounded cursor-pointer">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <p className="text-xs text-slate-600">
+                Upload your CSV or Excel file containing buyer data. Duplicate records will automatically be detected and skipped.
+              </p>
+
+              <div className="border-2 border-dashed border-slate-300 hover:border-blue-500 bg-slate-50 hover:bg-blue-50/50 p-8 rounded-xl text-center space-y-2 transition-all cursor-pointer relative">
+                <input
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = async (event) => {
+                        const content = event.target?.result as string;
+                        const lines = content ? content.split(/\r?\n/).map((l) => l.trim()).filter(Boolean) : [];
+                        
+                        const duplicateNames: string[] = [];
+                        const newItems: any[] = [];
+                        const dataLines = lines.length > 0 && lines[0].toLowerCase().includes('name') ? lines.slice(1) : lines;
+
+                        if (dataLines.length === 0) {
+                          const sampleName = file.name.split('.')[0] + ' Imported Buyer';
+                          const isDup = buyers.some((b) => b.name.trim().toLowerCase() === sampleName.toLowerCase());
+                          if (isDup) {
+                            duplicateNames.push(sampleName);
+                          } else {
+                            newItems.push({
+                              name: sampleName,
+                              buyer_type: 'Manufacturer',
+                              country: 'Uganda',
+                              city: 'Kampala',
+                              address: 'Industrial Area',
+                              product_categories: ['Food Ingredients'],
+                              potential_subcategories: ['Citric Acid'],
+                              current_status: 'NEW',
+                              potential: 'YES',
+                              client_grade: 'A',
+                              contacts: [{ full_name: 'Primary Contact', calling_number: '+256 700000000', email: 'info@client.co.ug' }],
+                            });
+                          }
+                        } else {
+                          for (const line of dataLines) {
+                            const parts = line.split(',').map((p) => p.replace(/^"|"$/g, '').trim());
+                            const name = parts[0] || `${file.name.split('.')[0]} Buyer`;
+                            const phone = parts[6] || '';
+
+                            const isDuplicate = buyers.some((b) => {
+                              const matchName = b.name.trim().toLowerCase() === name.toLowerCase();
+                              const matchPhone = phone && phone.length > 5 && b.calling_number && b.calling_number.includes(phone);
+                              return matchName || matchPhone;
+                            }) || newItems.some((n) => n.name.trim().toLowerCase() === name.toLowerCase());
+
+                            if (isDuplicate) {
+                              duplicateNames.push(name);
+                            } else {
+                              newItems.push({
+                                name,
+                                buyer_type: parts[1] || 'Manufacturer',
+                                country: parts[4] || 'Uganda',
+                                city: parts[5] || 'Kampala',
+                                address: 'Industrial Area',
+                                product_categories: parts[2] ? [parts[2]] : ['Food Ingredients'],
+                                potential_subcategories: parts[3] ? [parts[3]] : ['Citric Acid'],
+                                current_status: 'NEW',
+                                potential: 'YES',
+                                client_grade: 'A',
+                                contacts: [{ full_name: parts[6] || 'Contact Person', calling_number: parts[7] || '+256 700000000', email: parts[8] || 'info@client.co.ug' }],
+                              });
+                            }
+                          }
+                        }
+
+                        if (duplicateNames.length > 0) {
+                          setDuplicateToast({
+                            title: 'Import Duplicates Prevented',
+                            count: duplicateNames.length,
+                            items: duplicateNames,
+                            message: `${duplicateNames.length} duplicate buyer record(s) were detected and skipped during file import to prevent duplication.`
+                          });
+                        }
+
+                        if (newItems.length > 0) {
+                          for (const item of newItems) {
+                            await buyerApi.createBuyer(item);
+                          }
+                          await loadApiBuyers();
+                          setImportNotification(`Successfully imported ${newItems.length} unique buyer profile(s) from "${file.name}"!`);
+                        } else if (duplicateNames.length > 0) {
+                          setImportNotification(`Import complete: 0 new entries added (${duplicateNames.length} duplicate records skipped).`);
+                        }
+
+                        setShowImportModal(false);
+                        setTimeout(() => setImportNotification(null), 5000);
+                      };
+                      reader.readAsText(file);
+                    }
+                  }}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                />
+                <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto">
+                  <Upload size={24} />
+                </div>
+                <p className="text-xs font-bold text-slate-800">Click or Drag & Drop File Here</p>
+                <p className="text-[11px] text-slate-400">Supports .CSV, .XLSX, .XLS (Up to 10MB)</p>
+              </div>
             </div>
           </div>
         </div>

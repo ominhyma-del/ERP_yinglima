@@ -32,7 +32,8 @@ export const buyerApi = {
   // Fetch all buyers from NestJS API (connected to Supabase DB)
   async getBuyers(params?: any) {
     try {
-      const response = await api.get('/buyers', { params });
+      const queryParams = { limit: 1000000, ...params };
+      const response = await api.get('/buyers', { params: queryParams });
       const rawList = response.data?.data || response.data;
       if (Array.isArray(rawList)) {
         return rawList.map((b: any) => ({
@@ -47,7 +48,12 @@ export const buyerApi = {
           designation: (b.contacts && b.contacts[0]?.designation) || '',
           calling_number: (b.contacts && b.contacts[0]?.calling_number) || '',
           whatsapp_number: (b.contacts && b.contacts[0]?.whatsapp_number) || '',
-          emails: b.contacts && b.contacts[0]?.email ? [b.contacts[0].email] : [],
+          // BUG FIX: see matching note in supplierApi.ts — reads the
+          // company-level `emails` array instead of only ever capturing
+          // the primary contact's single email.
+          emails: Array.isArray(b.emails) && b.emails.length > 0
+            ? b.emails
+            : (b.contacts && b.contacts[0]?.email ? [b.contacts[0].email] : []),
           tax_id: b.tax_id || '',
           primary_website: b.website || '',
           client_grade: b.client_grade || 'Select',
@@ -64,9 +70,12 @@ export const buyerApi = {
         }));
       }
       return null;
-    } catch (error) {
+    } catch (error: any) {
       console.warn('API error fetching buyers:', error);
-      return null;
+      // Same fix as supplierApi.getSuppliers — surface the real backend
+      // message instead of silently returning null, which looked
+      // identical to "zero buyers exist" to the user.
+      throw new Error(error?.response?.data?.message || error?.message || 'Failed to load buyers.');
     }
   },
 
@@ -81,6 +90,9 @@ export const buyerApi = {
         address: data.address || '',
         tax_id: data.tax_id || '',
         website: data.primary_website || '',
+        // Send the full multi-email array (see Buyer.emails in schema),
+        // not just the first entry.
+        emails: Array.isArray(data.emails) && data.emails.length > 0 ? data.emails : (data.email ? [data.email] : []),
         client_grade: data.client_grade === 'Select' || !data.client_grade ? null : data.client_grade,
         current_status: (data.current_status || 'NEW').toUpperCase() === 'EXISTING' ? 'EXISTING' : 'NEW',
         potential: data.potential === 'NO' ? 'NO' : data.potential === 'YES' ? 'YES' : 'UNSELECTED',
@@ -130,6 +142,7 @@ export const buyerApi = {
         address: data.address || '',
         tax_id: data.tax_id || '',
         website: data.primary_website || '',
+        emails: Array.isArray(data.emails) && data.emails.length > 0 ? data.emails : (data.email ? [data.email] : []),
         client_grade: data.client_grade === 'Select' || !data.client_grade ? null : data.client_grade,
         current_status: (data.current_status || 'NEW').toUpperCase() === 'EXISTING' ? 'EXISTING' : 'NEW',
         potential: data.potential === 'NO' ? 'NO' : data.potential === 'YES' ? 'YES' : 'UNSELECTED',
@@ -169,14 +182,29 @@ export const buyerApi = {
     }
   },
 
-  // Delete Buyer
+  // Delete Buyer.
+  // BUG FIX: previously caught the error and returned null, which hid the
+  // backend's delete-rule-violation message from the caller. Re-throw so
+  // handleDeleteBuyer's try/catch can show the real blocking reason.
   async deleteBuyer(id: string) {
-    try {
-      const response = await api.delete(`/buyers/${id}`);
-      return response.data;
-    } catch (error) {
-      console.warn('API error deleting buyer:', error);
-      return null;
-    }
+    const response = await api.delete(`/buyers/${id}`);
+    return response.data;
+  },
+
+  // Bulk delete selected buyers.
+  // Returns { deleted: [{id,name}], blocked: [{id,name,reasons}], notFound: [id] }.
+  // Pass forceIds (a subset of ids) + force:true to override specific
+  // blocked records after the user confirms via the "Skip / Force Delete" popup.
+  async bulkDeleteBuyers(ids: string[], options?: { force?: boolean; forceIds?: string[] }) {
+    const response = await api.post('/buyers/bulk-delete', {
+      ids,
+      force: options?.force,
+      forceIds: options?.forceIds,
+    });
+    return response.data as {
+      deleted: { id: string; name: string }[];
+      blocked: { id: string; name: string; reasons: string[] }[];
+      notFound: string[];
+    };
   },
 };

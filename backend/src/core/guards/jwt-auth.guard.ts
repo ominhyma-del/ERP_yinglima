@@ -22,26 +22,21 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     return super.canActivate(context);
   }
 
+  /**
+   * SECURITY: Do NOT fall back to a fabricated admin identity when authentication
+   * fails. A missing/invalid/expired token, or a token belonging to a user who has
+   * since been deleted or deactivated, must always be rejected with 401 — never
+   * silently upgraded to a full-access account. Any previous "seamless fallback"
+   * behavior here was a critical authentication bypass and has been removed.
+   */
   handleRequest(err: any, user: any, info: any) {
-    if (user) {
-      return user;
+    if (err || !user) {
+      const reason =
+        info?.message === 'jwt expired'
+          ? 'Your session has expired. Please log in again.'
+          : info?.message || err?.message || 'Authentication required.';
+      throw new UnauthorizedException(reason);
     }
-    // Seamless fallback to Admin context when token is not present, ensuring 100% data availability
-    return {
-      id: '00000000-0000-0000-0000-000000000001',
-      email: 'admin@yinglima.com',
-      role: 'ADMIN',
-      permissions: {
-        team: { view: true, edit: true, delete: true },
-        roles: { view: true, edit: true, delete: true },
-        stock: { view: true, edit: true, delete: true },
-        buyers: { view: true, edit: true, delete: true },
-        inquiry: { view: true, edit: true, delete: true },
-        products: { view: true, edit: true, delete: true },
-        quotation: { view: true, edit: true, delete: true },
-        suppliers: { view: true, edit: true, delete: true },
-        import_purchase: { view: true, edit: true, delete: true },
-      },
-    };
+    return user;
   }
 }

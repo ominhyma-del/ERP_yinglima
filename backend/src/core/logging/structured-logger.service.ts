@@ -147,10 +147,15 @@ export class StructuredLoggerService implements LoggerService {
     if (!this.prisma) return;
     try {
       if (entry.level === 'ERROR' || entry.level === 'FATAL' || entry.level === 'WARNING') {
+        const isUuid = (str?: string) => !!str && /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(str);
+        const companyId = isUuid(entry.companyId) ? entry.companyId! : '11111111-1111-1111-1111-111111111111';
+        const userId = isUuid(entry.userId) ? entry.userId : null;
+
         await this.prisma.auditLog.create({
           data: {
-            company_id: entry.companyId || '00000000-0000-0000-0000-000000000000',
-            user_id: entry.userId || '00000000-0000-0000-0000-000000000000',
+            company_id: companyId,
+            user_id: userId,
+            user_name: entry.userId && !isUuid(entry.userId) ? entry.userId : undefined,
             entity_name: entry.module || 'SYSTEM',
             entity_id: '00000000-0000-0000-0000-000000000000',
             action: `${entry.method} ${entry.endpoint} [${entry.statusCode}]`,

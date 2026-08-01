@@ -39,7 +39,8 @@ export const supplierApi = {
   // Fetch all suppliers from NestJS API (connected to Supabase DB)
   async getSuppliers(params?: any) {
     try {
-      const response = await api.get('/suppliers', { params });
+      const queryParams = { limit: 1000000, ...params };
+      const response = await api.get('/suppliers', { params: queryParams });
       const rawList = response.data?.data || response.data;
       if (Array.isArray(rawList)) {
         return rawList.map((s: any) => ({
@@ -59,7 +60,15 @@ export const supplierApi = {
           calling_number: (s.contacts && s.contacts[0]?.calling_number) || '',
           whatsapp_number: (s.contacts && s.contacts[0]?.whatsapp_number) || '',
           wechat_number: (s.contacts && s.contacts[0]?.wechat_number) || '',
-          emails: s.contacts && s.contacts[0]?.email ? [s.contacts[0].email] : [],
+          // BUG FIX: this used to only ever read the primary contact's
+          // single `email`, discarding any additional addresses even
+          // though this field is labeled "(Multiple)" per spec. Now reads
+          // the company-level `emails` array (see Supplier.emails in the
+          // schema), falling back to the contact's email for older
+          // records saved before this field existed.
+          emails: Array.isArray(s.emails) && s.emails.length > 0
+            ? s.emails
+            : (s.contacts && s.contacts[0]?.email ? [s.contacts[0].email] : []),
           tax_id: s.tax_id || '',
           primary_website: s.primary_website || '',
           secondary_website: s.secondary_website || '',
@@ -77,9 +86,12 @@ export const supplierApi = {
         }));
       }
       return null;
-    } catch (error) {
+    } catch (error: any) {
       console.warn('API error fetching suppliers:', error);
-      return null;
+      // Surface the real backend message (e.g. a schema drift error) up
+      // to the page instead of only logging to console — a silent null
+      // here looks identical to "zero suppliers exist" to the user.
+      throw new Error(error?.response?.data?.message || error?.message || 'Failed to load suppliers.');
     }
   },
 
@@ -99,6 +111,9 @@ export const supplierApi = {
         tax_id: data.tax_id || '',
         primary_website: data.primary_website || '',
         secondary_website: data.secondary_website || '',
+        // Send the full multi-email array (see Supplier.emails in schema),
+        // not just the first entry.
+        emails: Array.isArray(data.emails) && data.emails.length > 0 ? data.emails : (data.email ? [data.email] : []),
         grade: (data.grade || 'A').toUpperCase() === 'B' ? 'B' : (data.grade || 'A').toUpperCase() === 'C' ? 'C' : 'A',
         current_status: (data.current_status || 'NEW').toUpperCase() === 'EXISTING' ? 'EXISTING' : 'NEW',
         potential: (data.potential || 'YES').toUpperCase() === 'NO' ? 'NO' : 'YES',
@@ -119,7 +134,7 @@ export const supplierApi = {
             calling_number: data.calling_number || '',
             whatsapp_number: data.whatsapp_number || data.calling_number || '',
             wechat_number: data.wechat_number || '',
-            email: data.email || (data.emails && data.emails[0]) || '',
+            email: (data.emails && data.emails[0]) || data.email || '',
           },
         ],
       };
@@ -143,14 +158,31 @@ export const supplierApi = {
     }
   },
 
-  // Delete Supplier in Supabase DB
+  // Delete Supplier in Supabase DB.
+  // BUG FIX: this used to catch the error and return null, which silently
+  // swallowed the backend's delete-rule-violation message (e.g. "Status is
+  // EXISTING, cannot delete"). Callers had no way to distinguish "deleted
+  // successfully" from "blocked by rule" — both looked like a resolved
+  // promise. Re-throwing lets the caller's try/catch show the real reason.
   async deleteSupplier(id: string) {
-    try {
-      const response = await api.delete(`/suppliers/${id}`);
-      return response.data;
-    } catch (error) {
-      console.warn('API error deleting supplier:', error);
-      return null;
-    }
+    const response = await api.delete(`/suppliers/${id}`);
+    return response.data;
+  },
+
+  // Bulk delete selected suppliers.
+  // Returns { deleted: [{id,name}], blocked: [{id,name,reasons}], notFound: [id] }.
+  // Pass forceIds (a subset of ids) + force:true to override specific
+  // blocked records after the user confirms via the "Skip / Force Delete" popup.
+  async bulkDeleteSuppliers(ids: string[], options?: { force?: boolean; forceIds?: string[] }) {
+    const response = await api.post('/suppliers/bulk-delete', {
+      ids,
+      force: options?.force,
+      forceIds: options?.forceIds,
+    });
+    return response.data as {
+      deleted: { id: string; name: string }[];
+      blocked: { id: string; name: string; reasons: string[] }[];
+      notFound: string[];
+    };
   },
 };

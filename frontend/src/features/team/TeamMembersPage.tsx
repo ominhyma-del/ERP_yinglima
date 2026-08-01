@@ -11,6 +11,8 @@ import {
 } from './teamStore';
 import { useAuth } from '../auth/AuthContext';
 import { TableSkeleton } from '../../components/common/SkeletonLoader';
+import { teamApi, OwnedDataSummary } from '../../api/teamApi';
+import { Pagination } from '../../components/common/Pagination';
 
 function genPassword() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%';
@@ -107,7 +109,8 @@ export const TeamMembersPage: React.FC = () => {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selectedMember = members.find((m) => m.id === selectedId) ?? null;
-  const [showPasswordDetail, setShowPasswordDetail] = useState(false);
+  const [resetPasswordValue, setResetPasswordValue] = useState<string | null>(null);
+  const [resettingPassword, setResettingPassword] = useState(false);
 
   const [formData, setFormData] = useState({
     name: '', email: '', phone: '',
@@ -164,9 +167,17 @@ export const TeamMembersPage: React.FC = () => {
       if (typeof valB === 'string') valB = valB.toLowerCase();
       if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
       if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
-      return 0;
     });
   }, [filtered, sortField, sortDirection]);
+
+  // Pagination State (Max 100 data per page)
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(100);
+
+  const paginatedMembers = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return sortedMembers.slice(startIndex, startIndex + pageSize);
+  }, [sortedMembers, currentPage, pageSize]);
 
   const renderSortHeader = (label: string, field: string) => {
     const isActive = sortField === field;
@@ -195,8 +206,22 @@ export const TeamMembersPage: React.FC = () => {
 
   const openDetail = (m: TeamMember) => {
     setSelectedId(m.id);
-    setShowPasswordDetail(false);
+    setResetPasswordValue(null);
     setView('detail');
+  };
+
+  const handleResetPassword = async (m: TeamMember) => {
+    setResettingPassword(true);
+    try {
+      const newPassword = genPassword();
+      await updateMember(m.id, { password: newPassword });
+      setResetPasswordValue(newPassword);
+      setToast(`Password reset for "${m.name}". Share the new password with them securely.`);
+    } catch (err: any) {
+      setMinAdminRuleAlert(extractErrorMessage(err, 'Failed to reset password.'));
+    } finally {
+      setResettingPassword(false);
+    }
   };
 
   const openEdit = (m: TeamMember) => {
@@ -206,56 +231,78 @@ export const TeamMembersPage: React.FC = () => {
     setView('edit');
   };
 
-  const handleAddMember = (e: React.FormEvent) => {
+  const extractErrorMessage = (err: any, fallback: string) => {
+    const msg = err?.response?.data?.message || err?.message || fallback;
+    return Array.isArray(msg) ? msg.join('\n') : String(msg);
+  };
+
+  const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.email) return;
-    addMember({
-      name: formData.name,
-      email: formData.email,
-      phone: formData.phone || '+86 13800000000',
-      password: formData.password,
-      accountType: formData.accountType,
-      department: formData.department,
-      branch: formData.branch,
-      status: 'ACTIVE',
-      permissions: formData.accountType === 'ADMIN' ? fullPermissionSet() : formData.permissions,
-    });
-    setShowAddDrawer(false);
-    setFormData({
-      name: '', email: '', phone: '', accountType: 'EMPLOYEE', department: 'Purchase / Procurement',
-      branch: BRANCHES[0], password: genPassword(), permissions: emptyPermissionSet(),
-    });
-    setShowAddPassword(true);
-    setToast('Team member created successfully.');
+    try {
+      await addMember({
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone || '+86 13800000000',
+        password: formData.password,
+        accountType: formData.accountType,
+        department: formData.department,
+        branch: formData.branch,
+        status: 'ACTIVE',
+        permissions: formData.accountType === 'ADMIN' ? fullPermissionSet() : formData.permissions,
+      });
+      setShowAddDrawer(false);
+      setFormData({
+        name: '', email: '', phone: '', accountType: 'EMPLOYEE', department: 'Purchase / Procurement',
+        branch: BRANCHES[0], password: genPassword(), permissions: emptyPermissionSet(),
+      });
+      setShowAddPassword(true);
+      setToast('Team member created successfully.');
+    } catch (err: any) {
+      setMinAdminRuleAlert(extractErrorMessage(err, 'Failed to create team member.'));
+    }
   };
 
-  const handleSaveEdit = (e: React.FormEvent) => {
+  const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editData) return;
-    updateMember(editData.id, editData);
-    setToast('Team member updated successfully.');
-    setView('detail');
+    try {
+      await updateMember(editData.id, editData);
+      setToast('Team member updated successfully.');
+      setView('detail');
+    } catch (err: any) {
+      setMinAdminRuleAlert(extractErrorMessage(err, 'Failed to update team member.'));
+    }
   };
 
-  const toggleStatus = (m: TeamMember) => {
+  const toggleStatus = async (m: TeamMember) => {
     if (m.isDefaultAdmin) {
       setToast('The default admin account cannot be deactivated.');
       return;
     }
-    updateMember(m.id, { status: m.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' });
+    try {
+      await updateMember(m.id, { status: m.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' });
+    } catch (err: any) {
+      setMinAdminRuleAlert(extractErrorMessage(err, 'This action is not allowed.'));
+    }
   };
 
   const handlePromoteRequest = (m: TeamMember, to: AccountType) => {
     setConfirmPromote({ id: m.id, to });
   };
 
-  const confirmPromoteAction = () => {
+  const confirmPromoteAction = async () => {
     if (!confirmPromote) return;
-    const ok = setAccountType(confirmPromote.id, confirmPromote.to);
-    setToast(ok ? `Account ${confirmPromote.to === 'ADMIN' ? 'promoted to Admin' : 'changed to Employee'}.` : 'This action is not allowed on the default admin.');
-    setConfirmPromote(null);
-    if (editData && editData.id === confirmPromote.id) {
-      setEditData({ ...editData, accountType: confirmPromote.to, permissions: confirmPromote.to === 'ADMIN' ? fullPermissionSet() : editData.permissions });
+    try {
+      await setAccountType(confirmPromote.id, confirmPromote.to);
+      setToast(`Account ${confirmPromote.to === 'ADMIN' ? 'promoted to Admin' : 'changed to Employee'}.`);
+      if (editData && editData.id === confirmPromote.id) {
+        setEditData({ ...editData, accountType: confirmPromote.to, permissions: confirmPromote.to === 'ADMIN' ? fullPermissionSet() : editData.permissions });
+      }
+    } catch (err: any) {
+      setMinAdminRuleAlert(extractErrorMessage(err, 'This action is not allowed.'));
+    } finally {
+      setConfirmPromote(null);
     }
   };
 
@@ -265,9 +312,17 @@ export const TeamMembersPage: React.FC = () => {
     targetUserId: string;
   }>({ isOpen: false, targetUserId: '' });
 
+  // Data preview shown inside the delete/transfer modal — fetched fresh from
+  // the backend each time the modal opens, so the admin sees real, current
+  // record counts and a real list of eligible recipients instead of picking
+  // a transfer target blind.
+  const [ownedDataSummary, setOwnedDataSummary] = useState<OwnedDataSummary | null>(null);
+  const [isLoadingSummary, setIsLoadingSummary] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+
   const [minAdminRuleAlert, setMinAdminRuleAlert] = useState<string | null>(null);
 
-  const handleDeleteRequest = (m: TeamMember) => {
+  const handleDeleteRequest = async (m: TeamMember) => {
     if (m.isDefaultAdmin) {
       setToast('The default admin account cannot be removed.');
       return;
@@ -281,23 +336,39 @@ export const TeamMembersPage: React.FC = () => {
       return;
     }
 
-    const eligibleTarget = members.find((x) => x.id !== m.id && x.status === 'ACTIVE');
-    setDeleteTransferModal({
-      isOpen: true,
-      userToDelete: m,
-      targetUserId: eligibleTarget ? eligibleTarget.id : '',
-    });
+    // Open the modal immediately in a loading state, then fetch the real
+    // data-ownership summary from the backend. This is what lets the admin
+    // see exactly how many suppliers/buyers/products/inquiries this account
+    // owns, and pick a transfer target from the actual list of eligible
+    // active users (admin or not), instead of guessing from stale local state.
+    setDeleteTransferModal({ isOpen: true, userToDelete: m, targetUserId: '' });
+    setOwnedDataSummary(null);
+    setSummaryError(null);
+    setIsLoadingSummary(true);
+
+    try {
+      const summary = await teamApi.getOwnedDataSummary(m.id);
+      setOwnedDataSummary(summary);
+      const defaultTarget = summary.eligibleTransferTargets[0];
+      setDeleteTransferModal((prev) => ({ ...prev, targetUserId: defaultTarget ? defaultTarget.id : '' }));
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Failed to load data ownership summary.';
+      setSummaryError(Array.isArray(msg) ? msg.join('\n') : String(msg));
+    } finally {
+      setIsLoadingSummary(false);
+    }
   };
 
   const confirmDeleteAndTransfer = async () => {
     if (!deleteTransferModal.userToDelete || !deleteTransferModal.targetUserId) return;
     const { userToDelete, targetUserId } = deleteTransferModal;
-    const targetUser = members.find((x) => x.id === targetUserId);
+    const targetUser = ownedDataSummary?.eligibleTransferTargets.find((x) => x.id === targetUserId);
 
     try {
       await removeMember(userToDelete.id, targetUserId);
       setDeleteTransferModal({ isOpen: false, targetUserId: '' });
-      setToast(`Account "${userToDelete.name}" deleted. All records transferred to "${targetUser?.name || 'Selected User'}".`);
+      setOwnedDataSummary(null);
+      setToast(`Account "${userToDelete.name}" deleted. All records transferred to "${targetUser?.full_name || 'Selected User'}".`);
       setView('list');
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || 'Failed to delete account.';
@@ -356,13 +427,22 @@ export const TeamMembersPage: React.FC = () => {
     }
   };
 
+  // NOTE: bulk delete intentionally does NOT call removeMember() directly.
+  // The backend requires a mandatory data-ownership transfer target for every
+  // single deletion (see UserService.remove()) — there is no bulk-transfer
+  // endpoint, and building one would mean guessing how to split one account's
+  // suppliers/buyers/products/inquiries across multiple recipients, which is
+  // exactly the kind of ambiguous, silent-data-risk shortcut this feature
+  // exists to prevent. Instead, "bulk delete" opens the same single-account
+  // preview-and-transfer modal used everywhere else, starting with the first
+  // selected member — each deletion still requires an explicit, informed
+  // transfer-target choice, it just chains through the selection one at a time.
   const handleBulkDelete = () => {
     if (selectedIds.length === 0) return;
-    if (confirm(`Are you sure you want to delete ${selectedIds.length} selected team member(s)?`)) {
-      selectedIds.forEach((id) => removeMember(id));
-      setSelectedIds([]);
-      setImportNotification(`${selectedIds.length} member(s) deleted.`);
-    }
+    const firstMember = members.find((m) => m.id === selectedIds[0]);
+    if (!firstMember) return;
+    setSelectedIds((prev) => prev.filter((id) => id !== selectedIds[0]));
+    handleDeleteRequest(firstMember);
   };
 
   const handleOpenMerge = () => {
@@ -374,15 +454,46 @@ export const TeamMembersPage: React.FC = () => {
     setShowMergeModal(true);
   };
 
-  const handleExecuteMerge = () => {
+  const [isMerging, setIsMerging] = useState(false);
+  const [mergeError, setMergeError] = useState<string | null>(null);
+
+  // Each account being merged away has its data transferred to targetMergeId
+  // via the SAME mandatory-transfer path used everywhere else in this page —
+  // the backend logs each transfer on both sides (see UserService.remove()).
+  // This previously called removeMember(id) with no target at all, which
+  // means the backend would have rejected every single deletion (it requires
+  // targetUserId) — so "merge" never actually worked, it just looked like it
+  // did because failures weren't surfaced. Run sequentially and awaited so
+  // one failure doesn't leave the account list in a half-merged, unclear state.
+  const handleExecuteMerge = async () => {
     if (!targetMergeId) return;
     const targetMember = members.find((m) => m.id === targetMergeId);
     if (!targetMember) return;
 
-    selectedIds.filter((id) => id !== targetMergeId).forEach((id) => removeMember(id));
-    setSelectedIds([]);
-    setShowMergeModal(false);
-    setImportNotification(`Merged team member accounts into "${targetMember.name}".`);
+    const idsToMerge = selectedIds.filter((id) => id !== targetMergeId);
+    setIsMerging(true);
+    setMergeError(null);
+
+    let mergedCount = 0;
+    try {
+      for (const id of idsToMerge) {
+        await removeMember(id, targetMergeId);
+        mergedCount++;
+      }
+      setSelectedIds([]);
+      setShowMergeModal(false);
+      setImportNotification(`Merged ${mergedCount} account(s) into "${targetMember.name}". All their records were transferred.`);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Failed to merge remaining accounts.';
+      setMergeError(
+        `${mergedCount} of ${idsToMerge.length} account(s) were merged before this error occurred: ${Array.isArray(msg) ? msg.join('\n') : String(msg)}`,
+      );
+      // Drop the ones already merged from the selection so retrying only
+      // targets what's left, rather than re-attempting completed transfers.
+      setSelectedIds((prev) => prev.filter((id) => id === targetMergeId || idsToMerge.indexOf(id) >= mergedCount));
+    } finally {
+      setIsMerging(false);
+    }
   };
 
   return (
@@ -408,38 +519,94 @@ export const TeamMembersPage: React.FC = () => {
               <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                 <ShieldAlert size={20} className="text-rose-600" /> Delete User & Transfer Data Ownership
               </h3>
-              <button onClick={() => setDeleteTransferModal({ isOpen: false, targetUserId: '' })} className="text-slate-400 hover:text-slate-700 cursor-pointer">
+              <button
+                onClick={() => {
+                  setDeleteTransferModal({ isOpen: false, targetUserId: '' });
+                  setOwnedDataSummary(null);
+                }}
+                className="text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
                 <X size={16} />
               </button>
             </div>
 
             <div className="bg-rose-50 border border-rose-200 p-3.5 rounded-xl text-xs text-rose-900 leading-relaxed font-medium">
-              You are about to delete <strong>{deleteTransferModal.userToDelete.name}</strong> ({deleteTransferModal.userToDelete.email}). 
+              You are about to delete <strong>{deleteTransferModal.userToDelete.name}</strong> ({deleteTransferModal.userToDelete.email}).
               <br /><br />
               <strong>Mandatory Enterprise Rule:</strong> All historical database records (Suppliers, Buyers, Products, Inquiries) created by this user must be reassigned to a responsible active team member.
             </div>
 
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-700 block">Select Responsible User / Admin to Receive Data:</label>
-              <select
-                value={deleteTransferModal.targetUserId}
-                onChange={(e) => setDeleteTransferModal((prev) => ({ ...prev, targetUserId: e.target.value }))}
-                className="w-full bg-slate-50 border border-slate-300 text-xs text-slate-900 p-3 rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {members
-                  .filter((m) => m.id !== deleteTransferModal.userToDelete?.id && m.status === 'ACTIVE')
-                  .map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name} ({m.accountType} — {m.department || 'General'})
-                    </option>
-                  ))}
-              </select>
-            </div>
+            {isLoadingSummary && (
+              <div className="flex items-center gap-2 text-xs text-slate-500 font-medium py-2">
+                <RefreshCw size={14} className="animate-spin" /> Loading data ownership summary...
+              </div>
+            )}
+
+            {summaryError && !isLoadingSummary && (
+              <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-xl text-xs font-medium">
+                {summaryError}
+              </div>
+            )}
+
+            {ownedDataSummary && !isLoadingSummary && (
+              <>
+                {/* Real, current counts of exactly what this account owns —
+                    fetched fresh from the backend, not estimated from cached
+                    local state, so nothing is transferred blind. */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-700 block">Records That Will Be Transferred:</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
+                      <p className="text-lg font-bold text-slate-900">{ownedDataSummary.ownedRecords.suppliers}</p>
+                      <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wide">Suppliers</p>
+                    </div>
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
+                      <p className="text-lg font-bold text-slate-900">{ownedDataSummary.ownedRecords.buyers}</p>
+                      <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wide">Buyers</p>
+                    </div>
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
+                      <p className="text-lg font-bold text-slate-900">{ownedDataSummary.ownedRecords.products}</p>
+                      <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wide">Products</p>
+                    </div>
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
+                      <p className="text-lg font-bold text-slate-900">{ownedDataSummary.ownedRecords.inquiries}</p>
+                      <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wide">Inquiries</p>
+                    </div>
+                  </div>
+                  {ownedDataSummary.ownedRecords.total === 0 && (
+                    <p className="text-[11px] text-slate-400 italic px-1">
+                      This account currently owns no records — a transfer target is still required by policy.
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-700 block">Select Responsible User / Admin to Receive Data:</label>
+                  <select
+                    value={deleteTransferModal.targetUserId}
+                    onChange={(e) => setDeleteTransferModal((prev) => ({ ...prev, targetUserId: e.target.value }))}
+                    className="w-full bg-slate-50 border border-slate-300 text-xs text-slate-900 p-3 rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {ownedDataSummary.eligibleTransferTargets.length === 0 && (
+                      <option value="">No eligible active team members available</option>
+                    )}
+                    {ownedDataSummary.eligibleTransferTargets.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.full_name} ({m.role} — {m.department || 'General'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
 
             <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
               <button
                 type="button"
-                onClick={() => setDeleteTransferModal({ isOpen: false, targetUserId: '' })}
+                onClick={() => {
+                  setDeleteTransferModal({ isOpen: false, targetUserId: '' });
+                  setOwnedDataSummary(null);
+                }}
                 className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl cursor-pointer"
               >
                 Cancel
@@ -447,7 +614,8 @@ export const TeamMembersPage: React.FC = () => {
               <button
                 type="button"
                 onClick={confirmDeleteAndTransfer}
-                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer transition-all flex items-center gap-1.5"
+                disabled={isLoadingSummary || !deleteTransferModal.targetUserId}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer transition-all flex items-center gap-1.5"
               >
                 Transfer Data & Delete Account
               </button>
@@ -492,19 +660,27 @@ export const TeamMembersPage: React.FC = () => {
                 <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                   <Layers size={18} className="text-blue-600" /> Merge Selected Team Members ({selectedIds.length})
                 </h3>
-                <button onClick={() => setShowMergeModal(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
+                <button
+                  onClick={() => {
+                    setShowMergeModal(false);
+                    setMergeError(null);
+                  }}
+                  className="text-slate-400 hover:text-slate-700 cursor-pointer"
+                >
                   <X size={16} />
                 </button>
               </div>
               <p className="text-xs text-slate-600">
-                Select the <strong>primary team member account</strong> to keep. Other duplicate selected account entries will be removed.
+                Select the <strong>primary team member account</strong> to keep. All Suppliers, Buyers, Products, and Inquiries owned by every
+                other selected account will be transferred to the primary account, and each account will then be deleted.
               </p>
               <div className="space-y-2">
                 <label className="text-xs font-bold text-slate-700 block">Primary Account Record to Keep:</label>
                 <select
                   value={targetMergeId}
                   onChange={(e) => setTargetMergeId(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 text-xs text-slate-900 p-2.5 rounded-xl font-semibold outline-none focus:border-blue-500"
+                  disabled={isMerging}
+                  className="w-full bg-slate-50 border border-slate-300 text-xs text-slate-900 p-2.5 rounded-xl font-semibold outline-none focus:border-blue-500 disabled:opacity-50"
                 >
                   {members
                     .filter((m) => selectedIds.includes(m.id))
@@ -515,20 +691,33 @@ export const TeamMembersPage: React.FC = () => {
                     ))}
                 </select>
               </div>
+
+              {mergeError && (
+                <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-xl text-xs font-medium whitespace-pre-line">
+                  {mergeError}
+                </div>
+              )}
+
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setShowMergeModal(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl cursor-pointer"
+                  onClick={() => {
+                    setShowMergeModal(false);
+                    setMergeError(null);
+                  }}
+                  disabled={isMerging}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 font-semibold text-xs rounded-xl cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
                   onClick={handleExecuteMerge}
-                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
+                  disabled={isMerging}
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
                 >
-                  <Layers size={14} /> Confirm Merge
+                  {isMerging ? <RefreshCw size={14} className="animate-spin" /> : <Layers size={14} />}
+                  {isMerging ? 'Transferring & Merging...' : 'Confirm Merge'}
                 </button>
               </div>
             </div>
@@ -597,78 +786,89 @@ export const TeamMembersPage: React.FC = () => {
           {isLoading ? (
             <TableSkeleton rows={6} />
           ) : (
-          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-            <table className="w-full text-left text-xs text-slate-700">
-              <thead className="bg-slate-100 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
-                <tr>
-                  <th className="p-3.5 text-center w-10">
-                    <input
-                      type="checkbox"
-                      checked={isAllSelected}
-                      onChange={toggleSelectAll}
-                      className="rounded border-slate-300 cursor-pointer w-4 h-4"
-                    />
-                  </th>
-                  {renderSortHeader('Member Name & Email', 'name')}
-                  {renderSortHeader('Account Type', 'accountType')}
-                  {renderSortHeader('Department', 'department')}
-                  {renderSortHeader('Branch / Company', 'branch')}
-                  {renderSortHeader('Status', 'status')}
-                  <th className="p-3.5 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-medium">
-                {sortedMembers.map((member) => (
-                  <tr key={member.id} className={`transition-colors ${selectedIds.includes(member.id) ? 'bg-blue-50/60' : 'hover:bg-slate-50'}`}>
-                    <td className="p-3.5 text-center">
+            <div className="space-y-4">
+              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+              <table className="w-full text-left text-xs text-slate-700">
+                <thead className="bg-slate-100 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
+                  <tr>
+                    <th className="p-3.5 text-center w-10">
                       <input
                         type="checkbox"
-                        checked={selectedIds.includes(member.id)}
-                        onChange={() => toggleSelectOne(member.id)}
+                        checked={isAllSelected}
+                        onChange={toggleSelectAll}
                         className="rounded border-slate-300 cursor-pointer w-4 h-4"
                       />
-                    </td>
-                    <td className="p-3.5 cursor-pointer" onClick={() => openDetail(member)}>
-                      <p className="font-bold text-blue-600 hover:underline">{member.name}</p>
-                      <p className="text-[11px] text-slate-500 font-mono flex items-center gap-1 mt-0.5">
-                        <Mail size={11} className="text-blue-600" /> {member.email}
-                      </p>
-                    </td>
-                    <td className="p-3.5"><AccountTypeBadge type={member.accountType} /></td>
-                    <td className="p-3.5 text-slate-700">{member.department}</td>
-                    <td className="p-3.5 text-slate-700">{member.branch}</td>
-                    <td className="p-3.5">
-                      <button
-                        onClick={() => toggleStatus(member)}
-                        className={`px-2 py-0.5 font-bold rounded text-[10px] cursor-pointer ${
-                          member.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
-                        }`}
-                      >
-                        {member.status}
-                      </button>
-                    </td>
-                    <td className="p-3.5 text-right space-x-2">
-                      <button onClick={() => openDetail(member)} className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[11px] font-semibold cursor-pointer">
-                        View
-                      </button>
-                      <button onClick={() => openEdit(member)} className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-[11px] font-semibold cursor-pointer">
-                        Edit
-                      </button>
-                    </td>
+                    </th>
+                    {renderSortHeader('Member Name & Email', 'name')}
+                    {renderSortHeader('Account Type', 'accountType')}
+                    {renderSortHeader('Department', 'department')}
+                    {renderSortHeader('Branch / Company', 'branch')}
+                    {renderSortHeader('Status', 'status')}
+                    <th className="p-3.5 text-right">Actions</th>
                   </tr>
-                ))}
-                {filtered.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="py-14 text-center text-slate-400">
-                      <Users size={32} className="mx-auto mb-2 opacity-30" />
-                      <p className="font-semibold text-sm">No team members found</p>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {paginatedMembers.map((member) => (
+                    <tr key={member.id} className={`transition-colors ${selectedIds.includes(member.id) ? 'bg-blue-50/60' : 'hover:bg-slate-50'}`}>
+                      <td className="p-3.5 text-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(member.id)}
+                          onChange={() => toggleSelectOne(member.id)}
+                          className="rounded border-slate-300 cursor-pointer w-4 h-4"
+                        />
+                      </td>
+                      <td className="p-3.5 cursor-pointer" onClick={() => openDetail(member)}>
+                        <p className="font-bold text-blue-600 hover:underline">{member.name}</p>
+                        <p className="text-[11px] text-slate-500 font-mono flex items-center gap-1 mt-0.5">
+                          <Mail size={11} className="text-blue-600" /> {member.email}
+                        </p>
+                      </td>
+                      <td className="p-3.5"><AccountTypeBadge type={member.accountType} /></td>
+                      <td className="p-3.5 text-slate-700">{member.department}</td>
+                      <td className="p-3.5 text-slate-700">{member.branch}</td>
+                      <td className="p-3.5">
+                        <button
+                          onClick={() => toggleStatus(member)}
+                          className={`px-2 py-0.5 font-bold rounded text-[10px] cursor-pointer ${member.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                            }`}
+                        >
+                          {member.status}
+                        </button>
+                      </td>
+                      <td className="p-3.5 text-right space-x-2">
+                        <button onClick={() => openDetail(member)} className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[11px] font-semibold cursor-pointer">
+                          View
+                        </button>
+                        <button onClick={() => openEdit(member)} className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-[11px] font-semibold cursor-pointer">
+                          Edit
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {filtered.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="py-14 text-center text-slate-400">
+                        <Users size={32} className="mx-auto mb-2 opacity-30" />
+                        <p className="font-semibold text-sm">No team members found</p>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* PAGINATION FOOTER CONTROL */}
+            <Pagination
+              currentPage={currentPage}
+              totalItems={sortedMembers.length}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={setPageSize}
+              pageSizeOptions={[10, 25, 50, 100]}
+            />
           </div>
-          )}
+        )}
         </>
       )}
 
@@ -749,24 +949,29 @@ export const TeamMembersPage: React.FC = () => {
                   <h3 className="text-sm font-bold text-slate-800">Account Password</h3>
                 </div>
                 <div className="p-5 space-y-3">
-                  <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2 text-[11px] flex items-start gap-2">
+                  <div className="bg-blue-50 border border-blue-200 text-blue-800 rounded-lg px-3 py-2 text-[11px] flex items-start gap-2">
                     <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
-                    <span>Passwords are shown in plain text on this internal demo build, per your instruction. Treat this as mock/demo data only.</span>
+                    <span>
+                      Passwords are hashed with bcrypt and never leave the server — there is nothing to reveal here.
+                      Use "Reset Password" to issue this member a brand-new password.
+                    </span>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 bg-slate-100 border border-slate-300 rounded-lg px-3 py-2.5 font-mono text-sm text-slate-900 font-bold tracking-wide select-all">
-                      {showPasswordDetail
-                        ? selectedMember.password || 'admin123'
-                        : '•'.repeat((selectedMember.password || 'admin123').length)}
+                  {resetPasswordValue ? (
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 bg-emerald-50 border border-emerald-300 rounded-lg px-3 py-2.5 font-mono text-sm text-emerald-900 font-bold tracking-wide select-all">
+                        {resetPasswordValue}
+                      </div>
+                      <span className="text-[11px] text-emerald-700 font-semibold">New — share this once</span>
                     </div>
+                  ) : (
                     <button
-                      onClick={() => setShowPasswordDetail((v) => !v)}
-                      className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg cursor-pointer"
-                      title={showPasswordDetail ? 'Hide password' : 'Show password'}
+                      onClick={() => handleResetPassword(selectedMember)}
+                      disabled={resettingPassword}
+                      className="w-full px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 disabled:opacity-60 text-slate-700 border border-slate-200 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 cursor-pointer"
                     >
-                      {showPasswordDetail ? <EyeOff size={15} /> : <Eye size={15} />}
+                      <KeyRound size={13} /> {resettingPassword ? 'Resetting…' : 'Reset Password'}
                     </button>
-                  </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -884,18 +1089,16 @@ export const TeamMembersPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setEditData({ ...editData, accountType: 'EMPLOYEE' })}
-                  className={`flex-1 px-4 py-2.5 rounded-lg text-xs font-semibold border cursor-pointer flex items-center justify-center gap-1.5 transition-colors ${
-                    editData.accountType === 'EMPLOYEE' ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
-                  }`}
+                  className={`flex-1 px-4 py-2.5 rounded-lg text-xs font-semibold border cursor-pointer flex items-center justify-center gap-1.5 transition-colors ${editData.accountType === 'EMPLOYEE' ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                    }`}
                 >
                   <UserCog size={13} /> Employee
                 </button>
                 <button
                   type="button"
                   onClick={() => setEditData({ ...editData, accountType: 'ADMIN', permissions: fullPermissionSet() })}
-                  className={`flex-1 px-4 py-2.5 rounded-lg text-xs font-semibold border cursor-pointer flex items-center justify-center gap-1.5 transition-colors ${
-                    editData.accountType === 'ADMIN' ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
-                  }`}
+                  className={`flex-1 px-4 py-2.5 rounded-lg text-xs font-semibold border cursor-pointer flex items-center justify-center gap-1.5 transition-colors ${editData.accountType === 'ADMIN' ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                    }`}
                 >
                   <Crown size={13} /> Admin (full access)
                 </button>
@@ -912,7 +1115,8 @@ export const TeamMembersPage: React.FC = () => {
               <div className="relative flex-1">
                 <input
                   type={showEditPassword ? 'text' : 'password'}
-                  value={editData.password}
+                  value={editData.password || ''}
+                  placeholder="Leave blank to keep current password"
                   onChange={(e) => setEditData({ ...editData, password: e.target.value })}
                   className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 pr-9 rounded-lg outline-none focus:border-blue-500 focus:bg-white font-mono"
                 />
@@ -933,7 +1137,7 @@ export const TeamMembersPage: React.FC = () => {
                 <RefreshCw size={14} />
               </button>
             </div>
-            <p className="text-[11px] text-slate-400 mt-1">Editable directly since this member's password is stored in plain text on this demo build.</p>
+            <p className="text-[11px] text-slate-400 mt-1">The current password is never shown (it's hashed). Leave this blank to keep it unchanged, or type/generate a new one to reset it.</p>
           </div>
 
           <div className="flex justify-end gap-2 pt-4 border-t border-slate-100">
@@ -995,18 +1199,16 @@ export const TeamMembersPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setFormData({ ...formData, accountType: 'EMPLOYEE' })}
-                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-semibold border cursor-pointer flex items-center justify-center gap-1.5 ${
-                      formData.accountType === 'EMPLOYEE' ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-slate-200 text-slate-500'
-                    }`}
+                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-semibold border cursor-pointer flex items-center justify-center gap-1.5 ${formData.accountType === 'EMPLOYEE' ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-slate-200 text-slate-500'
+                      }`}
                   >
                     <UserCog size={13} /> Employee
                   </button>
                   <button
                     type="button"
                     onClick={() => setFormData({ ...formData, accountType: 'ADMIN' })}
-                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-semibold border cursor-pointer flex items-center justify-center gap-1.5 ${
-                      formData.accountType === 'ADMIN' ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-white border-slate-200 text-slate-500'
-                    }`}
+                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-semibold border cursor-pointer flex items-center justify-center gap-1.5 ${formData.accountType === 'ADMIN' ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-white border-slate-200 text-slate-500'
+                      }`}
                   >
                     <Crown size={13} /> Admin
                   </button>

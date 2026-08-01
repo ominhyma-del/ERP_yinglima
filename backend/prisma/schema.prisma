@@ -394,6 +394,11 @@ model Supplier {
   tax_id                     String?
   primary_website            String?
   secondary_website          String?
+  // Company-level "Email ID (multiple emails)" field from the First Data
+  // Form spec — distinct from each individual contact's single `email`
+  // in SupplierContact. Previously missing entirely (frontend only ever
+  // stored/sent one email, silently dropping any extra addresses).
+  emails                     String[]
   grade                      PartyGrade?
   current_status             PartyStatus        @default(NEW)
   potential                  PotentialStatus    @default(UNSELECTED)
@@ -453,6 +458,9 @@ model Buyer {
   address                 String?
   tax_id                  String?
   website                 String?
+  // Company-level "Email ID (Multiple)" field — see matching comment on
+  // Supplier.emails above. Same gap existed here.
+  emails                  String[]
   current_status          PartyStatus     @default(NEW)
   product_range_supplied  String?
   potential               PotentialStatus @default(UNSELECTED)

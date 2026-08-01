@@ -1,8 +1,16 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { findMemberByEmail, TeamMember, AccountType, PermissionSet, useTeamStore, SEED_MEMBERS } from '../team/teamStore';
-import { teamApi } from '../../api/teamApi';
-import api from '../../lib/api';
+import { AccountType, PermissionSet } from '../team/teamStore';
+import { authApi, refreshAccessToken, wasLastRefreshFailureAuthRejection } from '../../lib/api';
+import {
+  setAccessToken,
+  setCurrentUser,
+  getCurrentUser,
+  clearSession,
+  subscribe,
+  SESSION_EXPIRED_EVENT,
+  CurrentUserSnapshot,
+} from '../../lib/tokenStore';
 import { WifiOff } from 'lucide-react';
 
 export interface AuthUser {
@@ -24,25 +32,13 @@ interface AuthContextValue {
   isOnline: boolean;
   login: (email: string, password: string, remember: boolean) => Promise<{ ok: boolean; error?: string }>;
   logout: () => void;
-  refreshUser: () => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const SESSION_KEY = 'yinglima_session_v1';
-
-interface StoredSession {
-  sessionId: string;
-  memberId: string;
-  createdAt: string;
-}
-
-function genSessionId() {
-  return 'sess_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
-}
-
-function toAuthUser(m: TeamMember): AuthUser {
-  const parts = m.name.trim().split(/\s+/);
+function toAuthUser(m: CurrentUserSnapshot): AuthUser {
+  const parts = (m.full_name || '').trim().split(/\s+/).filter(Boolean);
   let initials = 'U';
   if (parts.length >= 2) {
     initials = (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
@@ -50,210 +46,210 @@ function toAuthUser(m: TeamMember): AuthUser {
     initials = parts[0].slice(0, 2).toUpperCase();
   }
 
+  const accountType: AccountType = m.role === 'ADMIN' || m.role === 'SUPER_ADMIN' ? 'ADMIN' : 'EMPLOYEE';
+
   return {
     id: m.id,
-    name: m.name,
+    name: m.full_name,
     email: m.email,
-    accountType: m.accountType,
-    department: m.department,
+    accountType,
+    department: m.department || '',
     avatarInitials: initials,
-    permissions: m.permissions,
+    permissions: (m.permissions || {}) as PermissionSet,
   };
 }
 
-function readStoredSession(): StoredSession | null {
-  try {
-    const raw = localStorage.getItem(SESSION_KEY) || sessionStorage.getItem(SESSION_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed.sessionId === 'string' && typeof parsed.memberId === 'string') {
-      return parsed;
-    }
-  } catch (err) {
-    // ignore corrupted storage
-  }
-  return null;
-}
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { members } = useTeamStore();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [rememberMe, setRememberMe] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
 
-  // Network Offline / Online Monitoring State
   const [isOnline, setIsOnline] = useState<boolean>(
     typeof window !== 'undefined' ? navigator.onLine : true,
   );
 
   const navigate = useNavigate();
 
-  // Listen to Network Disconnect / Reconnect Events
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
-
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
-
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
 
-  // Restore session when members are loaded from backend (or from offline cache)
+  // Keep local React state in sync with the shared token store (which the
+  // axios interceptor in lib/api.ts also writes to after a silent refresh).
   useEffect(() => {
-    async function restore() {
-      try {
-        const stored = readStoredSession();
-        const cachedUserStr = localStorage.getItem('yinglima_auth_user');
-
-        if (stored || cachedUserStr) {
-          // 1. Immediately restore cached auth user so user NEVER gets logged out on network outage
-          if (cachedUserStr) {
-            try {
-              const cachedUser = JSON.parse(cachedUserStr);
-              setUser(cachedUser);
-              setSessionId(stored?.sessionId || 'sess_offline');
-              setRememberMe(!!localStorage.getItem(SESSION_KEY));
-            } catch (e) {}
-          }
-
-          // 2. Try fetching latest member details from network if online
-          try {
-            const latestMembers = await teamApi.getMembers();
-            if (Array.isArray(latestMembers) && stored?.memberId) {
-              let member = latestMembers.find((m) => m.id === stored.memberId);
-              if (!member) {
-                member = SEED_MEMBERS.find((m) => m.id === stored.memberId);
-              }
-              if (member) {
-                const authUser = toAuthUser(member);
-                setUser(authUser);
-                localStorage.setItem('yinglima_auth_user', JSON.stringify(authUser));
-                setSessionId(stored.sessionId);
-                setRememberMe(!!localStorage.getItem(SESSION_KEY));
-              }
-            }
-          } catch (netErr) {
-            console.warn('Network offline or DB unreachable during restore — keeping cached session active.');
-          }
-        }
-      } catch (err) {
-        console.error('Session restore error:', err);
-      } finally {
-        setIsInitializing(false);
-      }
-    }
-    restore();
+    const unsubscribe = subscribe(() => {
+      const snapshot = getCurrentUser();
+      setUser(snapshot ? toAuthUser(snapshot) : null);
+    });
+    return unsubscribe;
   }, []);
 
-  // Keep the logged-in user's permissions/account type live if an admin changes them
+  // If a silent token refresh ever fails outright (refresh cookie expired,
+  // revoked, or the account was deleted/deactivated), the api client
+  // broadcasts this event so we can cleanly drop the user back to /login
+  // instead of leaving the UI in a half-authenticated state.
   useEffect(() => {
-    if (!user) return;
-    const fresh = members.find((m) => m.id === user.id || m.email.toLowerCase() === user.email.toLowerCase());
-    if (fresh) {
-      const authUser = toAuthUser(fresh);
-      setUser(authUser);
-      localStorage.setItem('yinglima_auth_user', JSON.stringify(authUser));
-    }
-  }, [members, user?.id, user?.email]);
+    const handleExpired = () => {
+      clearSession();
+      setSessionId(null);
+      navigate('/login', { replace: true });
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, handleExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handleExpired);
+  }, [navigate]);
 
-  const login = async (email: string, password: string, remember: boolean) => {
-    let latestMembers = await teamApi.getMembers();
-    const cleanEmail = email.trim().toLowerCase();
-    let member = latestMembers?.find((m) => m.email.toLowerCase() === cleanEmail);
-    const seedMatch = SEED_MEMBERS.find((m) => m.email.toLowerCase() === cleanEmail);
+  // On first load, there is no access token in memory yet (by design — it is
+  // never persisted). Try a silent refresh against the httpOnly cookie; if
+  // that succeeds, fetch the real /auth/me profile.
+  useEffect(() => {
+    let cancelled = false;
 
-    if (!member) {
-      member = seedMatch;
-    }
-
-    if (!member) {
-      return { ok: false, error: 'Invalid email or password.' };
-    }
-
-    if (member.password && member.password !== password) {
-      return { ok: false, error: 'Invalid email or password.' };
-    }
-
-    if (member.status === 'INACTIVE') {
-      return { ok: false, error: 'This account has been deactivated. Please contact an administrator.' };
-    }
-
-    const newSessionId = genSessionId();
-    const session: StoredSession = { sessionId: newSessionId, memberId: member.id, createdAt: new Date().toISOString() };
-
-    if (remember) {
-      localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-      sessionStorage.removeItem(SESSION_KEY);
-    } else {
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
-      localStorage.removeItem(SESSION_KEY);
-    }
-
-    const authUser = toAuthUser(member);
-    setUser(authUser);
-    localStorage.setItem('yinglima_auth_user', JSON.stringify(authUser));
-    setSessionId(newSessionId);
-    setRememberMe(remember);
-
-    // Audit trace logging to Backend PostgreSQL DB
-    try {
-      api.post('/audit/log', {
-        user_id: member.id,
-        user_name: member.name,
-        user_email: email,
-        action: 'LOGIN_SUCCESS',
-        entity: 'USER_AUTH',
-        entity_id: member.id,
-        role: member.accountType,
-        description: `User "${member.name}" (${email}) authenticated successfully as ${member.accountType}`,
-      });
-    } catch (e) {}
-
-    navigate('/dashboard', { replace: true });
-
-    return { ok: true };
-  };
-
-  const logout = () => {
-    if (user) {
+    // BUG FIX (hard browser refresh specifically): a full page reload tears
+    // down the whole JS runtime, so this is a cold start — no in-memory
+    // token, a cookie that may not have finished round-tripping yet, and
+    // (on some hosts) the dev/API server still warming up. The original
+    // code treated ANY failure here — a real "you're not logged in" 401,
+    // or a transient network hiccup/CORS preflight timeout/DNS blip that
+    // has nothing to do with the session — identically: clearSession() and
+    // drop to /login. That second case is a false logout.
+    //
+    // Fix: only treat a genuine 401/403 from the server as "not logged in".
+    // Anything else (no response at all, 5xx, network error) is retried
+    // once after a short delay before giving up, and even then we do NOT
+    // nuke a session the server never actually rejected — we just stop
+    // initializing and let the normal per-request 401 handling in api.ts
+    // take over from here.
+    async function attemptRestore(): Promise<'ok' | 'unauthenticated' | 'transient-failure'> {
       try {
-        api.post('/audit/log', {
-          user_id: user.id,
-          user_name: user.name,
-          user_email: user.email,
-          action: 'LOGOUT_SUCCESS',
-          entity: 'USER_AUTH',
-          entity_id: user.id,
-          role: user.accountType,
-          description: `User "${user.name}" (${user.email}) signed out successfully`,
-        });
-      } catch (e) {}
+        const token = await refreshAccessToken();
+        if (!token) {
+          // refreshAccessToken() distinguishes a real server rejection
+          // (401/403 — cookie missing/expired/revoked) from a transient
+          // failure (network error, timeout, 5xx). Only the former means
+          // "no session"; the latter should be retried, not treated as a
+          // logout.
+          return wasLastRefreshFailureAuthRejection() ? 'unauthenticated' : 'transient-failure';
+        }
+        if (cancelled) return 'ok';
+
+        const meResponse = await authApi.get('/auth/me');
+        if (cancelled) return 'ok';
+
+        const profile = meResponse.data?.data || meResponse.data;
+        if (profile?.id) {
+          setCurrentUser(profile);
+          setSessionId('sess_' + profile.id.slice(0, 12));
+          setRememberMe(true);
+          return 'ok';
+        }
+        // Got a 200 with no usable profile body — treat as unauthenticated
+        // rather than silently leaving the UI half-initialized.
+        return 'unauthenticated';
+      } catch (err: any) {
+        const status = err?.response?.status;
+        if (status === 401 || status === 403) {
+          return 'unauthenticated';
+        }
+        // No status at all (network error, timeout, CORS failure) or a
+        // 5xx from the server — this is NOT proof the session is invalid.
+        return 'transient-failure';
+      }
     }
 
-    localStorage.removeItem(SESSION_KEY);
-    localStorage.removeItem('yinglima_auth_user');
-    sessionStorage.removeItem(SESSION_KEY);
-    setUser(null);
+    async function restore() {
+      let outcome = await attemptRestore();
+
+      // One short, silent retry for transient failures only — covers the
+      // common hard-refresh case where the API server/cookie jar hasn't
+      // settled yet. We do not retry 'unauthenticated', since that's a
+      // real answer from the server, not a fluke.
+      if (outcome === 'transient-failure' && !cancelled) {
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        if (!cancelled) {
+          outcome = await attemptRestore();
+        }
+      }
+
+      if (cancelled) return;
+
+      if (outcome === 'unauthenticated') {
+        clearSession();
+      }
+      // On persistent 'transient-failure' we deliberately do NOT clear an
+      // existing session — there may not be one to clear anyway on a cold
+      // load, but if there is (e.g. this effect re-ran after a flaky
+      // reconnect), we leave it alone rather than logging the user out
+      // for a problem that wasn't theirs.
+
+      setIsInitializing(false);
+    }
+
+    restore();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const login = useCallback(
+    async (email: string, password: string, remember: boolean) => {
+      try {
+        const response = await authApi.post('/auth/login', {
+          email: email.trim(),
+          password,
+          rememberMe: remember,
+        });
+        const result = response.data?.data || response.data;
+
+        setAccessToken(result.accessToken);
+        setCurrentUser(result.user);
+        setSessionId(result.sessionId || null);
+        setRememberMe(remember);
+
+        navigate('/dashboard', { replace: true });
+        return { ok: true };
+      } catch (err: any) {
+        const message =
+          err?.response?.data?.message ||
+          err?.response?.data?.error?.message ||
+          'Invalid email or password.';
+        return { ok: false, error: Array.isArray(message) ? message[0] : message };
+      }
+    },
+    [navigate],
+  );
+
+  const logout = useCallback(() => {
+    authApi.post('/auth/logout', { sessionId }).catch(() => { });
+    clearSession();
     setSessionId(null);
     setRememberMe(false);
-
     navigate('/login', { replace: true });
-  };
+  }, [navigate, sessionId]);
 
-  const refreshUser = () => {
-    if (!user) return;
-    const fresh = members.find((m) => m.id === user.id);
-    if (fresh) {
-      const authUser = toAuthUser(fresh);
-      setUser(authUser);
-      localStorage.setItem('yinglima_auth_user', JSON.stringify(authUser));
+  const refreshUser = useCallback(async () => {
+    try {
+      const meResponse = await authApi.get('/auth/me');
+      const profile = meResponse.data?.data || meResponse.data;
+      if (profile?.id) {
+        setCurrentUser(profile);
+      }
+    } catch {
+      // If this fails because the token expired mid-session, the response
+      // interceptor in lib/api.ts already tried a silent refresh for us on
+      // any /api/v1 call; /auth/me itself is unauthenticated-tolerant here
+      // since AuthController#me requires the JwtAuthGuard, so a genuine
+      // failure means the session really is gone.
     }
-  };
+  }, []);
 
   return (
     <AuthContext.Provider
@@ -261,7 +257,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     >
       {children}
 
-      {/* FLOATING NETWORK DISCONNECT INDICATOR (PRESERVES USER LOGGED IN STATE) */}
       {!isOnline && (
         <div className="fixed bottom-4 right-4 z-[99999] bg-amber-500 text-white font-bold text-xs px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-bounce border border-amber-300">
           <WifiOff size={20} className="shrink-0" />

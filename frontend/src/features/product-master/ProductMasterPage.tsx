@@ -16,6 +16,8 @@ import {
   saveFieldOverrides, getEffectiveFields, FieldDef,
 } from './fieldConfig';
 import { productApi } from '../../api/productApi';
+import { DuplicateToast, DuplicateNotification } from '../../components/common/DuplicateToast';
+import { Pagination } from '../../components/common/Pagination';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -356,20 +358,22 @@ export const ProductMasterPage: React.FC = () => {
 
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    async function loadApiProducts() {
-      setIsLoading(true);
-      const data = await productApi.getProducts();
-      if (data && Array.isArray(data)) {
-        setProducts(data);
-      }
-      setIsLoading(false);
+  const loadApiProducts = async () => {
+    setIsLoading(true);
+    const data = await productApi.getProducts();
+    if (data && Array.isArray(data)) {
+      setProducts(data);
     }
+    setIsLoading(false);
+  };
+
+  useEffect(() => {
     loadApiProducts();
   }, []);
 
   // Shared toast / alerts
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+  const [duplicateToast, setDuplicateToast] = useState<DuplicateNotification | null>(null);
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => setToast({ msg, type });
   const [ruleAlert, setRuleAlert] = useState<string | null>(null);
 
@@ -388,7 +392,7 @@ export const ProductMasterPage: React.FC = () => {
   const [filterUOM, setFilterUOM] = useState('');
 
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 10;
+  const [pageSize, setPageSize] = useState(100);
 
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
   const [confirmBulkDel, setConfirmBulkDel] = useState(false);
@@ -464,8 +468,8 @@ export const ProductMasterPage: React.FC = () => {
     });
   }, [filtered, sortField, sortDirection]);
 
-  const totalPages = Math.max(1, Math.ceil(sortedFiltered.length / PAGE_SIZE));
-  const paginated = sortedFiltered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(sortedFiltered.length / pageSize));
+  const paginated = sortedFiltered.slice((page - 1) * pageSize, page * pageSize);
 
   const renderSortHeader = (label: string, field: string) => {
     const isActive = sortField === field;
@@ -546,7 +550,7 @@ export const ProductMasterPage: React.FC = () => {
 
     try {
       await productApi.deleteProduct(id);
-      setProducts(prev => prev.filter(x => x.id !== id));
+      await loadApiProducts();
       showToast(`Product "${p.name_tally}" deleted successfully.`);
     } catch (err: any) {
       const errMsg = err?.response?.data?.message || err?.message || 'Product cannot be deleted.';
@@ -609,10 +613,18 @@ export const ProductMasterPage: React.FC = () => {
     if (isFieldVisible('hsn_code') && !form.hsn_code) errs.hsn_code = 'HSN Code is required.';
     const dup = products.find(p =>
       p.id !== editingId &&
-      p.name_tally.toLowerCase() === form.name_tally.trim().toLowerCase() &&
-      p.product_code.toLowerCase() === form.product_code.trim().toLowerCase()
+      (p.name_tally.toLowerCase() === form.name_tally.trim().toLowerCase() ||
+       p.product_code.toLowerCase() === form.product_code.trim().toLowerCase())
     );
-    if (dup) errs.dup = `Duplicate: a product with the same Name + Code already exists (${dup.product_code}).`;
+    if (dup) {
+      errs.dup = `Duplicate: a product with the same Name or Code already exists (${dup.product_code}).`;
+      setDuplicateToast({
+        title: 'Duplicate Product Prevented',
+        count: 1,
+        items: [`Product: "${form.name_tally}" (Code: ${form.product_code})`],
+        message: `Product code "${form.product_code}" or product name already exists in catalog.`
+      });
+    }
     setFormErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -643,24 +655,29 @@ export const ProductMasterPage: React.FC = () => {
     setProdView('edit');
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) return;
-    if (editingId) {
-      setProducts(prev => prev.map(p => p.id === editingId ? {
-        ...p, ...form, pkg_cbm: computedCBM, modified_by: 'Admin', modified_date: now(),
-        audit: [...p.audit, { action: 'Updated', user: 'Admin', date: now() }],
-      } : p));
-      showToast('Product updated successfully.');
-    } else {
-      const newP: Product = {
-        id: `p${Date.now()}`, ...form, pkg_cbm: computedCBM,
-        current_stock: 0, created_by: 'Admin', created_date: now(),
-        modified_by: 'Admin', modified_date: now(),
-        audit: [{ action: 'Created', user: 'Admin', date: now() }],
-      };
-      setProducts(prev => [newP, ...prev]);
-      showToast('Product created successfully.');
+    try {
+      if (editingId) {
+        await productApi.updateProduct(editingId, form);
+      } else {
+        await productApi.createProduct(form);
+      }
+      await loadApiProducts();
+      showToast('Product saved to Supabase DB successfully.');
+    } catch (err: any) {
+      const errMsg = err?.response?.data?.message || err?.message || '';
+      if (errMsg.toLowerCase().includes('already exists') || err?.response?.status === 400 || err?.response?.status === 409) {
+        setDuplicateToast({
+          title: 'Duplicate Product Blocked by Backend DB',
+          count: 1,
+          items: [`${form.name_tally} (${form.product_code})`],
+          message: Array.isArray(errMsg) ? errMsg.join(', ') : errMsg || `Product code or name already exists in Supabase DB.`,
+        });
+        return;
+      }
+      await loadApiProducts();
     }
     setProdView('list');
   };
@@ -1054,6 +1071,9 @@ export const ProductMasterPage: React.FC = () => {
         </div>
       )}
 
+      {/* ── Upper-Left Duplicate Toast ───────────────────────────────── */}
+      <DuplicateToast toast={duplicateToast} onClose={() => setDuplicateToast(null)} />
+
       {/* ── Global Rule Alert ───────────────────────────────────────────── */}
       {ruleAlert && (
         <div className="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded-xl flex items-start gap-3 text-xs shadow-sm">
@@ -1316,31 +1336,15 @@ export const ProductMasterPage: React.FC = () => {
                   </table>
                 </div>
 
-                {/* Pagination */}
-                <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 bg-slate-50">
-                  <span className="text-xs text-slate-500">
-                    Showing {paginated.length > 0 ? (page - 1) * PAGE_SIZE + 1 : 0}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length} records
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="p-1.5 rounded border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 cursor-pointer text-slate-600">
-                      <ChevronLeft size={14} />
-                    </button>
-                    {Array.from({ length: totalPages }, (_, i) => i + 1).filter(n => n === 1 || n === totalPages || Math.abs(n - page) <= 1).reduce((acc: (number | string)[], n, i, arr) => {
-                      if (i > 0 && n - (arr[i - 1] as number) > 1) acc.push('…');
-                      acc.push(n);
-                      return acc;
-                    }, []).map((n, i) => (
-                      typeof n === 'string'
-                        ? <span key={`el-${i}`} className="px-2 text-slate-400 text-xs">…</span>
-                        : <button key={n} onClick={() => setPage(n as number)} className={`w-7 h-7 rounded text-xs font-semibold cursor-pointer ${page === n ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
-                            {n}
-                          </button>
-                    ))}
-                    <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="p-1.5 rounded border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 cursor-pointer text-slate-600">
-                      <ChevronRight size={14} />
-                    </button>
-                  </div>
-                </div>
+                {/* Pagination Footer */}
+                <Pagination
+                  currentPage={page}
+                  totalItems={sortedFiltered.length}
+                  pageSize={pageSize}
+                  onPageChange={setPage}
+                  onPageSizeChange={setPageSize}
+                  pageSizeOptions={[10, 25, 50, 100]}
+                />
               </div>
               )}
             </div>

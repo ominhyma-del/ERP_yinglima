@@ -114,25 +114,36 @@ export const inquiryApi = {
     }
   },
 
-  // Delete Line Item
-  async deleteInquiryItem(id: string) {
-    try {
-      const response = await api.delete(`/inquiries/items/${id}`);
-      return response.data;
-    } catch (error) {
-      console.warn('API error deleting inquiry item:', error);
-      return null;
-    }
+  // Delete Line Item.
+  // BUG FIX: previously caught the error and returned null, hiding the
+  // backend's block message (e.g. item is Approved / already Tally-posted).
+  // Re-throw so the caller's try/catch can react to the real reason.
+  // Pass force:true to override the block after explicit user confirmation.
+  async deleteInquiryItem(id: string, force?: boolean) {
+    const response = await api.delete(`/inquiries/items/${id}`, { params: { force: force ? 'true' : undefined } });
+    return response.data;
   },
 
-  // Delete Consignment
-  async deleteConsignment(id: string) {
-    try {
-      const response = await api.delete(`/inquiries/consignments/${id}`);
-      return response.data;
-    } catch (error) {
-      console.warn('API error deleting consignment:', error);
-      return null;
-    }
+  // Delete Consignment. Same fix + force override as deleteInquiryItem.
+  async deleteConsignment(id: string, force?: boolean) {
+    const response = await api.delete(`/inquiries/consignments/${id}`, { params: { force: force ? 'true' : undefined } });
+    return response.data;
+  },
+
+  // Bulk delete selected consignments.
+  // Returns { deleted: [{id,name}], blocked: [{id,name,reasons}], notFound: [id] }.
+  // Pass forceIds (a subset of ids) + force:true to override specific
+  // blocked records after the user confirms via the "Skip / Force Delete" popup.
+  async bulkDeleteConsignments(ids: string[], options?: { force?: boolean; forceIds?: string[] }) {
+    const response = await api.post('/inquiries/consignments/bulk-delete', {
+      ids,
+      force: options?.force,
+      forceIds: options?.forceIds,
+    });
+    return response.data as {
+      deleted: { id: string; name: string }[];
+      blocked: { id: string; name: string; reasons: string[] }[];
+      notFound: string[];
+    };
   },
 };

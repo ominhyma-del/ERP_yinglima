@@ -106,6 +106,12 @@ export class CreateSupplierDto {
   @IsString()
   secondary_website?: string;
 
+  @ApiPropertyOptional({ type: [String], example: ['john@zhejiangpack.com', 'sales@zhejiangpack.com'], description: 'Company-level "Email ID (multiple emails)" field from the spec.' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  emails?: string[];
+
   @ApiPropertyOptional({ enum: PartyGrade })
   @IsOptional()
   @IsEnum(PartyGrade)

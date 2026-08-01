@@ -1,11 +1,34 @@
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import { PrismaService } from '../../core/database/prisma.service';
+import { Prisma } from '@prisma/client';
+import { TenantContext } from '../../core/decorators/tenant.decorator';
+
+// Any Prisma client capable of writing an audit log — the shared pooled
+// PrismaService, or an active Prisma.TransactionClient. Accepting either lets
+// callers keep the audit write in the SAME transaction as the business change
+// it's recording, so the two can never disagree (e.g. the business write
+// succeeds but the audit entry silently fails, or vice versa under a crash).
+type DbClient = PrismaService | Prisma.TransactionClient;
+
+export interface AuditRecordInput {
+  /** e.g. 'CREATE', 'UPDATE', 'DELETE', 'STATUS_CHANGE' */
+  action: string;
+  /** e.g. 'Buyer', 'Supplier', 'Product', 'InquiryConsignment' */
+  entity: string;
+  entityId: string;
+  /** Row/object state before the change. Omit for CREATE. */
+  before?: Record<string, any> | null;
+  /** Row/object state after the change. Omit for DELETE. */
+  after?: Record<string, any> | null;
+  /** Optional human-readable summary shown in the audit UI. */
+  description?: string;
+}
 
 @Injectable()
 export class AuditService implements OnModuleInit {
   private readonly logger = new Logger(AuditService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   async onModuleInit() {
     try {
@@ -49,6 +72,52 @@ export class AuditService implements OnModuleInit {
     }
   }
 
+  /**
+   * PRIMARY ENTRY POINT — call this from any module's service method whenever a
+   * user creates, updates, deletes, or otherwise changes a business record.
+   *
+   * Attribution (who did it) is taken from `tenant` (populated server-side from
+   * the verified JWT on every request — see TenantContext), never from
+   * client-supplied input, so an audit entry can never be forged to say a
+   * different user made a change.
+   *
+   * Pass `db` (the active `tx` client) when this is called from inside an
+   * existing `TransactionService.run()` block, so the audit row commits or
+   * rolls back atomically together with the business change it documents —
+   * you never end up with a change that happened but wasn't logged, or a
+   * logged change that never actually committed.
+   *
+   * This method deliberately does NOT swallow errors the way the legacy
+   * createLog() below does: if you're calling this from inside a transaction
+   * and the audit write fails, that failure SHOULD roll back the whole
+   * transaction, because a business change that can't be recorded is exactly
+   * the situation this whole feature exists to prevent.
+   */
+  async record(input: AuditRecordInput, tenant: TenantContext, db: DbClient = this.prisma) {
+    await db.auditLog.create({
+      data: {
+        company_id: tenant.companyId,
+        user_id: tenant.userId,
+        user_name: undefined, // resolved via the `user` relation in getLogs(); avoids a second lookup here
+        entity_name: input.entity,
+        entity_id: input.entityId,
+        action: input.action,
+        before_state: (input.before as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+        after_state:
+          (input.after as Prisma.InputJsonValue) ??
+          ({ description: input.description || input.action } as Prisma.InputJsonValue),
+        ip_address: null,
+      },
+    });
+  }
+
+  /**
+   * @deprecated Legacy free-form logger, kept only because the User module's
+   * onboarding/offboarding flows (user.service.ts) still call it directly with
+   * `this.prisma.auditLog.create(...)` inline rather than through here. New
+   * code should use `record()` above instead, which enforces server-derived
+   * attribution and typed entity/action fields.
+   */
   async createLog(logData: {
     user_id?: string;
     user_name?: string;
@@ -110,7 +179,13 @@ export class AuditService implements OnModuleInit {
         orderBy: { created_at: 'desc' },
         take: 500,
         include: {
-          user: true,
+          // Only select the specific safe fields we need for display — never
+          // spread the full `user` relation into the response, which would
+          // otherwise leak password_hash and other sensitive columns to
+          // anyone with access to this endpoint.
+          user: {
+            select: { email: true, full_name: true, role: true },
+          },
         },
       });
 
@@ -139,6 +214,8 @@ export class AuditService implements OnModuleInit {
           ip_address: l.ip_address || '127.0.0.1 (Local Session)',
           status: 'SUCCESS',
           description: desc,
+          before_state: l.before_state,
+          after_state: l.after_state,
         };
       });
     } catch (err) {

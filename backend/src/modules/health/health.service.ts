@@ -22,7 +22,20 @@ export class HealthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly queueService: TaskQueueService,
-  ) {}
+  ) { }
+
+  // Lightweight check for the public liveness endpoint — confirms the app can
+  // reach the database, without exposing anything about resource usage,
+  // uptime, or environment. Deliberately separate from checkHealth() below,
+  // which is now gated behind admin auth.
+  async isDatabaseReachable(): Promise<boolean> {
+    try {
+      await this.prisma.$queryRaw`SELECT 1`;
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
   async checkHealth(): Promise<HealthCheckResponse> {
     // 1. Application status

@@ -1,6 +1,20 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { PrismaService } from '../../core/database/prisma.service';
 
+// Single source of truth for which task_type values are real, handled job
+// types — kept in sync with the `switch` in executeTaskHandler() below. The
+// controller validates incoming enqueue requests against this list instead
+// of accepting any string, so an arbitrary/unrecognized task_type is
+// rejected up front rather than silently falling through to the no-op
+// `default` case after already being written to the persistent queue table.
+export const ALLOWED_TASK_TYPES = [
+  'BULK_SUPPLIER_IMPORT',
+  'BULK_BUYER_IMPORT',
+  'BULK_PRODUCT_IMPORT',
+  'BULK_INQUIRY_IMPORT',
+  'AUDIT_TRACE_FLUSH',
+] as const;
+
 export interface EnqueueTaskDto {
   task_type: string;
   payload: any;
@@ -13,7 +27,7 @@ export class TaskQueueService implements OnModuleInit, OnModuleDestroy {
   private workerInterval: NodeJS.Timeout | null = null;
   private isProcessing = false;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   onModuleInit() {
     this.logger.log('Initializing Custom In-Memory & Database Persistent Queue System...');

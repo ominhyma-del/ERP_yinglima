@@ -1,6 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../core/database/prisma.service';
 import { SecurityException } from '../../core/exceptions/security.exception';
+
+// Any Prisma client capable of running `user` queries — either the shared
+// PrismaService singleton, or a Prisma.TransactionClient handed in by a
+// caller that is already inside a transaction. Accepting this type lets
+// every method below safely participate in an ambient transaction instead
+// of always reaching for a brand-new pooled connection.
+type DbClient = PrismaService | Prisma.TransactionClient;
 
 @Injectable()
 export class AccountProtectionService {
@@ -11,7 +19,7 @@ export class AccountProtectionService {
   // Lockout duration in milliseconds (15 minutes)
   private readonly lockoutDurationMs = 15 * 60 * 1000;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * Verifies if account is currently locked due to temporary failed attempt limit or permanent admin ban.
@@ -39,8 +47,16 @@ export class AccountProtectionService {
 
   /**
    * Increments failed attempt counter upon invalid password. Triggers 15-minute lock upon reaching limit.
+   *
+   * IMPORTANT: accepts an optional `db` client. When this is called from inside an
+   * ongoing `TransactionService.run()` block, the caller MUST pass the active `tx`
+   * client here. Falling back to `this.prisma` (a fresh pooled connection) while an
+   * outer transaction is still holding a row lock on this same `user` row causes
+   * that outer transaction and this call to wait on each other forever — a
+   * guaranteed self-deadlock under Supabase's pgbouncer transaction-mode pooler,
+   * which only resolves once the transaction timeout fires and rolls everything back.
    */
-  async handleFailedLoginAttempt(user: any): Promise<void> {
+  async handleFailedLoginAttempt(user: any, db: DbClient = this.prisma): Promise<void> {
     if (!user) return;
 
     const attempts = (user.failed_login_attempts || 0) + 1;
@@ -51,7 +67,7 @@ export class AccountProtectionService {
       this.logger.warn(`Account ${user.email} temporarily locked for 15 minutes after ${attempts} failed attempts.`);
     }
 
-    await this.prisma.user.update({
+    await db.user.update({
       where: { id: user.id },
       data: {
         failed_login_attempts: attempts,
@@ -62,9 +78,12 @@ export class AccountProtectionService {
 
   /**
    * Resets failed login counters upon successful authentication.
+   *
+   * IMPORTANT: same rule as `handleFailedLoginAttempt` above — pass the active
+   * `tx` client here whenever this runs inside `TransactionService.run()`.
    */
-  async resetFailedAttempts(userId: string): Promise<void> {
-    await this.prisma.user.update({
+  async resetFailedAttempts(userId: string, db: DbClient = this.prisma): Promise<void> {
+    await db.user.update({
       where: { id: userId },
       data: {
         failed_login_attempts: 0,

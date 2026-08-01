@@ -1,14 +1,20 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../core/database/prisma.service';
+import { TransactionService } from '../../core/database/transaction.service';
 import { TenantContext } from '../../core/decorators/tenant.decorator';
 import { CreateInquiryItemDto, BulkShiftItemsDto, BulkTallyPostDto } from './dto/create-inquiry-item.dto';
-import { InquiryItemStatus, InquiryStatus, TallyPostStatus } from '@prisma/client';
+import { InquiryItemStatus, InquiryStatus, TallyPostStatus, Prisma } from '@prisma/client';
+import { AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class InquiryService {
   private readonly logger = new Logger(InquiryService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly txService: TransactionService,
+    private readonly audit: AuditService,
+  ) { }
 
   // =========================================================================
   // LAYER 1: Company & Consignment Summary Overview
@@ -165,6 +171,20 @@ export class InquiryService {
       });
     }
 
+    // 3.5. Backend Duplication Check (Item product in same consignment)
+    const existingItem = await this.prisma.inquiryItem.findFirst({
+      where: {
+        consignment_id: consignment.id,
+        product_id: product.id,
+      },
+    });
+
+    if (existingItem) {
+      throw new BadRequestException(
+        `Inquiry item "${product.name_tally}" already exists under consignment "${dto.consignment_code}" in Supabase DB.`,
+      );
+    }
+
     // 4. Create Inquiry Line Item
     const item = await this.prisma.inquiryItem.create({
       data: {
@@ -183,6 +203,17 @@ export class InquiryService {
 
     // 5. Recalculate Consignment Totals
     await this.recalculateConsignmentTotals(consignment.id);
+
+    await this.audit.record(
+      {
+        action: 'CREATE',
+        entity: 'InquiryItem',
+        entityId: item.id,
+        after: item,
+        description: `Added item (qty ${item.quantity}) to consignment "${consignment.consignment_code}"`,
+      },
+      tenant,
+    );
 
     return item;
   }
@@ -203,6 +234,18 @@ export class InquiryService {
     });
 
     await this.recalculateConsignmentTotals(item.consignment_id);
+
+    await this.audit.record(
+      {
+        action: 'UPDATE',
+        entity: 'InquiryItem',
+        entityId: itemId,
+        before: { quantity: item.quantity },
+        after: { quantity: updated.quantity },
+        description: `Changed inquiry item quantity from ${item.quantity} to ${updated.quantity}`,
+      },
+      tenant,
+    );
 
     return updated;
   }
@@ -243,6 +286,17 @@ export class InquiryService {
 
     await this.recalculateConsignmentTotals(targetConsignment.id);
 
+    await this.audit.record(
+      {
+        action: 'BULK_SHIFT',
+        entity: 'InquiryItem',
+        entityId: targetConsignment.id,
+        after: { item_ids: dto.item_ids, target_consignment_code: dto.target_consignment_code },
+        description: `Shifted ${dto.item_ids.length} item(s) to consignment "${dto.target_consignment_code}"`,
+      },
+      tenant,
+    );
+
     return { message: `Shifted ${dto.item_ids.length} items to consignment ${dto.target_consignment_code}` };
   }
 
@@ -258,6 +312,17 @@ export class InquiryService {
         tally_post_status: TallyPostStatus.POSTED,
       },
     });
+
+    await this.audit.record(
+      {
+        action: 'BULK_TALLY_POST',
+        entity: 'InquiryItem',
+        entityId: dto.item_ids[0] || '00000000-0000-0000-0000-000000000000',
+        after: { item_ids: dto.item_ids, tally_post_status: 'POSTED' },
+        description: `Marked ${dto.item_ids.length} item(s) as Tally Posted`,
+      },
+      tenant,
+    );
 
     return { message: `Successfully updated Tally Post Status to POSTED for ${dto.item_ids.length} items.` };
   }
@@ -287,10 +352,40 @@ export class InquiryService {
 
     await this.updateConsignmentAggregateStatus(item.consignment_id);
 
+    await this.audit.record(
+      {
+        action: 'APPROVE',
+        entity: 'InquiryItem',
+        entityId: itemId,
+        before: { item_status: existing.item_status },
+        after: { item_status: item.item_status },
+        description: `Approved inquiry item ${itemId}`,
+      },
+      tenant,
+    );
+
     return item;
   }
 
-  async deleteItem(itemId: string, tenant: TenantContext) {
+  /**
+   * Delete-eligibility rule for a single inquiry item: an item that has
+   * already been Approved or posted to Tally represents committed
+   * business data (it may already be reflected in accounting), so it is
+   * NOT safe to silently delete like a still-Proposed line. Returns the
+   * blocking reasons — empty means deletable.
+   */
+  private getItemDeleteBlockingReasons(item: { item_status: InquiryItemStatus; tally_post_status: TallyPostStatus }): string[] {
+    const reasons: string[] = [];
+    if (item.item_status === InquiryItemStatus.APPROVED) {
+      reasons.push('Item Status is "APPROVED" (deleting an approved item can desync it from downstream records).');
+    }
+    if (item.tally_post_status === TallyPostStatus.POSTED) {
+      reasons.push('Tally Entry is already "POSTED" for this item (deleting it will not reverse the Tally entry).');
+    }
+    return reasons;
+  }
+
+  async deleteItem(itemId: string, tenant: TenantContext, options?: { force?: boolean }) {
     const existing = await this.prisma.inquiryItem.findFirst({
       where: {
         id: itemId,
@@ -304,43 +399,204 @@ export class InquiryService {
       throw new NotFoundException(`Inquiry item ${itemId} not found.`);
     }
 
+    const blockingReasons = this.getItemDeleteBlockingReasons(existing);
+    if (blockingReasons.length > 0 && !options?.force) {
+      throw new BadRequestException(
+        `Cannot delete this inquiry item. Mandatory conditions required to delete:\n• ` +
+        blockingReasons.join('\n• ') +
+        '\n\nIf you understand the consequences, you can force-delete this item.',
+      );
+    }
+
     const consignmentId = existing.consignment_id;
-    await this.prisma.inquiryItem.delete({
-      where: { id: itemId },
+
+    return this.txService.run(async (tx) => {
+      await tx.inquiryItem.delete({
+        where: { id: itemId },
+      });
+
+      await this.recalculateConsignmentTotals(consignmentId, tx);
+      await this.updateConsignmentAggregateStatus(consignmentId, tx);
+
+      // This is a HARD delete (row is permanently gone from the DB), so the
+      // audit log's `before` snapshot is the only surviving record of what
+      // this item was — capture the full row, not just an id.
+      await this.audit.record(
+        {
+          action: 'DELETE',
+          entity: 'InquiryItem',
+          entityId: itemId,
+          before: existing,
+          description: options?.force && blockingReasons.length > 0
+            ? `Force-deleted inquiry item ${itemId} (qty ${existing.quantity}) despite: ${blockingReasons.join('; ')}`
+            : `Deleted inquiry item ${itemId} (qty ${existing.quantity}) from consignment`,
+        },
+        tenant,
+        tx,
+      );
+
+      return { message: 'Inquiry item deleted successfully.' };
     });
-
-    await this.recalculateConsignmentTotals(consignmentId);
-    await this.updateConsignmentAggregateStatus(consignmentId);
-
-    return { message: 'Inquiry item deleted successfully.' };
   }
 
-  async deleteConsignment(consignmentId: string, tenant: TenantContext) {
+  /**
+   * Delete-eligibility rule for a whole consignment: blocked if ANY of its
+   * items are Approved or already Tally-posted — same reasoning as
+   * getItemDeleteBlockingReasons, applied at the consignment level.
+   */
+  private getConsignmentDeleteBlockingReasons(items: { item_status: InquiryItemStatus; tally_post_status: TallyPostStatus }[]): string[] {
+    const reasons: string[] = [];
+    const approvedCount = items.filter((i) => i.item_status === InquiryItemStatus.APPROVED).length;
+    const postedCount = items.filter((i) => i.tally_post_status === TallyPostStatus.POSTED).length;
+
+    if (approvedCount > 0) {
+      reasons.push(`Contains ${approvedCount} item(s) with Status "APPROVED".`);
+    }
+    if (postedCount > 0) {
+      reasons.push(`Contains ${postedCount} item(s) already "POSTED" to Tally.`);
+    }
+    return reasons;
+  }
+
+  async deleteConsignment(consignmentId: string, tenant: TenantContext, options?: { force?: boolean }) {
     const existing = await this.prisma.inquiryConsignment.findFirst({
       where: {
         id: consignmentId,
         company_id: tenant.companyId,
       },
+      include: { items: true },
     });
 
     if (!existing) {
       throw new NotFoundException(`Consignment ${consignmentId} not found.`);
     }
 
-    // Delete items first then consignment
-    await this.prisma.inquiryItem.deleteMany({
-      where: { consignment_id: consignmentId },
-    });
+    const blockingReasons = this.getConsignmentDeleteBlockingReasons(existing.items);
+    if (blockingReasons.length > 0 && !options?.force) {
+      throw new BadRequestException(
+        `Cannot delete consignment "${existing.consignment_code}". Mandatory conditions required to delete:\n• ` +
+        blockingReasons.join('\n• ') +
+        '\n\nIf you understand the consequences, you can force-delete this consignment.',
+      );
+    }
 
-    await this.prisma.inquiryConsignment.delete({
-      where: { id: consignmentId },
-    });
+    // Wrapped in a transaction: this is a cascading hard delete (consignment +
+    // all its items) followed by an audit write. Without a transaction, a
+    // crash partway through could delete the items but leave the consignment
+    // row behind, or complete the deletes but lose the audit record — either
+    // way, an inconsistent, hard-to-diagnose state with no clean recovery.
+    // Wrapping it means it's all-or-nothing: either the full delete AND its
+    // audit trail commit together, or nothing changes at all.
+    return this.txService.run(async (tx) => {
+      // Capture every item that's about to be permanently deleted BEFORE the
+      // cascade runs. This is the only place this data will ever exist once
+      // the delete completes — a hard delete of a whole consignment with its
+      // items and no snapshot taken first would be unrecoverable and
+      // untraceable.
+      const itemsBeingDeleted = await tx.inquiryItem.findMany({
+        where: { consignment_id: consignmentId },
+      });
 
-    return { message: 'Consignment deleted successfully.' };
+      // Delete items first then consignment
+      await tx.inquiryItem.deleteMany({
+        where: { consignment_id: consignmentId },
+      });
+
+      await tx.inquiryConsignment.delete({
+        where: { id: consignmentId },
+      });
+
+      await this.audit.record(
+        {
+          action: 'DELETE',
+          entity: 'InquiryConsignment',
+          entityId: consignmentId,
+          before: { consignment: existing, items: itemsBeingDeleted },
+          description: options?.force && blockingReasons.length > 0
+            ? `Force-deleted consignment "${existing.consignment_code}" and its ${itemsBeingDeleted.length} item(s) despite: ${blockingReasons.join('; ')}`
+            : `Deleted consignment "${existing.consignment_code}" and its ${itemsBeingDeleted.length} item(s)`,
+        },
+        tenant,
+        tx,
+      );
+
+      return { message: 'Consignment deleted successfully.' };
+    });
   }
 
-  private async recalculateConsignmentTotals(consignmentId: string) {
-    const items = await this.prisma.inquiryItem.findMany({
+  /**
+   * Bulk delete for the Layer-1 "Delete Selected" consignment list action.
+   * Mirrors SupplierService.bulkRemove / BuyerService.bulkRemove: every id
+   * is checked with getConsignmentDeleteBlockingReasons; failures are
+   * reported back instead of silently skipped or silently allowed.
+   * force/forceIds lets the frontend re-submit an explicit user-confirmed
+   * override for specific blocked consignments.
+   */
+  async bulkDeleteConsignments(
+    ids: string[],
+    tenant: TenantContext,
+    options?: { force?: boolean; forceIds?: string[] },
+  ) {
+    const uniqueIds = Array.from(new Set(ids));
+    const consignments = await this.prisma.inquiryConsignment.findMany({
+      where: {
+        id: { in: uniqueIds },
+        company_id: tenant.companyId,
+      },
+      include: { items: true },
+    });
+
+    const foundIds = new Set(consignments.map((c) => c.id));
+    const forceSet = new Set(options?.forceIds || []);
+
+    const deleted: { id: string; name: string }[] = [];
+    const blocked: { id: string; name: string; reasons: string[] }[] = [];
+    const notFound = uniqueIds.filter((id) => !foundIds.has(id));
+
+    return this.txService.run(async (tx) => {
+      for (const consignment of consignments) {
+        const blockingReasons = this.getConsignmentDeleteBlockingReasons(consignment.items);
+        const isForced = options?.force && forceSet.has(consignment.id);
+
+        if (blockingReasons.length > 0 && !isForced) {
+          blocked.push({ id: consignment.id, name: consignment.consignment_code, reasons: blockingReasons });
+          continue;
+        }
+
+        await tx.inquiryItem.deleteMany({ where: { consignment_id: consignment.id } });
+        await tx.inquiryConsignment.delete({ where: { id: consignment.id } });
+
+        await this.audit.record(
+          {
+            action: 'DELETE',
+            entity: 'InquiryConsignment',
+            entityId: consignment.id,
+            before: consignment,
+            description: isForced
+              ? `Force-deleted consignment "${consignment.consignment_code}" and its ${consignment.items.length} item(s) (bulk delete, rule override confirmed by user)`
+              : `Deleted consignment "${consignment.consignment_code}" and its ${consignment.items.length} item(s) (bulk delete)`,
+          },
+          tenant,
+          tx,
+        );
+
+        deleted.push({ id: consignment.id, name: consignment.consignment_code });
+      }
+
+      return { deleted, blocked, notFound };
+    });
+  }
+
+  // Accepts an optional `db` client (either the pooled PrismaService, or an
+  // active Prisma.TransactionClient). When called from inside a
+  // `txService.run()` block, the caller MUST pass the active `tx` here —
+  // otherwise this would reach for a second pooled connection while the
+  // outer transaction still holds a lock on the same consignment row, which
+  // is exactly the cross-connection self-deadlock pattern fixed in
+  // AuthService.login() (see account-protection.service.ts for the full
+  // writeup of why this matters under Supabase's pgbouncer pooler).
+  private async recalculateConsignmentTotals(consignmentId: string, db: PrismaService | Prisma.TransactionClient = this.prisma) {
+    const items = await db.inquiryItem.findMany({
       where: { consignment_id: consignmentId },
       include: { product: true },
     });
@@ -357,7 +613,7 @@ export class InquiryService {
       totalWeight += qty * unitGrossWeight;
     }
 
-    await this.prisma.inquiryConsignment.update({
+    await db.inquiryConsignment.update({
       where: { id: consignmentId },
       data: {
         total_cbm: totalCbm,
@@ -366,8 +622,8 @@ export class InquiryService {
     });
   }
 
-  private async updateConsignmentAggregateStatus(consignmentId: string) {
-    const items = await this.prisma.inquiryItem.findMany({
+  private async updateConsignmentAggregateStatus(consignmentId: string, db: PrismaService | Prisma.TransactionClient = this.prisma) {
+    const items = await db.inquiryItem.findMany({
       where: { consignment_id: consignmentId },
     });
 
@@ -382,7 +638,7 @@ export class InquiryService {
       overallStatus = InquiryStatus.PARTIALLY_APPROVED;
     }
 
-    await this.prisma.inquiryConsignment.update({
+    await db.inquiryConsignment.update({
       where: { id: consignmentId },
       data: { status: overallStatus },
     });

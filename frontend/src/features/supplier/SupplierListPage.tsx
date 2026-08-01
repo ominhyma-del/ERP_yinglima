@@ -2,9 +2,13 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Truck, Plus, Filter, ShieldAlert, ArrowLeft, Download, Upload, FileSpreadsheet, X, CheckCircle, Eye, Trash2, Camera, Phone, Mail, MessageSquare, AlertCircle, Link as LinkIcon, Check, ChevronDown, UserPlus, Edit, Maximize2, FileText, Image as ImageIcon, Video, Search, RotateCcw, ArrowUpDown, ArrowUp, ArrowDown, Layers } from 'lucide-react';
 import { supplierApi } from '../../api/supplierApi';
 import { TableSkeleton } from '../../components/common/SkeletonLoader';
+import { BulkDeleteModal, BulkDeleteResultLike } from '../../components/common/BulkDeleteModal';
+import { MultiEmailInput } from '../../components/common/MultiEmailInput';
 import { useAuth } from '../../context/AuthContext';
 import { can } from '../team/teamStore';
 import { offlineOutbox } from '../../lib/offlineOutbox';
+import { DuplicateToast, DuplicateNotification } from '../../components/common/DuplicateToast';
+import { Pagination } from '../../components/common/Pagination';
 
 // Country Phone Dial Code Map
 const countryPhoneCodeMap: Record<string, string> = {
@@ -82,9 +86,8 @@ const MultiSelectDropdown: React.FC<{
               <div
                 key={option}
                 onClick={() => toggleOption(option)}
-                className={`p-2 rounded flex items-center justify-between cursor-pointer transition-colors ${
-                  isSelected ? 'bg-blue-50 text-blue-800 font-bold' : 'hover:bg-slate-50 text-slate-700'
-                }`}
+                className={`p-2 rounded flex items-center justify-between cursor-pointer transition-colors ${isSelected ? 'bg-blue-50 text-blue-800 font-bold' : 'hover:bg-slate-50 text-slate-700'
+                  }`}
               >
                 <span>{option}</span>
                 {isSelected && <Check size={14} className="text-blue-600" />}
@@ -152,6 +155,7 @@ export const SupplierListPage: React.FC = () => {
   const [showImportModal, setShowImportModal] = useState(false);
   const [showExpandAllModal, setShowExpandAllModal] = useState(false);
   const [importNotification, setImportNotification] = useState<string | null>(null);
+  const [duplicateToast, setDuplicateToast] = useState<DuplicateNotification | null>(null);
   const [expandedFieldModal, setExpandedFieldModal] = useState<{ title: string; items: string[] } | null>(null);
 
   // Form Stage state (Stage 1 & Stage 2)
@@ -159,6 +163,14 @@ export const SupplierListPage: React.FC = () => {
 
   // On-blur Phone Error states (7 to 11 digits requirement)
   const [phoneErrors, setPhoneErrors] = useState<{ calling?: string; whatsapp?: string; wechat?: string }>({});
+
+  // BUG FIX: the "Add Contacts Form" sub-contact fields (newContact.calling/
+  // .whatsapp/.wechat) previously had no validation at all — someone could
+  // enter a 3-digit or 20-digit number and it would save fine, even though
+  // the spec says these are "same as above" (i.e. same 7-11 digit rule as
+  // the Stage-1 fields). Separate error bucket so Stage-1 and sub-contact
+  // validation don't clobber each other.
+  const [subContactPhoneErrors, setSubContactPhoneErrors] = useState<{ calling?: string; whatsapp?: string; wechat?: string }>({});
 
   // Province and City Master Mapping
   const provinceCityMap: Record<string, string[]> = {
@@ -200,17 +212,30 @@ export const SupplierListPage: React.FC = () => {
   // Initial Suppliers state (100% database driven)
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  // BUG FIX: previously a failed fetch just left `suppliers` as an empty
+  // array with no indication anything went wrong — an empty list looks
+  // identical to "there are genuinely zero suppliers" to the user. Now a
+  // failed load surfaces the real backend error (e.g. a schema drift
+  // message) as a visible banner instead of silently showing nothing.
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Fetch live suppliers directly from Supabase DB via NestJS API
-  useEffect(() => {
-    async function loadApiSuppliers() {
-      setIsLoading(true);
+  const loadApiSuppliers = async () => {
+    setIsLoading(true);
+    setLoadError(null);
+    try {
       const data = await supplierApi.getSuppliers();
       if (data && Array.isArray(data)) {
         setSuppliers(data);
       }
+    } catch (err: any) {
+      setLoadError(err?.message || 'Failed to load suppliers. Please try again.');
+    } finally {
       setIsLoading(false);
     }
+  };
+
+  useEffect(() => {
     loadApiSuppliers();
   }, []);
 
@@ -291,9 +316,21 @@ export const SupplierListPage: React.FC = () => {
 
       if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
       if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
-      return 0;
     });
   }, [filteredSuppliers, sortField, sortDirection]);
+
+  // Pagination State (Max 100 data per page)
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(100);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterCategory, filterSubCategory, filterCountry, filterProvince, filterCity, filterSupplierType, filterGrade, filterStatus, filterPotential, filterVisited, subTab]);
+
+  const paginatedSuppliers = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return sortedSuppliers.slice(startIndex, startIndex + pageSize);
+  }, [sortedSuppliers, currentPage, pageSize]);
 
   const renderSortHeader = (label: string, field: string) => {
     const isActive = sortField === field;
@@ -343,12 +380,63 @@ export const SupplierListPage: React.FC = () => {
     }
   };
 
-  const handleBulkDelete = () => {
+  // BUG FIX: this used to just hide the selected rows from local state
+  // with no backend call at all — no rule check (a mix of Existing/
+  // Potential=Yes suppliers could be "deleted" this way even though the
+  // single-row Delete button correctly refuses them), and nothing was
+  // actually deleted server-side, so the rows would silently reappear on
+  // the next refresh. Now it calls the real bulk-delete endpoint, which
+  // enforces the identical rule as the single-row delete per record, and
+  // surfaces any blocked records via a popup so the user can explicitly
+  // skip or force-delete them.
+  const [bulkDeleteResult, setBulkDeleteResult] = useState<BulkDeleteResultLike | null>(null);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+  const handleBulkDelete = async () => {
     if (selectedIds.length === 0) return;
-    if (confirm(`Are you sure you want to delete ${selectedIds.length} selected supplier(s)?`)) {
-      setSuppliers((prev) => prev.filter((s) => !selectedIds.includes(s.id)));
+    if (!confirm(`Are you sure you want to delete ${selectedIds.length} selected supplier(s)?`)) return;
+
+    setIsBulkDeleting(true);
+    try {
+      const result = await supplierApi.bulkDeleteSuppliers(selectedIds);
+      applyBulkDeleteOutcome(result);
+    } catch (err: any) {
+      setImportNotification(err?.response?.data?.message || 'Bulk delete failed. Please try again.');
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
+  // Shared handling for the result of any bulk-delete call (initial or
+  // force-retry): removes confirmed-deleted rows from local state, keeps
+  // the selection limited to whatever is still blocked, and opens the
+  // Skip/Force popup only if something was actually blocked.
+  const applyBulkDeleteOutcome = (result: BulkDeleteResultLike) => {
+    const deletedIds = new Set(result.deleted.map((d) => d.id));
+    setSuppliers((prev) => prev.filter((s) => !deletedIds.has(s.id)));
+
+    if (result.deleted.length > 0) {
+      setImportNotification(`${result.deleted.length} supplier(s) deleted successfully.`);
+    }
+
+    if (result.blocked.length > 0) {
+      setSelectedIds(result.blocked.map((b) => b.id));
+      setBulkDeleteResult(result);
+    } else {
       setSelectedIds([]);
-      setImportNotification(`${selectedIds.length} supplier(s) deleted.`);
+      setBulkDeleteResult(null);
+    }
+  };
+
+  const handleForceBulkDelete = async (blockedIds: string[]) => {
+    setIsBulkDeleting(true);
+    try {
+      const result = await supplierApi.bulkDeleteSuppliers(blockedIds, { force: true, forceIds: blockedIds });
+      applyBulkDeleteOutcome(result);
+    } catch (err: any) {
+      setImportNotification(err?.response?.data?.message || 'Force delete failed. Please try again.');
+    } finally {
+      setIsBulkDeleting(false);
     }
   };
 
@@ -375,10 +463,10 @@ export const SupplierListPage: React.FC = () => {
         .map((s) =>
           s.id === targetMergeId
             ? {
-                ...s,
-                product_categories: mergedCategories,
-                key_strength_subcategories: mergedSubcats,
-              }
+              ...s,
+              product_categories: mergedCategories,
+              key_strength_subcategories: mergedSubcats,
+            }
             : s,
         )
         .filter((s) => s.id === targetMergeId || !selectedIds.includes(s.id)),
@@ -420,7 +508,7 @@ export const SupplierListPage: React.FC = () => {
     calling_number: '+86 ',
     whatsapp_number: '+86 ',
     wechat_number: '+86 ',
-    email: '',
+    emails: [] as string[],
     tax_id: '',
     primary_website: '',
     secondary_website: '',
@@ -477,7 +565,7 @@ export const SupplierListPage: React.FC = () => {
       calling_number: supplier.calling_number || '+86 ',
       whatsapp_number: supplier.whatsapp_number || '+86 ',
       wechat_number: supplier.wechat_number || '+86 ',
-      email: supplier.emails?.[0] || '',
+      emails: Array.isArray(supplier.emails) ? supplier.emails : (supplier.email ? [supplier.email] : []),
       tax_id: supplier.tax_id || '',
       primary_website: supplier.primary_website || '',
       secondary_website: supplier.secondary_website || '',
@@ -553,10 +641,41 @@ export const SupplierListPage: React.FC = () => {
     }
   };
 
+  // Same 7-11 digit rule as the Stage-1 Calling/WhatsApp/WeChat fields
+  // (validatePhone above), applied to the sub-contact form fields.
+  const validateSubContactPhone = (field: 'calling' | 'whatsapp' | 'wechat', value: string) => {
+    if (!value) {
+      setSubContactPhoneErrors((prev) => ({ ...prev, [field]: undefined }));
+      return true;
+    }
+    const digitsOnly = value.replace(/\D/g, '');
+    if (digitsOnly.length < 7 || digitsOnly.length > 11) {
+      setSubContactPhoneErrors((prev) => ({
+        ...prev,
+        [field]: `Phone number must contain between 7 and 11 digits (Current: ${digitsOnly.length} digits).`,
+      }));
+      return false;
+    }
+    setSubContactPhoneErrors((prev) => ({ ...prev, [field]: undefined }));
+    return true;
+  };
+
   const handleSaveSubContact = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newContact.name) {
       alert('Please enter Person Name for the contact.');
+      return;
+    }
+
+    // BUG FIX: previously these fields could be saved with any number of
+    // digits (or none at all past the country code) since nothing ever
+    // validated them. Re-run the same check used on blur here too, since
+    // a user can click "Save" without ever blurring a field they typed
+    // last into.
+    const callingOk = validateSubContactPhone('calling', newContact.calling);
+    const whatsappOk = validateSubContactPhone('whatsapp', newContact.whatsapp);
+    const wechatOk = validateSubContactPhone('wechat', newContact.wechat);
+    if (!callingOk || !whatsappOk || !wechatOk) {
       return;
     }
 
@@ -580,6 +699,7 @@ export const SupplierListPage: React.FC = () => {
       wechat: '+86 ',
       email: '',
     });
+    setSubContactPhoneErrors({});
   };
 
   const handleEditFormContact = (contact: any) => {
@@ -632,7 +752,7 @@ export const SupplierListPage: React.FC = () => {
 
     try {
       await supplierApi.deleteSupplier(id);
-      setSuppliers((prev) => prev.filter((s) => s.id !== id));
+      await loadApiSuppliers();
       setImportNotification(`Supplier "${target.name}" deleted successfully.`);
     } catch (err: any) {
       const errMsg = err?.response?.data?.message || err?.message || 'Supplier cannot be deleted.';
@@ -713,11 +833,16 @@ export const SupplierListPage: React.FC = () => {
     // Check Duplication if creating new supplier
     if (!editingSupplierId) {
       const isDuplicate = suppliers.some(
-        (s) => s.name.trim().toLowerCase() === companyName.toLowerCase() && s.city.trim().toLowerCase() === formData.city.trim().toLowerCase()
+        (s) => s.name.trim().toLowerCase() === companyName.toLowerCase() && (s.city || '').trim().toLowerCase() === (formData.city || '').trim().toLowerCase()
       );
 
       if (isDuplicate) {
-        setShowRuleAlert(`DUPLICATE_ENTRY: Supplier with company name "${companyName}" in city "${formData.city}" already exists!`);
+        setDuplicateToast({
+          title: 'Duplicate Supplier Prevented',
+          count: 1,
+          items: [`Company Name: "${companyName}" (City: ${formData.city || 'N/A'})`],
+          message: `Supplier "${companyName}" in city "${formData.city}" already exists in the system.`
+        });
         return;
       }
     }
@@ -732,7 +857,7 @@ export const SupplierListPage: React.FC = () => {
       calling: formData.calling_number || '+86 13800000000',
       whatsapp: formData.whatsapp_number || formData.calling_number || '+86 13800000000',
       wechat: formData.wechat_number || '+86 13800000000',
-      email: formData.email || 'info@supplier.com',
+      email: formData.emails[0] || 'info@supplier.com',
     };
 
     const updatedSupplierObj = {
@@ -752,7 +877,7 @@ export const SupplierListPage: React.FC = () => {
       calling_number: formData.calling_number || '+86 13800000000',
       whatsapp_number: formData.whatsapp_number || formData.calling_number || '+86 13800000000',
       wechat_number: formData.wechat_number || '+86 13800000000',
-      emails: [formData.email || 'info@supplier.com'],
+      emails: formData.emails.length > 0 ? formData.emails : ['info@supplier.com'],
       tax_id: formData.tax_id || 'TAX-99887766',
       primary_website: formData.primary_website || 'www.supplier.com',
       secondary_website: formData.secondary_website,
@@ -773,29 +898,22 @@ export const SupplierListPage: React.FC = () => {
       setSuppliers(suppliers.map((s) => (s.id === editingSupplierId ? updatedSupplierObj : s)));
       setImportNotification(`Successfully updated supplier profile for "${companyName}"!`);
     } else {
-      // Persist to Supabase Cloud DB via NestJS Backend API with Network Resilience
-      setSuppliers([updatedSupplierObj, ...suppliers]);
       try {
         const res = await supplierApi.createSupplier(updatedSupplierObj);
-        if (!res) {
-          offlineOutbox.enqueue({
-            url: '/api/suppliers',
-            method: 'POST',
-            payload: updatedSupplierObj,
-            description: `Create Supplier Profile (${companyName})`,
+        await loadApiSuppliers();
+        setImportNotification(`Successfully created & saved new supplier profile "${companyName}" to Supabase Database!`);
+      } catch (err: any) {
+        const errMsg = err?.response?.data?.message || err?.message || '';
+        if (errMsg.toLowerCase().includes('already exists') || err?.response?.status === 400 || err?.response?.status === 409) {
+          setDuplicateToast({
+            title: 'Duplicate Supplier Blocked by Backend DB',
+            count: 1,
+            items: [`${companyName} (${formData.city || 'China'})`],
+            message: Array.isArray(errMsg) ? errMsg.join(', ') : errMsg || `Supplier "${companyName}" already exists in Supabase DB.`,
           });
-          setImportNotification(`Saved locally! Wi-Fi/network dropped — queued in Outbox to sync automatically.`);
-        } else {
-          setImportNotification(`Successfully created & saved new supplier profile "${companyName}" to Supabase Database!`);
+          return;
         }
-      } catch (err) {
-        offlineOutbox.enqueue({
-          url: '/api/suppliers',
-          method: 'POST',
-          payload: updatedSupplierObj,
-          description: `Create Supplier Profile (${companyName})`,
-        });
-        setImportNotification(`Saved locally! Network connection interrupted — queued in Outbox to sync when online.`);
+        await loadApiSuppliers();
       }
     }
 
@@ -811,6 +929,9 @@ export const SupplierListPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* UPPER-LEFT DUPLICATE NOTIFICATION TOAST */}
+      <DuplicateToast toast={duplicateToast} onClose={() => setDuplicateToast(null)} />
+
       {/* DARSH IMPEX TOP TITLE BAR */}
       <div className="flex items-center justify-between">
         <div>
@@ -826,11 +947,10 @@ export const SupplierListPage: React.FC = () => {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowFilterPanel(!showFilterPanel)}
-              className={`p-2.5 rounded-lg border transition-all cursor-pointer ${
-                showFilterPanel
+              className={`p-2.5 rounded-lg border transition-all cursor-pointer ${showFilterPanel
                   ? 'bg-blue-50 border-blue-200 text-blue-600'
                   : 'bg-white border-slate-300 hover:bg-slate-50 text-slate-700'
-              }`}
+                }`}
               title="Toggle Filters Panel"
             >
               <Filter size={15} />
@@ -839,11 +959,10 @@ export const SupplierListPage: React.FC = () => {
             {/* Inline Edit Toggle Button */}
             <button
               onClick={() => setInlineEditEnabled(!inlineEditEnabled)}
-              className={`p-2.5 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs text-xs font-bold ${
-                inlineEditEnabled
+              className={`p-2.5 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs text-xs font-bold ${inlineEditEnabled
                   ? 'bg-emerald-600 hover:bg-emerald-700 text-white animate-pulse'
                   : 'bg-white border border-slate-300 hover:bg-slate-100 text-slate-700'
-              }`}
+                }`}
               title="Toggle Inline Editing Mode"
             >
               <Edit size={14} />
@@ -945,6 +1064,20 @@ export const SupplierListPage: React.FC = () => {
           </button>
         )}
       </div>
+
+      {/* LOAD ERROR BANNER — shown when the initial fetch of suppliers
+          failed (e.g. a backend/database error). Previously a failed
+          fetch just left the list empty with no explanation, which was
+          indistinguishable from "there are zero suppliers". */}
+      {loadError && (
+        <div className="bg-rose-50 border border-rose-200 text-rose-800 p-4 rounded-xl flex items-center justify-between text-xs shadow-2xs">
+          <div className="flex items-center gap-2">
+            <AlertCircle size={18} className="text-rose-600 shrink-0" />
+            <span className="whitespace-pre-line">{loadError}</span>
+          </div>
+          <button onClick={loadApiSuppliers} className="font-bold underline text-rose-900 shrink-0 ml-3 cursor-pointer">Retry</button>
+        </div>
+      )}
 
       {/* IMPORT / CREATE TOAST */}
       {importNotification && (
@@ -1132,21 +1265,19 @@ export const SupplierListPage: React.FC = () => {
           <div className="flex items-center border-b border-slate-200 px-1 gap-8 text-xs font-bold pt-2">
             <button
               onClick={() => setSubTab('Active')}
-              className={`pb-3 border-b-2 transition-all cursor-pointer ${
-                subTab === 'Active'
+              className={`pb-3 border-b-2 transition-all cursor-pointer ${subTab === 'Active'
                   ? 'border-blue-600 text-blue-600 font-extrabold text-sm'
                   : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
+                }`}
             >
               Active
             </button>
             <button
               onClick={() => setSubTab('Inactive')}
-              className={`pb-3 border-b-2 transition-all cursor-pointer ${
-                subTab === 'Inactive'
+              className={`pb-3 border-b-2 transition-all cursor-pointer ${subTab === 'Inactive'
                   ? 'border-blue-600 text-blue-600 font-extrabold text-sm'
                   : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
+                }`}
             >
               Inactive
             </button>
@@ -1209,195 +1340,205 @@ export const SupplierListPage: React.FC = () => {
           {isLoading ? (
             <TableSkeleton rows={8} />
           ) : (
-          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-700">
-                <thead className="bg-slate-100 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
-                  <tr>
-                    <th className="p-3.5 text-center w-10">
-                      <input
-                        type="checkbox"
-                        checked={isAllSelected}
-                        onChange={toggleSelectAll}
-                        className="rounded border-slate-300 cursor-pointer w-4 h-4"
-                      />
-                    </th>
-                    {renderSortHeader('Company Name', 'name')}
-                    {renderSortHeader('Product Category (Max 5)', 'product_categories')}
-                    {renderSortHeader('Key Strength Sub Category', 'key_strength_subcategories')}
-                    {renderSortHeader('Secondary Products', 'secondary_products')}
-                    {renderSortHeader('Country', 'country')}
-                    {renderSortHeader('City, Province', 'city')}
-                    {renderSortHeader('Brand', 'brand_name')}
-                    {renderSortHeader('Supplier Type', 'supplier_type')}
-                    {renderSortHeader(`Current Status${inlineEditEnabled ? ' (Editable)' : ''}`, 'current_status')}
-                    {renderSortHeader(`Supplier's Grade${inlineEditEnabled ? ' (Editable)' : ''}`, 'grade')}
-                    {renderSortHeader(`Potential${inlineEditEnabled ? ' (Editable)' : ''}`, 'potential')}
-                    <th className="p-3.5 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-medium">
-                  {sortedSuppliers.length > 0 ? (
-                    sortedSuppliers.map((item) => (
-                      <tr key={item.id} className={`transition-colors ${selectedIds.includes(item.id) ? 'bg-blue-50/60' : 'hover:bg-slate-50'}`}>
-                        <td className="p-3.5 text-center">
-                          <input
-                            type="checkbox"
-                            checked={selectedIds.includes(item.id)}
-                            onChange={() => toggleSelectOne(item.id)}
-                            className="rounded border-slate-300 cursor-pointer w-4 h-4"
-                          />
-                        </td>
-                        <td
-                          onClick={() => {
-                            setSelectedSupplier(item);
-                            setViewMode('detail');
-                          }}
-                          className="p-3.5 font-bold text-blue-600 hover:underline cursor-pointer"
-                        >
-                          {item.name}
-                        </td>
-
-                        {/* Product Category (Show max 5, eye button if more) */}
-                        <td className="p-3.5">
-                          <div className="flex flex-wrap gap-1 items-center">
-                            {item.product_categories.slice(0, 5).map((cat, i) => (
-                              <span key={i} className="px-1.5 py-0.5 bg-slate-100 text-slate-800 text-[10px] rounded font-semibold">
-                                {cat}
-                              </span>
-                            ))}
-                            {item.product_categories.length > 5 && (
-                              <button
-                                onClick={() => setExpandedFieldModal({ title: `${item.name} - All Product Categories`, items: item.product_categories })}
-                                className="p-1 text-blue-600 hover:bg-blue-50 rounded"
-                              >
-                                <Eye size={12} />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* Key Strength Sub Category (Show max 5, eye button if more) */}
-                        <td className="p-3.5">
-                          <div className="flex flex-wrap gap-1 items-center">
-                            {item.key_strength_subcategories.slice(0, 5).map((sub, i) => (
-                              <span key={i} className="px-1.5 py-0.5 bg-blue-50 text-blue-800 text-[10px] rounded font-semibold">
-                                {sub}
-                              </span>
-                            ))}
-                            {item.key_strength_subcategories.length > 5 && (
-                              <button
-                                onClick={() => setExpandedFieldModal({ title: `${item.name} - All Key Strength Sub Categories`, items: item.key_strength_subcategories })}
-                                className="p-1 text-blue-600 hover:bg-blue-50 rounded"
-                              >
-                                <Eye size={12} />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* Secondary Products */}
-                        <td className="p-3.5">
-                          <span className="text-slate-600">
-                            {Array.isArray(item.secondary_products) ? item.secondary_products.join(', ') : item.secondary_products}
-                          </span>
-                        </td>
-
-                        <td className="p-3.5 font-semibold text-slate-900">{item.country}</td>
-                        <td className="p-3.5">{item.city}, {item.province}</td>
-                        <td className="p-3.5 text-slate-700">{item.brand_name || '-'}</td>
-                        <td className="p-3.5 font-semibold text-slate-800">{item.supplier_type}</td>
-
-                        {/* Current Status */}
-                        <td className="p-3.5">
-                          {inlineEditEnabled ? (
-                            <select
-                              value={item.current_status}
-                              onChange={(e) => handleStatusChange(item.id, e.target.value)}
-                              className="bg-slate-50 border border-slate-200 text-xs text-slate-900 p-1 rounded font-bold cursor-pointer outline-none"
-                            >
-                              <option value="NEW">New</option>
-                              <option value="EXISTING">Existing</option>
-                            </select>
-                          ) : (
-                            <span className={`px-2 py-1 rounded font-bold text-xs uppercase ${
-                              item.current_status === 'EXISTING' ? 'bg-slate-200 text-slate-800' : 'bg-slate-100 text-slate-600'
-                            }`}>
-                              {item.current_status === 'EXISTING' ? 'Existing' : 'New'}
-                            </span>
-                          )}
-                        </td>
-
-                        {/* Supplier's Grade */}
-                        <td className="p-3.5">
-                          {inlineEditEnabled ? (
-                            <select
-                              value={item.grade}
-                              onChange={(e) => handleInlineGradeChange(item.id, e.target.value)}
-                              className="bg-blue-50 border border-blue-200 text-blue-800 text-xs p-1 rounded font-bold cursor-pointer outline-none"
-                            >
-                              <option value="A">Grade A</option>
-                              <option value="B">Grade B</option>
-                              <option value="C">Grade C</option>
-                            </select>
-                          ) : (
-                            <span className="px-2 py-1 bg-blue-50 text-blue-800 rounded font-bold text-xs">
-                              Grade {item.grade || 'Select'}
-                            </span>
-                          )}
-                        </td>
-
-                        {/* Potential */}
-                        <td className="p-3.5">
-                          {inlineEditEnabled ? (
-                            <select
-                              value={item.potential}
-                              onChange={(e) => handleInlinePotentialChange(item.id, e.target.value)}
-                              className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs p-1 rounded font-bold cursor-pointer outline-none"
-                            >
-                              <option value="YES">Yes</option>
-                              <option value="NO">No</option>
-                              <option value="UNSELECTED">Select</option>
-                            </select>
-                          ) : (
-                            <span className={`px-2 py-1 rounded font-bold text-xs ${
-                              item.potential === 'YES' ? 'bg-emerald-50 text-emerald-800' :
-                              item.potential === 'NO' ? 'bg-rose-50 text-rose-800' : 'bg-slate-100 text-slate-600'
-                            }`}>
-                              {item.potential === 'YES' ? 'Yes' : item.potential === 'NO' ? 'No' : 'Select'}
-                            </span>
-                          )}
-                        </td>
-
-                        <td className="p-3.5 text-right space-x-1">
-                          {/* EDIT BUTTON LOADS FULL SUPPLIER FORM FOR EDITING (DARSH IMPEX EXACT BEHAVIOR) */}
-                          <button
-                            onClick={() => handleOpenEditSupplier(item)}
-                            className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-[11px] font-bold cursor-pointer"
+            <div className="space-y-4">
+              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs text-slate-700">
+                  <thead className="bg-slate-100 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
+                    <tr>
+                      <th className="p-3.5 text-center w-10">
+                        <input
+                          type="checkbox"
+                          checked={isAllSelected}
+                          onChange={toggleSelectAll}
+                          className="rounded border-slate-300 cursor-pointer w-4 h-4"
+                        />
+                      </th>
+                      {renderSortHeader('Company Name', 'name')}
+                      {renderSortHeader('Product Category (Max 5)', 'product_categories')}
+                      {renderSortHeader('Key Strength Sub Category', 'key_strength_subcategories')}
+                      {renderSortHeader('Secondary Products', 'secondary_products')}
+                      {renderSortHeader('Country', 'country')}
+                      {renderSortHeader('City, Province', 'city')}
+                      {renderSortHeader('Brand', 'brand_name')}
+                      {renderSortHeader('Supplier Type', 'supplier_type')}
+                      {renderSortHeader(`Current Status${inlineEditEnabled ? ' (Editable)' : ''}`, 'current_status')}
+                      {renderSortHeader(`Supplier's Grade${inlineEditEnabled ? ' (Editable)' : ''}`, 'grade')}
+                      {renderSortHeader(`Potential${inlineEditEnabled ? ' (Editable)' : ''}`, 'potential')}
+                      <th className="p-3.5 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {paginatedSuppliers.length > 0 ? (
+                      paginatedSuppliers.map((item) => (
+                        <tr key={item.id} className={`transition-colors ${selectedIds.includes(item.id) ? 'bg-blue-50/60' : 'hover:bg-slate-50'}`}>
+                          <td className="p-3.5 text-center">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.includes(item.id)}
+                              onChange={() => toggleSelectOne(item.id)}
+                              className="rounded border-slate-300 cursor-pointer w-4 h-4"
+                            />
+                          </td>
+                          <td
+                            onClick={() => {
+                              setSelectedSupplier(item);
+                              setViewMode('detail');
+                            }}
+                            className="p-3.5 font-bold text-blue-600 hover:underline cursor-pointer"
                           >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => handleDelete(item.id)}
-                            className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded text-[11px] font-semibold cursor-pointer"
-                          >
-                            Delete
-                          </button>
+                            {item.name}
+                          </td>
+
+                          {/* Product Category (Show max 5, eye button if more) */}
+                          <td className="p-3.5">
+                            <div className="flex flex-wrap gap-1 items-center">
+                              {item.product_categories.slice(0, 5).map((cat, i) => (
+                                <span key={i} className="px-1.5 py-0.5 bg-slate-100 text-slate-800 text-[10px] rounded font-semibold">
+                                  {cat}
+                                </span>
+                              ))}
+                              {item.product_categories.length > 5 && (
+                                <button
+                                  onClick={() => setExpandedFieldModal({ title: `${item.name} - All Product Categories`, items: item.product_categories })}
+                                  className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                                >
+                                  <Eye size={12} />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Key Strength Sub Category (Show max 5, eye button if more) */}
+                          <td className="p-3.5">
+                            <div className="flex flex-wrap gap-1 items-center">
+                              {item.key_strength_subcategories.slice(0, 5).map((sub, i) => (
+                                <span key={i} className="px-1.5 py-0.5 bg-blue-50 text-blue-800 text-[10px] rounded font-semibold">
+                                  {sub}
+                                </span>
+                              ))}
+                              {item.key_strength_subcategories.length > 5 && (
+                                <button
+                                  onClick={() => setExpandedFieldModal({ title: `${item.name} - All Key Strength Sub Categories`, items: item.key_strength_subcategories })}
+                                  className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                                >
+                                  <Eye size={12} />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Secondary Products */}
+                          <td className="p-3.5">
+                            <span className="text-slate-600">
+                              {Array.isArray(item.secondary_products) ? item.secondary_products.join(', ') : item.secondary_products}
+                            </span>
+                          </td>
+
+                          <td className="p-3.5 font-semibold text-slate-900">{item.country}</td>
+                          <td className="p-3.5">{item.city}, {item.province}</td>
+                          <td className="p-3.5 text-slate-700">{item.brand_name || '-'}</td>
+                          <td className="p-3.5 font-semibold text-slate-800">{item.supplier_type}</td>
+
+                          {/* Current Status */}
+                          <td className="p-3.5">
+                            {inlineEditEnabled ? (
+                              <select
+                                value={item.current_status}
+                                onChange={(e) => handleStatusChange(item.id, e.target.value)}
+                                className="bg-slate-50 border border-slate-200 text-xs text-slate-900 p-1 rounded font-bold cursor-pointer outline-none"
+                              >
+                                <option value="NEW">New</option>
+                                <option value="EXISTING">Existing</option>
+                              </select>
+                            ) : (
+                              <span className={`px-2 py-1 rounded font-bold text-xs uppercase ${item.current_status === 'EXISTING' ? 'bg-slate-200 text-slate-800' : 'bg-slate-100 text-slate-600'
+                                }`}>
+                                {item.current_status === 'EXISTING' ? 'Existing' : 'New'}
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Supplier's Grade */}
+                          <td className="p-3.5">
+                            {inlineEditEnabled ? (
+                              <select
+                                value={item.grade}
+                                onChange={(e) => handleInlineGradeChange(item.id, e.target.value)}
+                                className="bg-blue-50 border border-blue-200 text-blue-800 text-xs p-1 rounded font-bold cursor-pointer outline-none"
+                              >
+                                <option value="A">Grade A</option>
+                                <option value="B">Grade B</option>
+                                <option value="C">Grade C</option>
+                              </select>
+                            ) : (
+                              <span className="px-2 py-1 bg-blue-50 text-blue-800 rounded font-bold text-xs">
+                                Grade {item.grade || 'Select'}
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Potential */}
+                          <td className="p-3.5">
+                            {inlineEditEnabled ? (
+                              <select
+                                value={item.potential}
+                                onChange={(e) => handleInlinePotentialChange(item.id, e.target.value)}
+                                className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs p-1 rounded font-bold cursor-pointer outline-none"
+                              >
+                                <option value="YES">Yes</option>
+                                <option value="NO">No</option>
+                                <option value="UNSELECTED">Select</option>
+                              </select>
+                            ) : (
+                              <span className={`px-2 py-1 rounded font-bold text-xs ${item.potential === 'YES' ? 'bg-emerald-50 text-emerald-800' :
+                                  item.potential === 'NO' ? 'bg-rose-50 text-rose-800' : 'bg-slate-100 text-slate-600'
+                                }`}>
+                                {item.potential === 'YES' ? 'Yes' : item.potential === 'NO' ? 'No' : 'Select'}
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="p-3.5 text-right space-x-1">
+                            {/* EDIT BUTTON LOADS FULL SUPPLIER FORM FOR EDITING (DARSH IMPEX EXACT BEHAVIOR) */}
+                            <button
+                              onClick={() => handleOpenEditSupplier(item)}
+                              className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-[11px] font-bold cursor-pointer"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDelete(item.id)}
+                              className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded text-[11px] font-semibold cursor-pointer"
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={13} className="p-8 text-center text-slate-400 font-semibold">
+                          No suppliers match the selected filter criteria. Click "Reset" above to show all.
                         </td>
                       </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={13} className="p-8 text-center text-slate-400 font-semibold">
-                        No suppliers match the selected filter criteria. Click "Reset" above to show all.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
+
+            {/* PAGINATION FOOTER CONTROL */}
+            <Pagination
+              currentPage={currentPage}
+              totalItems={sortedSuppliers.length}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={setPageSize}
+              pageSizeOptions={[10, 25, 50, 100]}
+            />
           </div>
-          )}
+        )}
         </div>
       )}
 
@@ -1409,18 +1550,16 @@ export const SupplierListPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setFormStage(1)}
-              className={`text-xs font-bold px-4 py-2 rounded-lg transition-colors cursor-pointer ${
-                formStage === 1 ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
-              }`}
+              className={`text-xs font-bold px-4 py-2 rounded-lg transition-colors cursor-pointer ${formStage === 1 ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
+                }`}
             >
               First Data Form (Basic Supplier & Contact Info)
             </button>
             <button
               type="button"
               onClick={() => setFormStage(2)}
-              className={`text-xs font-bold px-4 py-2 rounded-lg transition-colors cursor-pointer ${
-                formStage === 2 ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
-              }`}
+              className={`text-xs font-bold px-4 py-2 rounded-lg transition-colors cursor-pointer ${formStage === 2 ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
+                }`}
             >
               Second Form (Main Data Profile & Factory Visit)
             </button>
@@ -1610,13 +1749,14 @@ export const SupplierListPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="text-xs text-slate-700 font-semibold block mb-1">Email ID (Multiple Supported)</label>
-                    <input
-                      type="email"
+                    {/* BUG FIX: this was a plain single-value <input> even though
+                        the label says "(Multiple Supported)". Replaced with a
+                        real chip input storing formData.emails as a string[]. */}
+                    <MultiEmailInput
+                      label="Email ID (Multiple Supported)"
+                      emails={formData.emails}
+                      onChange={(emails) => setFormData({ ...formData, emails })}
                       placeholder="john@zhejiangpack.com"
-                      value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-medium"
                     />
                   </div>
                 </div>
@@ -1904,36 +2044,42 @@ export const SupplierListPage: React.FC = () => {
                       </div>
 
                       <div>
-                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Calling Number</label>
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Calling Number (7-11 digits restriction)</label>
                         <input
                           type="text"
                           placeholder="+86 13900000000"
                           value={newContact.calling}
                           onChange={(e) => setNewContact({ ...newContact, calling: e.target.value })}
+                          onBlur={(e) => validateSubContactPhone('calling', e.target.value)}
                           className="w-full bg-white border border-slate-200 text-xs p-2 rounded outline-none font-mono"
                         />
+                        {subContactPhoneErrors.calling && <p className="text-[10px] text-rose-600 font-bold mt-1">{subContactPhoneErrors.calling}</p>}
                       </div>
 
                       <div>
-                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Whatsapp Number</label>
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Whatsapp Number (7-11 digits restriction)</label>
                         <input
                           type="text"
                           placeholder="+86 13900000000"
                           value={newContact.whatsapp}
                           onChange={(e) => setNewContact({ ...newContact, whatsapp: e.target.value })}
+                          onBlur={(e) => validateSubContactPhone('whatsapp', e.target.value)}
                           className="w-full bg-white border border-slate-200 text-xs p-2 rounded outline-none font-mono"
                         />
+                        {subContactPhoneErrors.whatsapp && <p className="text-[10px] text-rose-600 font-bold mt-1">{subContactPhoneErrors.whatsapp}</p>}
                       </div>
 
                       <div>
-                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">WeChat Number</label>
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">WeChat Number (7-11 digits restriction)</label>
                         <input
                           type="text"
                           placeholder="+86 13900000000"
                           value={newContact.wechat}
                           onChange={(e) => setNewContact({ ...newContact, wechat: e.target.value })}
+                          onBlur={(e) => validateSubContactPhone('wechat', e.target.value)}
                           className="w-full bg-white border border-slate-200 text-xs p-2 rounded outline-none font-mono"
                         />
+                        {subContactPhoneErrors.wechat && <p className="text-[10px] text-rose-600 font-bold mt-1">{subContactPhoneErrors.wechat}</p>}
                       </div>
 
                       <div>
@@ -2242,43 +2388,125 @@ export const SupplierListPage: React.FC = () => {
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) {
-                      const sampleNewSupplier = {
-                        id: `imp-${Date.now()}`,
-                        name: file.name.split('.')[0] + ' Imported Supplier Co.',
-                        product_categories: ['Food Ingredients', 'Chemicals'],
-                        supplier_type: 'Manufacturer',
-                        brand_name: 'Imported Brand',
-                        country: 'China',
-                        province: 'Zhejiang',
-                        city: 'Wenzhou',
-                        town: 'Industrial District',
-                        address: '100 Export Highway',
-                        contact_title: 'Mr',
-                        contact_name: 'Chen Wei',
-                        designation: 'Export Manager',
-                        calling_number: '+86 13800112233',
-                        whatsapp_number: '+86 13800112233',
-                        wechat_number: '+86 13800112233',
-                        emails: ['chen@imported-supplier.cn'],
-                        tax_id: 'IMP-TAX-8899',
-                        primary_website: 'www.imported-supplier.cn',
-                        secondary_website: '',
-                        key_strength_subcategories: ['Citric Acid'],
-                        grade: 'A',
-                        current_status: 'NEW',
-                        potential: 'YES',
-                        potential_reason: 'Imported from Excel dataset',
-                        secondary_products: ['Sodium Citrate'],
-                        visited_factory: 'Yes',
-                        visit_remarks: 'Imported via CSV file',
-                        attachments: [],
-                        overall_remarks: 'Imported from file upload',
-                        contacts: [],
+                      const reader = new FileReader();
+                      reader.onload = (event) => {
+                        const content = event.target?.result as string;
+                        const lines = content ? content.split(/\r?\n/).map((l) => l.trim()).filter(Boolean) : [];
+                        
+                        const duplicateNames: string[] = [];
+                        const newItems: any[] = [];
+                        const dataLines = lines.length > 0 && lines[0].toLowerCase().includes('name') ? lines.slice(1) : lines;
+
+                        if (dataLines.length === 0) {
+                          const sampleName = file.name.split('.')[0] + ' Imported Supplier Co.';
+                          const isDup = suppliers.some((s) => s.name.trim().toLowerCase() === sampleName.toLowerCase());
+                          if (isDup) {
+                            duplicateNames.push(sampleName);
+                          } else {
+                            newItems.push({
+                              id: `imp-${Date.now()}`,
+                              name: sampleName,
+                              product_categories: ['Food Ingredients', 'Chemicals'],
+                              supplier_type: 'Manufacturer',
+                              brand_name: 'Imported Brand',
+                              country: 'China',
+                              province: 'Zhejiang',
+                              city: 'Wenzhou',
+                              town: 'Industrial District',
+                              address: '100 Export Highway',
+                              contact_title: 'Mr',
+                              contact_name: 'Chen Wei',
+                              designation: 'Export Manager',
+                              calling_number: '+86 13800112233',
+                              whatsapp_number: '+86 13800112233',
+                              wechat_number: '+86 13800112233',
+                              emails: ['chen@imported-supplier.cn'],
+                              tax_id: 'IMP-TAX-8899',
+                              primary_website: 'www.imported-supplier.cn',
+                              secondary_website: '',
+                              key_strength_subcategories: ['Citric Acid'],
+                              grade: 'A',
+                              current_status: 'NEW',
+                              potential: 'YES',
+                              potential_reason: 'Imported from Excel dataset',
+                              secondary_products: ['Sodium Citrate'],
+                              visited_factory: 'Yes',
+                              visit_remarks: 'Imported via CSV file',
+                              attachments: [],
+                              overall_remarks: 'Imported from file upload',
+                              contacts: [],
+                            });
+                          }
+                        } else {
+                          for (const line of dataLines) {
+                            const parts = line.split(',').map((p) => p.replace(/^"|"$/g, '').trim());
+                            const name = parts[0] || `${file.name.split('.')[0]} Supplier`;
+                            const city = parts[4] || parts[3] || 'Wenzhou';
+
+                            const isDuplicate = suppliers.some(
+                              (s) => s.name.trim().toLowerCase() === name.toLowerCase() && (s.city || '').trim().toLowerCase() === city.toLowerCase()
+                            ) || newItems.some((n) => n.name.trim().toLowerCase() === name.toLowerCase());
+
+                            if (isDuplicate) {
+                              duplicateNames.push(`${name} (${city})`);
+                            } else {
+                              newItems.push({
+                                id: `imp-${Date.now()}-${Math.random()}`,
+                                name,
+                                product_categories: parts[3] ? [parts[3]] : ['Food Ingredients'],
+                                supplier_type: parts[1] || 'Manufacturer',
+                                brand_name: 'Imported Brand',
+                                country: parts[2] || 'China',
+                                province: 'Zhejiang',
+                                city,
+                                town: 'Industrial District',
+                                address: '100 Export Highway',
+                                contact_title: 'Mr',
+                                contact_name: parts[5] || 'Contact Person',
+                                designation: 'Export Manager',
+                                calling_number: parts[6] || '+86 13800112233',
+                                whatsapp_number: parts[6] || '+86 13800112233',
+                                wechat_number: parts[6] || '+86 13800112233',
+                                emails: [parts[7] || 'info@supplier.cn'],
+                                tax_id: 'IMP-TAX-8899',
+                                primary_website: 'www.supplier.cn',
+                                secondary_website: '',
+                                key_strength_subcategories: ['Citric Acid'],
+                                grade: 'A',
+                                current_status: 'NEW',
+                                potential: 'YES',
+                                potential_reason: 'Imported from Excel dataset',
+                                secondary_products: ['Sodium Citrate'],
+                                visited_factory: 'Yes',
+                                visit_remarks: 'Imported via CSV file',
+                                attachments: [],
+                                overall_remarks: 'Imported from file upload',
+                                contacts: [],
+                              });
+                            }
+                          }
+                        }
+
+                        if (duplicateNames.length > 0) {
+                          setDuplicateToast({
+                            title: 'Import Duplicates Prevented',
+                            count: duplicateNames.length,
+                            items: duplicateNames,
+                            message: `${duplicateNames.length} duplicate supplier record(s) were detected and skipped during file import to prevent duplication.`
+                          });
+                        }
+
+                        if (newItems.length > 0) {
+                          setSuppliers([...newItems, ...suppliers]);
+                          setImportNotification(`Imported ${newItems.length} unique supplier profile(s) from "${file.name}"!`);
+                        } else if (duplicateNames.length > 0) {
+                          setImportNotification(`Import complete: 0 new entries added (${duplicateNames.length} duplicate records skipped).`);
+                        }
+
+                        setShowImportModal(false);
+                        setTimeout(() => setImportNotification(null), 5000);
                       };
-                      setSuppliers([sampleNewSupplier, ...suppliers]);
-                      setShowImportModal(false);
-                      setImportNotification(`Successfully imported supplier data from "${file.name}"!`);
-                      setTimeout(() => setImportNotification(null), 5000);
+                      reader.readAsText(file);
                     }
                   }}
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
@@ -2397,6 +2625,22 @@ export const SupplierListPage: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* BULK DELETE SKIP/FORCE POPUP — shown when the bulk-delete call
+          reports some selected suppliers were blocked by the delete rule
+          (Status must be NEW and Potential must be NO/unselected) */}
+      {bulkDeleteResult && bulkDeleteResult.blocked.length > 0 && (
+        <BulkDeleteModal
+          entityLabel="supplier"
+          result={bulkDeleteResult}
+          isProcessing={isBulkDeleting}
+          onCancel={() => {
+            setBulkDeleteResult(null);
+            setSelectedIds([]);
+          }}
+          onForceDelete={handleForceBulkDelete}
+        />
       )}
     </div>
   );

@@ -3,7 +3,8 @@ import api from '../lib/api';
 export const productApi = {
   async getProducts(params?: any) {
     try {
-      const response = await api.get('/products', { params });
+      const queryParams = { limit: 1000000, ...params };
+      const response = await api.get('/products', { params: queryParams });
       const rawList = response.data?.data || response.data;
       if (Array.isArray(rawList)) {
         return rawList.map((p: any) => ({
@@ -49,6 +50,16 @@ export const productApi = {
 
   async toggleStatus(id: string) {
     const response = await api.patch(`/products/${id}/status`);
+    return response.data;
+  },
+
+  async createProduct(data: any) {
+    const response = await api.post('/products', data);
+    return response.data;
+  },
+
+  async updateProduct(id: string, data: any) {
+    const response = await api.patch(`/products/${id}`, data);
     return response.data;
   },
 };

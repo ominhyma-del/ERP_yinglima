@@ -3,26 +3,33 @@ import { PrismaService } from '../../core/database/prisma.service';
 import { TenantContext } from '../../core/decorators/tenant.decorator';
 import { CreateProductDto } from './dto/create-product.dto';
 import { RecordStatus } from '@prisma/client';
+import { AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class ProductService {
   private readonly logger = new Logger(ProductService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) { }
 
   async create(dto: CreateProductDto, tenant: TenantContext) {
-    // Unique check on Product Code
-    const existingCode = await this.prisma.product.findFirst({
+    // Backend Duplication Check: Product Code or Tally Product Name
+    const existing = await this.prisma.product.findFirst({
       where: {
         company_id: tenant.companyId,
-        product_code: dto.product_code,
         deleted_at: null,
+        OR: [
+          { product_code: { equals: dto.product_code, mode: 'insensitive' } },
+          { name_tally: { equals: dto.name_tally, mode: 'insensitive' } },
+        ],
       },
     });
 
-    if (existingCode) {
+    if (existing) {
       throw new BadRequestException(
-        `Product with Code "${dto.product_code}" already exists in the master catalog.`,
+        `Product with Code "${dto.product_code}" or Name "${dto.name_tally}" already exists in Supabase DB.`,
       );
     }
 
@@ -32,7 +39,7 @@ export class ProductService {
     const heightCm = dto.height_cm || 0;
     const unitCbm = (lengthCm * widthCm * heightCm) / 1000000;
 
-    return this.prisma.product.create({
+    const created = await this.prisma.product.create({
       data: {
         ...dto,
         unit_cbm: unitCbm,
@@ -46,6 +53,19 @@ export class ProductService {
         brand: true,
       },
     });
+
+    await this.audit.record(
+      {
+        action: 'CREATE',
+        entity: 'Product',
+        entityId: created.id,
+        after: created,
+        description: `Created product "${created.name_tally}" (${created.product_code})`,
+      },
+      tenant,
+    );
+
+    return created;
   }
 
   async findAll(tenant: TenantContext, query: any) {
@@ -56,7 +76,7 @@ export class ProductService {
       brandId,
       status,
       page = 1,
-      limit = 20,
+      limit = 1000000,
     } = query;
 
     const where: any = {
@@ -140,13 +160,27 @@ export class ProductService {
 
     const newStatus = product.status === RecordStatus.ACTIVE ? RecordStatus.INACTIVE : RecordStatus.ACTIVE;
 
-    return this.prisma.product.update({
+    const updated = await this.prisma.product.update({
       where: { id },
       data: {
         status: newStatus,
         updated_by: tenant.userId,
       },
     });
+
+    await this.audit.record(
+      {
+        action: 'STATUS_CHANGE',
+        entity: 'Product',
+        entityId: id,
+        before: { status: product.status },
+        after: { status: updated.status },
+        description: `Toggled active status for product "${product.name_tally}" from ${product.status} to ${updated.status}`,
+      },
+      tenant,
+    );
+
+    return updated;
   }
 
   async remove(id: string, tenant: TenantContext) {
@@ -174,17 +208,30 @@ export class ProductService {
     if (blockingReasons.length > 0) {
       throw new BadRequestException(
         `Cannot delete Product "${product.name_tally}". Mandatory conditions required to delete:\n• ` +
-          blockingReasons.join('\n• ') +
-          '\n\nRecommended Action: Deactivate product status, clear stock to 0, or unlink inquiry references.',
+        blockingReasons.join('\n• ') +
+        '\n\nRecommended Action: Deactivate product status, clear stock to 0, or unlink inquiry references.',
       );
     }
 
-    return this.prisma.product.update({
+    const deleted = await this.prisma.product.update({
       where: { id },
       data: {
         deleted_at: new Date(),
         updated_by: tenant.userId,
       },
     });
+
+    await this.audit.record(
+      {
+        action: 'DELETE',
+        entity: 'Product',
+        entityId: id,
+        before: product,
+        description: `Deleted product "${product.name_tally}" (${product.product_code})`,
+      },
+      tenant,
+    );
+
+    return deleted;
   }
 }

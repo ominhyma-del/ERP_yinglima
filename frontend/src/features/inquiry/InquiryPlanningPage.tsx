@@ -31,8 +31,11 @@ import {
 } from 'lucide-react';
 import { inquiryApi } from '../../api/inquiryApi';
 import { TableSkeleton } from '../../components/common/SkeletonLoader';
+import { BulkDeleteModal, BulkDeleteResultLike } from '../../components/common/BulkDeleteModal';
 import { useAuth } from '../../context/AuthContext';
 import { can } from '../team/teamStore';
+import { DuplicateToast, DuplicateNotification } from '../../components/common/DuplicateToast';
+import { Pagination } from '../../components/common/Pagination';
 
 // Consignment master options mapping by company
 const companyConsignmentMasterMap: Record<string, { code: string; label: string }[]> = {
@@ -67,7 +70,13 @@ const masterProductOptions = [
 export const InquiryPlanningPage: React.FC = () => {
   const [currentLayer, setCurrentLayer] = useState<1 | 2>(1);
   const [activeCompanyFilter, setActiveCompanyFilter] = useState<string>('ALL');
-  const [activeConsignmentCode, setActiveConsignmentCode] = useState<string>('FB1');
+  // BUG FIX: this used to default to the hardcoded string 'FB1', which
+  // fired GET /inquiries/layer2-grid/FB1 on first mount regardless of
+  // whether a consignment with that code actually exists for the active
+  // tenant — causing a guaranteed 400/404 on every fresh load. Start empty
+  // and only set it once we know a real consignment code (see the
+  // "select first loaded consignment" effect below).
+  const [activeConsignmentCode, setActiveConsignmentCode] = useState<string>('');
   const [layer1Search, setLayer1Search] = useState<string>('');
 
   const [showRemarkModal, setShowRemarkModal] = useState<string | null>(null);
@@ -99,20 +108,32 @@ export const InquiryPlanningPage: React.FC = () => {
       const data = await inquiryApi.getConsignments();
       if (data && Array.isArray(data)) {
         setConsignments(data);
+        // BUG FIX: only pick a consignment code once we actually know one
+        // exists for this tenant, instead of assuming 'FB1' is always
+        // present. Falls back to no selection (Layer 2 grid stays empty)
+        // if the tenant has zero consignments yet.
+        if (data.length > 0 && !data.some((c) => c.code === activeConsignmentCode)) {
+          setActiveConsignmentCode(data[0].code);
+        }
       }
       setIsLoading(false);
     }
     loadApiInquiries();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Fetch Layer 2 grid items from DB whenever consignment code or layer changes
   useEffect(() => {
     async function loadGridItems() {
-      if (activeConsignmentCode) {
-        const items = await inquiryApi.getInquiryItems(activeConsignmentCode);
-        if (items && Array.isArray(items)) {
-          setGridItems(items);
-        }
+      // BUG FIX: guard against firing with an empty/placeholder code before
+      // the real consignment list has loaded (see effect above).
+      if (!activeConsignmentCode) {
+        setGridItems([]);
+        return;
+      }
+      const items = await inquiryApi.getInquiryItems(activeConsignmentCode);
+      if (items && Array.isArray(items)) {
+        setGridItems(items);
       }
     }
     loadGridItems();
@@ -183,9 +204,26 @@ export const InquiryPlanningPage: React.FC = () => {
   const handleSaveInquiry = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.product_name) {
-      alert('Please select a Product Name from the dropdown menu.');
+      alert('Please select or type a Product Name.');
       return;
     }
+
+    const isDuplicate = gridItems.some(
+      (item) =>
+        (item.consignment_code || '').toLowerCase() === (formData.consignment_code || '').toLowerCase() &&
+        (item.product_name || '').toLowerCase() === (formData.product_name || '').toLowerCase()
+    );
+
+    if (isDuplicate) {
+      setDuplicateToast({
+        title: 'Duplicate Inquiry Entry Blocked',
+        count: 1,
+        items: [`${formData.consignment_code} - ${formData.product_name}`],
+        message: `This product item already exists under consignment code "${formData.consignment_code}". Duplicates are not allowed.`,
+      });
+      return;
+    }
+
     const matched = masterProductOptions.find((p) => p.name === formData.product_name);
     const requiresLic = matched ? matched.requiresLicense : false;
     const licRem = matched ? matched.licenseRemark : '';
@@ -219,17 +257,28 @@ export const InquiryPlanningPage: React.FC = () => {
       proposed_by: 'Yinglima Admin',
     };
 
-    setGridItems([newItem, ...gridItems]);
-
-    // Persist to Supabase Cloud DB via NestJS Backend API
-    await inquiryApi.createInquiryItem(newItem);
-    const updatedConsignments = await inquiryApi.getConsignments();
-    if (updatedConsignments && Array.isArray(updatedConsignments)) {
-      setConsignments(updatedConsignments);
-    }
-    const updatedGrid = await inquiryApi.getInquiryItems(formData.consignment_code);
-    if (updatedGrid && Array.isArray(updatedGrid)) {
-      setGridItems(updatedGrid);
+    try {
+      const res = await inquiryApi.createInquiryItem(newItem);
+      const updatedConsignments = await inquiryApi.getConsignments();
+      if (updatedConsignments && Array.isArray(updatedConsignments)) {
+        setConsignments(updatedConsignments);
+      }
+      const updatedGrid = await inquiryApi.getInquiryItems(formData.consignment_code);
+      if (updatedGrid && Array.isArray(updatedGrid)) {
+        setGridItems(updatedGrid);
+      }
+      setImportNotification(`Successfully added inquiry item "${newItem.product_name}" to consignment "${newItem.consignment_code}" in Supabase DB!`);
+    } catch (err: any) {
+      const errMsg = err?.response?.data?.message || err?.message || '';
+      if (errMsg.toLowerCase().includes('already exists') || err?.response?.status === 400 || err?.response?.status === 409) {
+        setDuplicateToast({
+          title: 'Duplicate Inquiry Blocked by Backend DB',
+          count: 1,
+          items: [`${formData.consignment_code} - ${formData.product_name}`],
+          message: Array.isArray(errMsg) ? errMsg.join(', ') : errMsg || `Inquiry item already exists under consignment in Supabase DB.`,
+        });
+        return;
+      }
     }
 
     // Ensure Consignment exists in 1st layer summary
@@ -362,6 +411,35 @@ export const InquiryPlanningPage: React.FC = () => {
     });
   }, [activeGridItems, l2SortField, l2SortDirection]);
 
+  // Duplicate Toast State
+  const [duplicateToast, setDuplicateToast] = useState<DuplicateNotification | null>(null);
+
+  // Pagination State for Layer 1 Consignments (Max 100 per page)
+  const [l1Page, setL1Page] = useState(1);
+  const [l1PageSize, setL1PageSize] = useState(100);
+
+  useEffect(() => {
+    setL1Page(1);
+  }, [layer1Search, activeCompanyFilter, subTab]);
+
+  const paginatedLayer1Consignments = useMemo(() => {
+    const startIndex = (l1Page - 1) * l1PageSize;
+    return sortedLayer1Consignments.slice(startIndex, startIndex + l1PageSize);
+  }, [sortedLayer1Consignments, l1Page, l1PageSize]);
+
+  // Pagination State for Layer 2 Line Items (Max 100 per page)
+  const [l2Page, setL2Page] = useState(1);
+  const [l2PageSize, setL2PageSize] = useState(100);
+
+  useEffect(() => {
+    setL2Page(1);
+  }, [searchTerm, activeConsignmentCode]);
+
+  const paginatedGridItems = useMemo(() => {
+    const startIndex = (l2Page - 1) * l2PageSize;
+    return sortedGridItems.slice(startIndex, startIndex + l2PageSize);
+  }, [sortedGridItems, l2Page, l2PageSize]);
+
   const renderL1SortHeader = (label: string, field: string) => {
     const isActive = l1SortField === field;
     return (
@@ -435,12 +513,116 @@ export const InquiryPlanningPage: React.FC = () => {
     }
   };
 
-  const handleBulkDeleteL1 = () => {
+  // BUG FIX: same defect as Supplier/Buyer bulk delete — this used to hide
+  // rows locally with no rule check and no backend call at all. Now it
+  // calls the real bulk-delete endpoint, which blocks any consignment
+  // containing an Approved or already Tally-posted item, and surfaces
+  // blocked ones via the Skip/Force popup.
+  const [bulkDeleteResult, setBulkDeleteResult] = useState<BulkDeleteResultLike | null>(null);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+  const handleBulkDeleteL1 = async () => {
     if (selectedL1Ids.length === 0) return;
-    if (confirm(`Are you sure you want to delete ${selectedL1Ids.length} selected consignment(s)?`)) {
-      setConsignments((prev) => prev.filter((c) => !selectedL1Ids.includes(c.id)));
+    if (!confirm(`Are you sure you want to delete ${selectedL1Ids.length} selected consignment(s)?`)) return;
+
+    setIsBulkDeleting(true);
+    try {
+      const result = await inquiryApi.bulkDeleteConsignments(selectedL1Ids);
+      applyBulkDeleteOutcome(result);
+    } catch (err: any) {
+      setImportNotification(err?.response?.data?.message || 'Bulk delete failed. Please try again.');
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
+  const applyBulkDeleteOutcome = (result: BulkDeleteResultLike) => {
+    const deletedIds = new Set(result.deleted.map((d) => d.id));
+    setConsignments((prev) => prev.filter((c) => !deletedIds.has(c.id)));
+
+    if (result.deleted.length > 0) {
+      setImportNotification(`${result.deleted.length} consignment(s) deleted successfully.`);
+    }
+
+    if (result.blocked.length > 0) {
+      setSelectedL1Ids(result.blocked.map((b) => b.id));
+      setBulkDeleteResult(result);
+    } else {
       setSelectedL1Ids([]);
-      setImportNotification(`${selectedL1Ids.length} consignment(s) deleted.`);
+      setBulkDeleteResult(null);
+    }
+  };
+
+  const handleForceBulkDeleteL1 = async (blockedIds: string[]) => {
+    setIsBulkDeleting(true);
+    try {
+      const result = await inquiryApi.bulkDeleteConsignments(blockedIds, { force: true, forceIds: blockedIds });
+      applyBulkDeleteOutcome(result);
+    } catch (err: any) {
+      setImportNotification(err?.response?.data?.message || 'Force delete failed. Please try again.');
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
+  // Single-consignment delete: blocked if it contains any Approved or
+  // Tally-posted item. On block, offer a force-delete confirmation
+  // instead of silently failing or silently succeeding.
+  const [consignmentDeleteWarning, setConsignmentDeleteWarning] = useState<{
+    isOpen: boolean;
+    id: string;
+    code: string;
+    message: string;
+  }>({ isOpen: false, id: '', code: '', message: '' });
+
+  const handleDeleteConsignment = async (id: string, code: string, force = false) => {
+    if (!force && !confirm(`Are you sure you want to delete consignment "${code}" and all its inquiry items?`)) return;
+    try {
+      await inquiryApi.deleteConsignment(id, force);
+      setConsignments((prev) => prev.filter((c) => c.id !== id));
+      setImportNotification(`Consignment "${code}" deleted successfully.`);
+      setTimeout(() => setImportNotification(null), 4000);
+      setConsignmentDeleteWarning({ isOpen: false, id: '', code: '', message: '' });
+    } catch (err: any) {
+      const errMsg = err?.response?.data?.message || err?.message || 'Consignment cannot be deleted.';
+      setConsignmentDeleteWarning({
+        isOpen: true,
+        id,
+        code,
+        message: Array.isArray(errMsg) ? errMsg.join('\n') : String(errMsg),
+      });
+    }
+  };
+
+  // Single line-item delete: blocked if the item is Approved or already
+  // Tally-posted (see InquiryService.getItemDeleteBlockingReasons on the
+  // backend). BUG FIX: previously had no try/catch, so a rejected delete
+  // (or any other API error) still removed the row from local state right
+  // after the un-awaited-for-errors call — same "optimistic without
+  // rollback" defect as the old consignment/buyer handlers.
+  const [itemDeleteWarning, setItemDeleteWarning] = useState<{
+    isOpen: boolean;
+    id: string;
+    name: string;
+    message: string;
+  }>({ isOpen: false, id: '', name: '', message: '' });
+
+  const handleDeleteInquiryItem = async (id: string, productName: string, force = false) => {
+    if (!force && !confirm(`Are you sure you want to delete inquiry item "${productName}"?`)) return;
+    try {
+      await inquiryApi.deleteInquiryItem(id, force);
+      setGridItems((prev) => prev.filter((g) => g.id !== id));
+      setImportNotification(`Inquiry item "${productName}" deleted successfully.`);
+      setTimeout(() => setImportNotification(null), 4000);
+      setItemDeleteWarning({ isOpen: false, id: '', name: '', message: '' });
+    } catch (err: any) {
+      const errMsg = err?.response?.data?.message || err?.message || 'Inquiry item cannot be deleted.';
+      setItemDeleteWarning({
+        isOpen: true,
+        id,
+        name: productName,
+        message: Array.isArray(errMsg) ? errMsg.join('\n') : String(errMsg),
+      });
     }
   };
 
@@ -564,6 +746,9 @@ export const InquiryPlanningPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Upper-left Duplicate Notification Toast */}
+      <DuplicateToast toast={duplicateToast} onClose={() => setDuplicateToast(null)} />
+
       {/* DARSH IMPEX TOP TITLE BAR */}
       <div className="flex items-center justify-between">
         <div>
@@ -592,11 +777,10 @@ export const InquiryPlanningPage: React.FC = () => {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowFilterPanel(!showFilterPanel)}
-            className={`p-2.5 rounded-lg border transition-all cursor-pointer ${
-              showFilterPanel
+            className={`p-2.5 rounded-lg border transition-all cursor-pointer ${showFilterPanel
                 ? 'bg-blue-50 border-blue-200 text-blue-600'
                 : 'bg-white border-slate-300 hover:bg-slate-50 text-slate-700'
-            }`}
+              }`}
             title="Toggle Filters Panel"
           >
             <Filter size={15} />
@@ -728,21 +912,19 @@ export const InquiryPlanningPage: React.FC = () => {
           <div className="flex items-center border-b border-slate-200 px-1 gap-8 text-xs font-bold pt-2">
             <button
               onClick={() => setSubTab('Active')}
-              className={`pb-3 border-b-2 transition-all cursor-pointer ${
-                subTab === 'Active'
+              className={`pb-3 border-b-2 transition-all cursor-pointer ${subTab === 'Active'
                   ? 'border-blue-600 text-blue-600 font-extrabold text-sm'
                   : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
+                }`}
             >
               Active
             </button>
             <button
               onClick={() => setSubTab('Inactive')}
-              className={`pb-3 border-b-2 transition-all cursor-pointer ${
-                subTab === 'Inactive'
+              className={`pb-3 border-b-2 transition-all cursor-pointer ${subTab === 'Inactive'
                   ? 'border-blue-600 text-blue-600 font-extrabold text-sm'
                   : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
+                }`}
             >
               Inactive
             </button>
@@ -805,118 +987,122 @@ export const InquiryPlanningPage: React.FC = () => {
           {isLoading ? (
             <TableSkeleton rows={6} />
           ) : (
-          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-700">
-                <thead className="bg-slate-100 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
-                  <tr>
-                    <th className="p-3.5 text-center w-10">
-                      <input
-                        type="checkbox"
-                        checked={isAllL1Selected}
-                        onChange={toggleSelectAllL1}
-                        className="rounded border-slate-300 cursor-pointer w-4 h-4"
-                      />
-                    </th>
-                    {renderL1SortHeader('Inquiry By (Buyer Company Name)', 'company')}
-                    {renderL1SortHeader('Inquiry Consignment Code', 'code')}
-                    {renderL1SortHeader('Status', 'status')}
-                    {renderL1SortHeader('Total CBM (m³)', 'total_cbm')}
-                    {renderL1SortHeader('Total Gross Weight (kg)', 'total_weight')}
-                    {renderL1SortHeader('Date & Proposed By', 'proposed_date')}
-                    <th className="p-3.5 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-medium">
-                  {sortedLayer1Consignments.map((item) => (
-                    <tr key={item.id} className={`transition-colors ${selectedL1Ids.includes(item.id) ? 'bg-blue-50/60' : 'hover:bg-slate-50'}`}>
-                      <td className="p-3.5 text-center">
-                        <input
-                          type="checkbox"
-                          checked={selectedL1Ids.includes(item.id)}
-                          onChange={() => toggleSelectOneL1(item.id)}
-                          className="rounded border-slate-300 cursor-pointer w-4 h-4"
-                        />
-                      </td>
-                      {/* Inquiry By (Company) - Clickable to open 2nd Layer */}
-                      <td
-                        onClick={() => {
-                          setActiveConsignmentCode(item.code);
-                          setCurrentLayer(2);
-                        }}
-                        className="p-3.5 font-bold text-blue-600 hover:underline cursor-pointer flex items-center gap-1.5"
-                      >
-                        <Building2 size={15} className="text-slate-400 shrink-0" />
-                        {item.company}
-                      </td>
-
-                      {/* Consignment Code - Clickable to open 2nd Layer */}
-                      <td
-                        onClick={() => {
-                          setActiveConsignmentCode(item.code);
-                          setCurrentLayer(2);
-                        }}
-                        className="p-3.5 font-black text-slate-900 cursor-pointer"
-                      >
-                        <span className="px-2.5 py-1 bg-blue-50 text-blue-800 border border-blue-200 rounded-md font-mono text-xs hover:bg-blue-100">
-                          {item.code}
-                        </span>
-                      </td>
-
-                      {/* Status */}
-                      <td className="p-3.5">
-                        <span
-                          className={`px-2.5 py-1 text-[11px] font-bold rounded-full border ${
-                            item.status === 'FULLY_APPROVED'
-                              ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                              : item.status === 'PARTIALLY_APPROVED'
-                              ? 'bg-amber-50 border-amber-200 text-amber-700'
-                              : 'bg-blue-50 border-blue-200 text-blue-700'
-                          }`}
-                        >
-                          {item.status.replace('_', ' ')}
-                        </span>
-                      </td>
-
-                      <td className="p-3.5 font-mono text-blue-600 font-bold">{item.total_cbm.toFixed(3)} m³</td>
-                      <td className="p-3.5 font-mono text-emerald-700 font-bold">{item.total_weight.toLocaleString()} kg</td>
-                      <td className="p-3.5 text-slate-500 text-[11px]">
-                        <p className="font-semibold text-slate-800">{item.proposed_date}</p>
-                        <p>By: {item.proposed_by}</p>
-                      </td>
-
-                      <td className="p-3.5 text-right space-x-1.5">
-                        <button
+            <div className="space-y-4">
+              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs text-slate-700">
+                    <thead className="bg-slate-100 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
+                      <tr>
+                        <th className="p-3.5 text-center w-10">
+                          <input
+                            type="checkbox"
+                            checked={isAllL1Selected}
+                            onChange={toggleSelectAllL1}
+                            className="rounded border-slate-300 cursor-pointer w-4 h-4"
+                          />
+                        </th>
+                        {renderL1SortHeader('Inquiry By (Buyer Company Name)', 'company')}
+                        {renderL1SortHeader('Inquiry Consignment Code', 'code')}
+                        {renderL1SortHeader('Status', 'status')}
+                        {renderL1SortHeader('Total CBM (m³)', 'total_cbm')}
+                        {renderL1SortHeader('Total Gross Weight (kg)', 'total_weight')}
+                        {renderL1SortHeader('Date & Proposed By', 'proposed_date')}
+                        <th className="p-3.5 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-medium">
+                      {paginatedLayer1Consignments.map((item) => (
+                      <tr key={item.id} className={`transition-colors ${selectedL1Ids.includes(item.id) ? 'bg-blue-50/60' : 'hover:bg-slate-50'}`}>
+                        <td className="p-3.5 text-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedL1Ids.includes(item.id)}
+                            onChange={() => toggleSelectOneL1(item.id)}
+                            className="rounded border-slate-300 cursor-pointer w-4 h-4"
+                          />
+                        </td>
+                        {/* Inquiry By (Company) - Clickable to open 2nd Layer */}
+                        <td
                           onClick={() => {
                             setActiveConsignmentCode(item.code);
                             setCurrentLayer(2);
                           }}
-                          className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-bold cursor-pointer inline-flex items-center gap-1"
+                          className="p-3.5 font-bold text-blue-600 hover:underline cursor-pointer flex items-center gap-1.5"
                         >
-                          <Eye size={12} /> View Details (2nd Layer)
-                        </button>
-                        <button
-                          onClick={async () => {
-                            if (confirm(`Are you sure you want to delete consignment "${item.code}" and all its inquiry items?`)) {
-                              await inquiryApi.deleteConsignment(item.id);
-                              setConsignments((prev) => prev.filter((c) => c.id !== item.id));
-                              setImportNotification(`Consignment "${item.code}" deleted successfully.`);
-                              setTimeout(() => setImportNotification(null), 4000);
-                            }
+                          <Building2 size={15} className="text-slate-400 shrink-0" />
+                          {item.company}
+                        </td>
+
+                        {/* Consignment Code - Clickable to open 2nd Layer */}
+                        <td
+                          onClick={() => {
+                            setActiveConsignmentCode(item.code);
+                            setCurrentLayer(2);
                           }}
-                          className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded text-[11px] font-bold cursor-pointer inline-flex items-center gap-1"
-                          title="Delete Consignment"
+                          className="p-3.5 font-black text-slate-900 cursor-pointer"
                         >
-                          <Trash2 size={12} /> Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                          <span className="px-2.5 py-1 bg-blue-50 text-blue-800 border border-blue-200 rounded-md font-mono text-xs hover:bg-blue-100">
+                            {item.code}
+                          </span>
+                        </td>
+
+                        {/* Status */}
+                        <td className="p-3.5">
+                          <span
+                            className={`px-2.5 py-1 text-[11px] font-bold rounded-full border ${item.status === 'FULLY_APPROVED'
+                                ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                                : item.status === 'PARTIALLY_APPROVED'
+                                  ? 'bg-amber-50 border-amber-200 text-amber-700'
+                                  : 'bg-blue-50 border-blue-200 text-blue-700'
+                              }`}
+                          >
+                            {item.status.replace('_', ' ')}
+                          </span>
+                        </td>
+
+                        <td className="p-3.5 font-mono text-blue-600 font-bold">{item.total_cbm.toFixed(3)} m³</td>
+                        <td className="p-3.5 font-mono text-emerald-700 font-bold">{item.total_weight.toLocaleString()} kg</td>
+                        <td className="p-3.5 text-slate-500 text-[11px]">
+                          <p className="font-semibold text-slate-800">{item.proposed_date}</p>
+                          <p>By: {item.proposed_by}</p>
+                        </td>
+
+                        <td className="p-3.5 text-right space-x-1.5">
+                          <button
+                            onClick={() => {
+                              setActiveConsignmentCode(item.code);
+                              setCurrentLayer(2);
+                            }}
+                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-bold cursor-pointer inline-flex items-center gap-1"
+                          >
+                            <Eye size={12} /> View Details (2nd Layer)
+                          </button>
+                          <button
+                            onClick={() => handleDeleteConsignment(item.id, item.code)}
+                            className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded text-[11px] font-bold cursor-pointer inline-flex items-center gap-1"
+                            title="Delete Consignment"
+                          >
+                            <Trash2 size={12} /> Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
+
+            {/* PAGINATION FOOTER CONTROL LAYER 1 */}
+            <Pagination
+              currentPage={l1Page}
+              totalItems={sortedLayer1Consignments.length}
+              pageSize={l1PageSize}
+              onPageChange={setL1Page}
+              onPageSizeChange={setL1PageSize}
+              pageSizeOptions={[10, 25, 50, 100]}
+            />
           </div>
-          )}
+        )}
         </div>
       )}
 
@@ -963,15 +1149,14 @@ export const InquiryPlanningPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
-                  {sortedGridItems.length > 0 ? (
-                    sortedGridItems.map((item) => (
+                  {paginatedGridItems.length > 0 ? (
+                    paginatedGridItems.map((item) => (
                       <tr
                         key={item.id}
-                        className={`transition-colors ${
-                          item.license_warning
+                        className={`transition-colors ${item.license_warning
                             ? 'bg-rose-50/80 hover:bg-rose-100/80 text-rose-900 border-l-4 border-l-rose-500 font-medium'
                             : 'hover:bg-slate-50'
-                        }`}
+                          }`}
                       >
                         <td className="p-3.5">
                           <input
@@ -1014,9 +1199,8 @@ export const InquiryPlanningPage: React.FC = () => {
                         {/* Status */}
                         <td className="p-3.5">
                           <span
-                            className={`px-2 py-0.5 rounded font-bold text-[10px] ${
-                              item.item_status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'
-                            }`}
+                            className={`px-2 py-0.5 rounded font-bold text-[10px] ${item.item_status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'
+                              }`}
                           >
                             {item.item_status}
                           </span>
@@ -1032,11 +1216,10 @@ export const InquiryPlanningPage: React.FC = () => {
                                 ),
                               );
                             }}
-                            className={`px-2.5 py-1 rounded font-bold text-[10px] cursor-pointer ${
-                              item.tally_post_status === 'POSTED'
+                            className={`px-2.5 py-1 rounded font-bold text-[10px] cursor-pointer ${item.tally_post_status === 'POSTED'
                                 ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                                 : 'bg-amber-100 text-amber-800 border border-amber-300'
-                            }`}
+                              }`}
                           >
                             {item.tally_post_status}
                           </span>
@@ -1067,14 +1250,7 @@ export const InquiryPlanningPage: React.FC = () => {
                             </select>
 
                             <button
-                              onClick={async () => {
-                                if (confirm(`Are you sure you want to delete inquiry item "${item.product_name}"?`)) {
-                                  await inquiryApi.deleteInquiryItem(item.id);
-                                  setGridItems((prev) => prev.filter((g) => g.id !== item.id));
-                                  setImportNotification(`Inquiry item "${item.product_name}" deleted successfully.`);
-                                  setTimeout(() => setImportNotification(null), 4000);
-                                }
-                              }}
+                              onClick={() => handleDeleteInquiryItem(item.id, item.product_name)}
                               className="p-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded cursor-pointer"
                               title="Delete Item"
                             >
@@ -1094,6 +1270,16 @@ export const InquiryPlanningPage: React.FC = () => {
                 </tbody>
               </table>
             </div>
+
+            {/* PAGINATION FOOTER CONTROL LAYER 2 */}
+            <Pagination
+              currentPage={l2Page}
+              totalItems={sortedGridItems.length}
+              pageSize={l2PageSize}
+              onPageChange={setL2Page}
+              onPageSizeChange={setL2PageSize}
+              pageSizeOptions={[10, 25, 50, 100]}
+            />
           </div>
         </div>
       )}
@@ -1420,6 +1606,88 @@ export const InquiryPlanningPage: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* SINGLE CONSIGNMENT DELETE BLOCKED WARNING (Approved/Tally-posted items) */}
+      {consignmentDeleteWarning.isOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-xl border border-slate-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <ShieldAlert size={18} className="text-rose-600" /> Deletion Blocked: {consignmentDeleteWarning.code}
+              </h3>
+              <button
+                onClick={() => setConsignmentDeleteWarning({ isOpen: false, id: '', code: '', message: '' })}
+                className="text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <p className="text-xs text-slate-700 whitespace-pre-line font-medium">{consignmentDeleteWarning.message}</p>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                onClick={() => setConsignmentDeleteWarning({ isOpen: false, id: '', code: '', message: '' })}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl cursor-pointer"
+              >
+                Keep It
+              </button>
+              <button
+                onClick={() => handleDeleteConsignment(consignmentDeleteWarning.id, consignmentDeleteWarning.code, true)}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 size={14} /> Force Delete Anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SINGLE ITEM DELETE BLOCKED WARNING (Approved/Tally-posted) */}
+      {itemDeleteWarning.isOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-xl border border-slate-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <ShieldAlert size={18} className="text-rose-600" /> Deletion Blocked: {itemDeleteWarning.name}
+              </h3>
+              <button
+                onClick={() => setItemDeleteWarning({ isOpen: false, id: '', name: '', message: '' })}
+                className="text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <p className="text-xs text-slate-700 whitespace-pre-line font-medium">{itemDeleteWarning.message}</p>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                onClick={() => setItemDeleteWarning({ isOpen: false, id: '', name: '', message: '' })}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl cursor-pointer"
+              >
+                Keep It
+              </button>
+              <button
+                onClick={() => handleDeleteInquiryItem(itemDeleteWarning.id, itemDeleteWarning.name, true)}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 size={14} /> Force Delete Anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BULK DELETE SKIP/FORCE POPUP (Layer 1 consignments) */}
+      {bulkDeleteResult && bulkDeleteResult.blocked.length > 0 && (
+        <BulkDeleteModal
+          entityLabel="consignment"
+          result={bulkDeleteResult}
+          isProcessing={isBulkDeleting}
+          onCancel={() => {
+            setBulkDeleteResult(null);
+            setSelectedL1Ids([]);
+          }}
+          onForceDelete={handleForceBulkDeleteL1}
+        />
       )}
     </div>
   );

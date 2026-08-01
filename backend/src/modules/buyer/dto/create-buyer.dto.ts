@@ -76,6 +76,12 @@ export class CreateBuyerDto {
   @IsString()
   website?: string;
 
+  @ApiPropertyOptional({ type: [String], example: ['david@ugandabev.co.ug', 'procurement@ugandabev.co.ug'], description: 'Company-level "Email ID (Multiple)" field from the spec.' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  emails?: string[];
+
   @ApiPropertyOptional({ enum: PartyStatus, default: PartyStatus.NEW })
   @IsOptional()
   @IsEnum(PartyStatus)

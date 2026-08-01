@@ -1,0 +1,24 @@
+-- Migration needed for the "Email ID (multiple emails)" fix.
+--
+-- The Supplier and Buyer Prisma models now declare a company-level
+-- `emails String[]` column (see schema.prisma), separate from each
+-- individual contact's single `email` field. This was previously missing
+-- entirely — the frontend only ever captured one email even though both
+-- forms are labeled "(Multiple)" per spec.
+--
+-- Run ONE of the following against your database, then remove this file:
+--
+--   Option A (recommended, keeps migration history in sync with schema.prisma):
+--     npx prisma migrate dev --name add_emails_array_to_supplier_and_buyer
+--
+--   Option B (if this project doesn't track a prisma/migrations folder and
+--   instead pushes schema directly):
+--     npx prisma db push
+--
+-- Either command will apply the equivalent of:
+--
+--   ALTER TABLE "suppliers" ADD COLUMN "emails" TEXT[] NOT NULL DEFAULT '{}';
+--   ALTER TABLE "buyers"    ADD COLUMN "emails" TEXT[] NOT NULL DEFAULT '{}';
+--
+-- After applying, run `npx prisma generate` so the Prisma Client types
+-- pick up the new `emails` field before rebuilding the backend.

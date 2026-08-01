@@ -149,6 +149,22 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         dbMsg = `Duplicate record constraint violation on fields: ${errObj?.meta?.target || 'unique index'}`;
       } else if (errObj.code === 'P2025') {
         dbMsg = 'Target record for update/delete was not found in database';
+      } else if (
+        errObj.code === 'P2022' ||
+        (typeof errObj?.message === 'string' && /column .* does not exist/i.test(errObj.message))
+      ) {
+        // SCHEMA DRIFT: schema.prisma declares a column the live database
+        // doesn't actually have yet. This happens when schema.prisma is
+        // edited (e.g. a new field added for a feature) but nobody ran
+        // `npx prisma db push` (or `prisma migrate dev`) + `npx prisma
+        // generate` against the real database afterward. Prisma Client is
+        // generated from the schema file and will happily build a query
+        // referencing the missing column — Postgres then rejects it. This
+        // is NOT a code bug; it's an out-of-sync database. Surface that
+        // clearly instead of the generic "database operation failed".
+        dbMsg =
+          'Database schema is out of sync with the application (a column referenced in code does not exist in the database yet). ' +
+          'Run "npx prisma db push" (or "npx prisma migrate dev") followed by "npx prisma generate" in the backend folder, then restart the server.';
       }
 
       return {

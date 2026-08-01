@@ -5,14 +5,15 @@ import { teamApi } from '../../api/teamApi';
  * ── Central Team / Access Store ──────────────────────────────────────────
  *
  * Single source of truth for every account in the system (Admin +
- * Employees), the department they belong to, and their per-module
- * View / Edit / Delete permissions. AuthContext (login), TeamMembersPage,
- * and RolesPermissionsPage all read and write through this file so that,
- * for example, promoting someone to Admin here is immediately reflected
- * the next time they log in.
- *
- * This is still a frontend-only mock (persisted to localStorage), matching
- * the rest of the app's mock-data approach — not wired to a real backend.
+ * Employees), fetched live from the real backend (`/api/v1/users`, guarded
+ * by JWT auth + the 'team' module permission). This used to be a
+ * frontend-only mock persisted to localStorage — it is not anymore. All
+ * reads/writes go through the NestJS API, which is also where every rule
+ * (password hashing, "can't delete the last admin", "can't delete the
+ * protected default admin", permission enforcement) is actually enforced.
+ * The frontend mirrors those same rules for a snappy UI, but the backend is
+ * the source of truth and re-validates everything server-side regardless of
+ * what the UI allows.
  */
 
 export type AccountType = 'ADMIN' | 'EMPLOYEE';
@@ -66,60 +67,52 @@ export function fullPermissionSet(): PermissionSet {
   return Object.fromEntries(PERMISSION_MODULES.map((m) => [m.key, { view: true, edit: true, delete: true }]));
 }
 
+// Must match backend/src/modules/user/user.service.ts PROTECTED_ADMIN_EMAIL.
+// The backend is the real enforcement point; this only drives the UI
+// (disabling the delete/demote controls) so people don't hit an avoidable
+// error — the server rejects the action either way.
+const PROTECTED_ADMIN_EMAIL = 'admin@yinglima.com';
+
 export interface TeamMember {
   id: string;
   name: string;
   email: string;
   phone: string;
-  password: string;
+  /** Write-only. The backend NEVER returns a member's password (plaintext or
+   * hashed) — this is only populated locally while typing into a create/reset
+   * password field, and sent up as a fresh value on create/update. */
+  password?: string;
   accountType: AccountType;
-  department: Department;
+  department: Department | string;
   branch: string;
   status: MemberStatus;
   permissions: PermissionSet; // ignored/irrelevant for ADMIN (they always have full access)
   createdDate: string;
-  isDefaultAdmin?: boolean; // protects the hardcoded admin from deletion/demotion
+  /** True only for the one seeded Super Admin account; the backend refuses to
+   * delete, deactivate, or demote it no matter what the UI does. */
+  isDefaultAdmin?: boolean;
 }
-
-const STORAGE_KEY = 'yinglima_team_store_v1';
-
-const DEFAULT_ADMIN: TeamMember = {
-  id: 'admin-default',
-  name: 'Yinglima Admin',
-  email: 'admin@yinglima.com',
-  phone: '+86 13800000000',
-  password: 'admin123',
-  accountType: 'ADMIN',
-  department: 'Management',
-  branch: BRANCHES[0],
-  status: 'ACTIVE',
-  permissions: fullPermissionSet(),
-  createdDate: '2025-01-01',
-  isDefaultAdmin: true,
-};
-
-export const SEED_MEMBERS: TeamMember[] = [];
 
 type Listener = (members: TeamMember[]) => void;
 const listeners = new Set<Listener>();
 let cache: TeamMember[] = [];
 
+function decorate(member: TeamMember): TeamMember {
+  return { ...member, isDefaultAdmin: member.email?.toLowerCase() === PROTECTED_ADMIN_EMAIL };
+}
+
 async function refreshMembers() {
   const data = await teamApi.getMembers();
   if (data) {
-    cache = data;
+    cache = data.map(decorate);
     listeners.forEach((l) => l(cache));
   }
-}
-
-// Initial pull on file load to make sure cached members are populated
-if (typeof window !== 'undefined') {
-  refreshMembers();
 }
 
 export function useTeamStore() {
   const [members, setMembers] = useState<TeamMember[]>(cache);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const listener: Listener = (next) => {
@@ -127,7 +120,9 @@ export function useTeamStore() {
       setIsLoading(false);
     };
     listeners.add(listener);
-    refreshMembers().finally(() => setIsLoading(false));
+    refreshMembers()
+      .catch((e) => setError(e?.response?.data?.message || 'Failed to load team members.'))
+      .finally(() => setIsLoading(false));
     return () => {
       listeners.delete(listener);
     };
@@ -164,21 +159,22 @@ export function useTeamStore() {
     await refreshMembers();
   }, []);
 
+  /** Throws with the backend's actual reason (protected admin / last active
+   * admin / etc.) on failure — callers should try/catch and show err.message
+   * or err.response.data.message rather than assuming success. */
   const removeMember = useCallback(async (id: string, targetUserId?: string) => {
-    const target = cache.find((m) => m.id === id);
-    if (target?.isDefaultAdmin) return false;
     await teamApi.deleteMember(id, targetUserId);
     await refreshMembers();
     return true;
   }, []);
 
-  /** Promote/demote between Admin and Employee. The hardcoded default admin can't be demoted. */
+  /** Promote/demote between Admin and Employee. The backend blocks demoting
+   * the protected default admin or the last remaining active admin — throws
+   * on failure with the real reason. */
   const setAccountType = useCallback(async (id: string, type: AccountType) => {
-    const target = cache.find((m) => m.id === id);
-    if (target?.isDefaultAdmin && type === 'EMPLOYEE') return false;
     await teamApi.updateMember(id, {
       accountType: type,
-      permissions: type === 'ADMIN' ? fullPermissionSet() : target?.permissions,
+      permissions: type === 'ADMIN' ? fullPermissionSet() : undefined,
     });
     await refreshMembers();
     return true;
@@ -189,9 +185,12 @@ export function useTeamStore() {
     await refreshMembers();
   }, []);
 
-  const findByEmail = useCallback((email: string) => cache.find((m) => m.email.toLowerCase() === email.trim().toLowerCase()), []);
+  const findByEmail = useCallback(
+    (email: string) => cache.find((m) => m.email.toLowerCase() === email.trim().toLowerCase()),
+    [],
+  );
 
-  return { members, isLoading, addMember, updateMember, removeMember, setAccountType, setPermissions, findByEmail };
+  return { members, isLoading, error, addMember, updateMember, removeMember, setAccountType, setPermissions, findByEmail };
 }
 
 export function findMemberByEmail(email: string): TeamMember | undefined {
@@ -202,5 +201,5 @@ export function findMemberByEmail(email: string): TeamMember | undefined {
 export function can(member: TeamMember | null | undefined, moduleKey: string, action: 'view' | 'edit' | 'delete'): boolean {
   if (!member) return false;
   if (member.accountType === 'ADMIN') return true;
-  return !!member.permissions[moduleKey]?.[action];
+  return !!member.permissions?.[moduleKey]?.[action];
 }
