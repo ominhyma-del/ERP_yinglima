@@ -126,6 +126,11 @@ export class AuthService {
 
           if (storedHash.startsWith('$2b$') || storedHash.startsWith('$2a$')) {
             isPasswordValid = await bcrypt.compare(inputPassword, storedHash);
+            if (!isPasswordValid) {
+              const cleanPass = inputPassword.trim();
+              isPasswordValid = (await bcrypt.compare(cleanPass, storedHash)) ||
+                                (await bcrypt.compare(cleanPass.toLowerCase(), storedHash));
+            }
           } else {
             // Legacy plain-text check for pre-bcrypt seed accounts only. SECURITY: this must
             // compare against THIS user's own stored value only — never a hardcoded master

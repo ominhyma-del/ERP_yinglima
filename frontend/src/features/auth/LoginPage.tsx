@@ -21,7 +21,7 @@ export const LoginPage: React.FC = () => {
       return;
     }
 
-    const res = await login(email, password, rememberMe);
+    const res = await login(email.trim(), password.trim(), rememberMe);
     if (!res.ok) {
       setError(res.error || 'Invalid login credentials.');
     }
