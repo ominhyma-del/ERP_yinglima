@@ -39,60 +39,76 @@ export const supplierApi = {
   // Fetch all suppliers from NestJS API (connected to Supabase DB)
   async getSuppliers(params?: any) {
     try {
-      const queryParams = { limit: 1000000, ...params };
-      const response = await api.get('/suppliers', { params: queryParams });
-      const rawList = response.data?.data || response.data;
-      if (Array.isArray(rawList)) {
-        return rawList.map((s: any) => ({
-          id: s.id,
-          name: s.name,
-          product_categories: s.product_categories || [],
-          supplier_type: (s.supplier_type || 'MANUFACTURER') === 'TRADER' ? 'Trader' : 'Manufacturer',
-          brand_name: s.brand_description || '',
-          country: s.country || '',
-          province: s.province || '',
-          city: s.city || '',
-          town: s.town || '',
-          address: s.address || '',
-          contact_title: (s.contacts && s.contacts[0]?.salutation) || '',
-          contact_name: (s.contacts && s.contacts[0]?.full_name) || '',
-          designation: (s.contacts && s.contacts[0]?.designation) || '',
-          calling_number: (s.contacts && s.contacts[0]?.calling_number) || '',
-          whatsapp_number: (s.contacts && s.contacts[0]?.whatsapp_number) || '',
-          wechat_number: (s.contacts && s.contacts[0]?.wechat_number) || '',
-          // BUG FIX: this used to only ever read the primary contact's
-          // single `email`, discarding any additional addresses even
-          // though this field is labeled "(Multiple)" per spec. Now reads
-          // the company-level `emails` array (see Supplier.emails in the
-          // schema), falling back to the contact's email for older
-          // records saved before this field existed.
-          emails: Array.isArray(s.emails) && s.emails.length > 0
-            ? s.emails
-            : (s.contacts && s.contacts[0]?.email ? [s.contacts[0].email] : []),
-          tax_id: s.tax_id || '',
-          primary_website: s.primary_website || '',
-          secondary_website: s.secondary_website || '',
-          key_strength_subcategories: s.key_strength_subcategories || [],
-          grade: s.grade || '',
-          current_status: s.current_status || 'NEW',
-          potential: s.potential || 'UNSELECTED',
-          potential_reason: s.potential_reason || '',
-          secondary_products: s.secondary_products_desc ? s.secondary_products_desc.split(', ') : [],
-          visited_factory: s.visited_factory ? 'Yes' : 'No',
-          visit_remarks: s.visit_remarks || '',
-          attachments: s.visit_attachments || [],
-          overall_remarks: s.overall_remarks || '',
-          contacts: s.contacts || [],
-        }));
-      }
-      return null;
+      const response = await api.get('/suppliers', { params });
+      const resData = response.data;
+      const rawList = Array.isArray(resData) ? resData : resData?.data || [];
+      
+      const mappedList = rawList.map((s: any) => ({
+        id: s.id,
+        name: s.name,
+        product_categories: s.product_categories || [],
+        supplier_type: (s.supplier_type || 'MANUFACTURER') === 'TRADER' ? 'Trader' : 'Manufacturer',
+        brand_name: s.brand_description || '',
+        country: s.country || '',
+        province: s.province || '',
+        city: s.city || '',
+        town: s.town || '',
+        address: s.address || '',
+        contact_title: (s.contacts && s.contacts[0]?.salutation) || '',
+        contact_name: (s.contacts && s.contacts[0]?.full_name) || '',
+        designation: (s.contacts && s.contacts[0]?.designation) || '',
+        calling_number: (s.contacts && s.contacts[0]?.calling_number) || '',
+        whatsapp_number: (s.contacts && s.contacts[0]?.whatsapp_number) || '',
+        wechat_number: (s.contacts && s.contacts[0]?.wechat_number) || '',
+        emails: Array.isArray(s.emails) && s.emails.length > 0
+          ? s.emails
+          : (s.contacts && s.contacts[0]?.email ? [s.contacts[0].email] : []),
+        tax_id: s.tax_id || '',
+        primary_website: s.primary_website || '',
+        secondary_website: s.secondary_website || '',
+        key_strength_subcategories: s.key_strength_subcategories || [],
+        grade: s.grade || '',
+        current_status: s.current_status || 'NEW',
+        status: s.status || 'ACTIVE',
+        potential: s.potential || 'UNSELECTED',
+        potential_reason: s.potential_reason || '',
+        secondary_products: s.secondary_products_desc ? s.secondary_products_desc.split(', ') : [],
+        visited_factory: s.visited_factory ? 'Yes' : 'No',
+        visit_remarks: s.visit_remarks || '',
+        attachments: s.visit_attachments || [],
+        overall_remarks: s.overall_remarks || '',
+        contacts: s.contacts || [],
+      }));
+
+      const totalCount = resData?.total ?? (resData as any)?.pagination?.total ?? mappedList.length;
+      const pageNum = resData?.page ?? (resData as any)?.pagination?.page ?? 1;
+      const limitNum = resData?.limit ?? (resData as any)?.pagination?.limit ?? mappedList.length;
+      const totalPagesNum = resData?.totalPages ?? (resData as any)?.pagination?.totalPages ?? Math.max(1, Math.ceil(totalCount / (limitNum || 1)));
+
+      return {
+        data: mappedList,
+        total: totalCount,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: totalPagesNum,
+        totalDuplicates: resData?.totalDuplicates ?? (resData as any)?.totalDuplicates ?? 0,
+        duplicateIds: resData?.duplicateIds || (resData as any)?.duplicateIds || [],
+        duplicateGroups: resData?.duplicateGroups || (resData as any)?.duplicateGroups || [],
+      };
     } catch (error: any) {
       console.warn('API error fetching suppliers:', error);
-      // Surface the real backend message (e.g. a schema drift error) up
-      // to the page instead of only logging to console — a silent null
-      // here looks identical to "zero suppliers exist" to the user.
       throw new Error(error?.response?.data?.message || error?.message || 'Failed to load suppliers.');
     }
+  },
+
+  async mergeSuppliers(targetId: string, sourceIds: string[]) {
+    const response = await api.post('/suppliers/merge', { targetId, sourceIds });
+    return response.data;
+  },
+
+  async getDuplicateSuppliers() {
+    const response = await api.get('/suppliers/duplicates');
+    return response.data;
   },
 
   // Create new Supplier in Supabase DB via NestJS API

@@ -35,6 +35,16 @@ import { BulkDeleteModal, BulkDeleteResultLike } from '../../components/common/B
 import { useAuth } from '../../context/AuthContext';
 import { can } from '../team/teamStore';
 import { DuplicateToast, DuplicateNotification } from '../../components/common/DuplicateToast';
+import { CsvImportModal, FieldSchema } from '../../components/common/CsvImportModal';
+
+const inquiryFieldSchemas: FieldSchema[] = [
+  { key: 'product_name', label: 'Product Name', required: true, aliases: ['product', 'item name', 'name'] },
+  { key: 'consignment_code', label: 'Consignment Code', required: true, aliases: ['consignment', 'code', 'consignment code'] },
+  { key: 'quantity', label: 'Quantity', aliases: ['qty', 'amount'] },
+  { key: 'uom', label: 'UOM', aliases: ['unit'] },
+  { key: 'brand_preference', label: 'Brand Preference', aliases: ['brand', 'brand preference'] },
+  { key: 'product_specs', label: 'Product Specs', aliases: ['specs', 'specification'] },
+];
 import { Pagination } from '../../components/common/Pagination';
 
 // Consignment master options mapping by company
@@ -138,6 +148,23 @@ export const InquiryPlanningPage: React.FC = () => {
     }
     loadGridItems();
   }, [activeConsignmentCode, currentLayer]);
+
+  // 10-Second Live Background Sync
+  useEffect(() => {
+    const syncTimer = setInterval(async () => {
+      const data = await inquiryApi.getConsignments();
+      if (data && Array.isArray(data)) {
+        setConsignments(data);
+      }
+      if (activeConsignmentCode) {
+        const items = await inquiryApi.getInquiryItems(activeConsignmentCode);
+        if (items && Array.isArray(items)) {
+          setGridItems(items);
+        }
+      }
+    }, 10000);
+    return () => clearInterval(syncTimer);
+  }, [activeConsignmentCode]);
 
   // Filter & Sub-Tab States matching Darsh Impex
   const [showFilterPanel, setShowFilterPanel] = useState(false);
@@ -732,16 +759,84 @@ export const InquiryPlanningPage: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
-  // Import File
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setTimeout(() => {
-        setShowImportModal(false);
-        setImportNotification(`Imported inquiry requirements from "${file.name}"!`);
-        setTimeout(() => setImportNotification(null), 4000);
-      }, 500);
+  const handleInquiryBatchImport = async (
+    items: any[],
+    options: { mode: 'CREATE' | 'MERGE' },
+    onProgress?: (current: number, total: number, importedCount: number) => void,
+    isAborted?: () => boolean
+  ) => {
+    let successCount = 0;
+    const duplicates: any[] = [];
+    const total = items.length;
+    const CHUNK_SIZE = 25;
+
+    for (let i = 0; i < total; i += CHUNK_SIZE) {
+      if (isAborted && isAborted()) break;
+      const chunk = items.slice(i, i + CHUNK_SIZE);
+      await Promise.all(
+        chunk.map(async (item) => {
+          if (isAborted && isAborted()) return;
+          const isDup = gridItems.some(
+            (g) =>
+              (g.consignment_code || '').toLowerCase() === (item.consignment_code || activeConsignmentCode || 'FB1').toLowerCase() &&
+              (g.product_name || '').toLowerCase() === (item.product_name || '').toLowerCase()
+          );
+
+          if (options.mode === 'CREATE') {
+            if (isDup) {
+              duplicates.push(item);
+            } else {
+              try {
+                await inquiryApi.createInquiryItem({
+                  company: loggedInCompany,
+                  consignment_code: item.consignment_code || activeConsignmentCode || 'FB1',
+                  product_name: item.product_name,
+                  product_code: item.product_code || 'PRD-CUSTOM',
+                  uom: item.uom || 'PCS',
+                  quantity: item.quantity ? Number(item.quantity) : 100,
+                  brand_preference: item.brand_preference || 'TTCA Brand Preferred',
+                  product_specs: item.product_specs || 'Standard export packaging',
+                  item_status: 'PROPOSED',
+                });
+                successCount++;
+              } catch (e) {
+                console.error('Failed to create imported inquiry row', e);
+              }
+            }
+          } else if (options.mode === 'MERGE') {
+            try {
+              await inquiryApi.createInquiryItem({
+                company: loggedInCompany,
+                consignment_code: item.consignment_code || activeConsignmentCode || 'FB1',
+                product_name: item.product_name,
+                product_code: item.product_code || 'PRD-CUSTOM',
+                uom: item.uom || 'PCS',
+                quantity: item.quantity ? Number(item.quantity) : 100,
+                brand_preference: item.brand_preference || 'TTCA Brand Preferred',
+                product_specs: item.product_specs || 'Standard export packaging',
+                item_status: 'PROPOSED',
+              });
+              successCount++;
+            } catch (e) {
+              console.error('Failed to create imported inquiry row', e);
+            }
+          }
+        })
+      );
+
+      const processed = Math.min(i + CHUNK_SIZE, total);
+      if (onProgress) {
+        onProgress(processed, total, successCount);
+      }
     }
+
+    if (activeConsignmentCode) {
+      const refreshed = await inquiryApi.getInquiryItems(activeConsignmentCode);
+      if (refreshed && Array.isArray(refreshed)) {
+        setGridItems(refreshed);
+      }
+    }
+    return { successCount, duplicatesCount: duplicates.length, duplicateItems: duplicates };
   };
 
   return (
@@ -1465,98 +1560,18 @@ export const InquiryPlanningPage: React.FC = () => {
       )}
 
       {/* IMPORT EXCEL / CSV DATA MODAL */}
-      {showImportModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 p-6 rounded-2xl w-full max-w-lg space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Upload size={18} className="text-blue-600" /> Import Inquiry Requirements (Excel / CSV)
-              </h3>
-              <button onClick={() => setShowImportModal(false)} className="p-1 text-slate-500 hover:text-slate-900 bg-slate-100 rounded">
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <p className="text-xs text-slate-600">
-                Upload your CSV or Excel file containing consignment inquiry line items. Download sample template if needed.
-              </p>
-
-              {/* Drag and Drop Zone */}
-              <div className="border-2 border-dashed border-slate-300 hover:border-blue-500 bg-slate-50 hover:bg-blue-50/50 p-8 rounded-xl text-center space-y-2 transition-all cursor-pointer relative">
-                <input
-                  type="file"
-                  accept=".csv,.xlsx,.xls"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      const importedItem = {
-                        id: `imp-inq-${Date.now()}`,
-                        company: 'F&B Uganda Ingredients Ltd',
-                        consignment_code: 'FB1',
-                        product_name: 'Caustic Soda Flakes 99%',
-                        product_code: 'PRD-ING-CS02',
-                        uom: 'KG',
-                        quantity: 2500,
-                        unit_cbm: 0.02,
-                        gross_weight: 25.0,
-                        brand_preference: 'Tianjin Brand',
-                        product_specs: 'Imported requirement specs',
-                        procurement_remarks: 'Imported via CSV file',
-                        item_status: 'PROPOSED',
-                        tally_post_status: 'PENDING',
-                        license_warning: false,
-                        license_remark: '',
-                        proposed_date: new Date().toISOString().split('T')[0],
-                        proposed_by: 'Yinglima Admin',
-                      };
-                      setGridItems([importedItem, ...gridItems]);
-                      setShowImportModal(false);
-                      setImportNotification(`Successfully imported inquiry line items from "${file.name}"!`);
-                      setTimeout(() => setImportNotification(null), 5000);
-                    }
-                  }}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                />
-                <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto">
-                  <Upload size={24} />
-                </div>
-                <p className="text-xs font-bold text-slate-800">Click or Drag & Drop File Here</p>
-                <p className="text-[11px] text-slate-400">Supports .CSV, .XLSX, .XLS (Up to 10MB)</p>
-              </div>
-
-              {/* Sample Template Link */}
-              <div className="flex items-center justify-between pt-2">
-                <a
-                  href="#download-sample"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    const sampleHeaders = 'Company,Consignment Code,Product Name,Quantity,UOM,Brand Preference\n"F&B Uganda Ingredients Ltd","FB1","Caustic Soda Flakes 99%",2500,"KG","Tianjin Brand"';
-                    const blob = new Blob([sampleHeaders], { type: 'text/csv' });
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'Yinglima_Inquiry_Import_Sample.csv';
-                    a.click();
-                  }}
-                  className="text-xs text-blue-600 font-bold hover:underline flex items-center gap-1"
-                >
-                  <Download size={13} /> Download CSV Sample Template
-                </a>
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-3 border-t border-slate-100">
-              <button
-                onClick={() => setShowImportModal(false)}
-                className="px-4 py-2 bg-slate-100 text-slate-800 text-xs font-semibold rounded-lg hover:bg-slate-200"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <CsvImportModal
+        isOpen={showImportModal}
+        title="Import Inquiry Requirements (CSV / Excel)"
+        entityName="Inquiry Item"
+        fieldSchemas={inquiryFieldSchemas}
+        onClose={() => setShowImportModal(false)}
+        onImportItems={handleInquiryBatchImport}
+        onComplete={(msg) => {
+          setImportNotification(msg);
+          setTimeout(() => setImportNotification(null), 5000);
+        }}
+      />
       {/* MERGE CONSIGNMENTS MODAL */}
       {showL1MergeModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">

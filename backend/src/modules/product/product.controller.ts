@@ -46,6 +46,23 @@ export class ProductController {
     return this.productService.findAll(tenant, query);
   }
 
+  @Get('duplicates')
+  @RequirePermission({ module: 'products', action: 'VIEW' })
+  @ApiOperation({ summary: 'Find duplicate products in database' })
+  findDuplicates(@CurrentTenant() tenant: TenantContext) {
+    return this.productService.findDuplicates(tenant);
+  }
+
+  @Post('merge')
+  @RequirePermission({ module: 'products', action: 'EDIT' })
+  @ApiOperation({ summary: 'Merge selected duplicate products into a single target profile' })
+  mergeProducts(
+    @Body() dto: { targetId: string; sourceIds: string[] },
+    @CurrentTenant() tenant: TenantContext,
+  ) {
+    return this.productService.mergeProducts(tenant, dto);
+  }
+
   @Get(':id')
   @RequirePermission({ module: 'products', action: 'VIEW' })
   @ApiOperation({ summary: 'Get Product details by ID' })

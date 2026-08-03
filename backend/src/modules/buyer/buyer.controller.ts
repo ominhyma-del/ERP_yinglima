@@ -45,6 +45,23 @@ export class BuyerController {
     return this.buyerService.findAll(tenant, query);
   }
 
+  @Get('duplicates')
+  @RequirePermission({ module: 'buyers', action: 'VIEW' })
+  @ApiOperation({ summary: 'Find duplicate buyer profiles in database' })
+  findDuplicates(@CurrentTenant() tenant: TenantContext) {
+    return this.buyerService.findDuplicates(tenant);
+  }
+
+  @Post('merge')
+  @RequirePermission({ module: 'buyers', action: 'EDIT' })
+  @ApiOperation({ summary: 'Merge selected duplicate buyers into a single target profile' })
+  mergeBuyers(
+    @Body() dto: { targetId: string; sourceIds: string[] },
+    @CurrentTenant() tenant: TenantContext,
+  ) {
+    return this.buyerService.mergeBuyers(tenant, dto);
+  }
+
   @Get(':id')
   @RequirePermission({ module: 'buyers', action: 'VIEW' })
   @ApiOperation({ summary: 'Get Buyer profile by ID' })

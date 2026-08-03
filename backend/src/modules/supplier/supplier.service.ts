@@ -67,6 +67,7 @@ export class SupplierService {
   async findAll(tenant: TenantContext, query: any) {
     const {
       search,
+      subTab,
       productCategory,
       keyStrengthSubcategory,
       country,
@@ -75,51 +76,84 @@ export class SupplierService {
       supplierType,
       grade,
       currentStatus,
+      status,
       potential,
       visitedFactory,
+      onlyDuplicates,
+      sortBy = 'created_at',
+      sortOrder = 'desc',
       page = 1,
-      limit = 1000000,
+      limit = 100,
     } = query;
+
+    const duplicateInfo = await this.findDuplicates(tenant);
 
     const where: any = {
       company_id: tenant.companyId,
       deleted_at: null,
     };
 
-    if (search) {
+    if (subTab === 'Active') {
+      where.status = RecordStatus.ACTIVE;
+    } else if (subTab === 'Inactive') {
+      where.status = RecordStatus.INACTIVE;
+    }
+
+    if (search && search.trim()) {
+      const term = search.trim();
       where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { brand_description: { contains: search, mode: 'insensitive' } },
-        { secondary_products_desc: { contains: search, mode: 'insensitive' } },
+        { name: { contains: term, mode: 'insensitive' } },
+        { brand_description: { contains: term, mode: 'insensitive' } },
+        { secondary_products_desc: { contains: term, mode: 'insensitive' } },
+        { city: { contains: term, mode: 'insensitive' } },
       ];
     }
 
-    if (productCategory) {
+    if (productCategory && productCategory !== 'All') {
       where.product_categories = { has: productCategory };
     }
 
-    if (keyStrengthSubcategory) {
+    if (keyStrengthSubcategory && keyStrengthSubcategory !== 'All') {
       where.key_strength_subcategories = { has: keyStrengthSubcategory };
     }
 
-    if (country) where.country = country;
-    if (province) where.province = province;
-    if (city) where.city = city;
-    if (supplierType) where.supplier_type = supplierType;
-    if (grade) where.grade = grade;
-    if (currentStatus) where.current_status = currentStatus;
-    if (potential) where.potential = potential;
-    if (visitedFactory !== undefined) where.visited_factory = visitedFactory === 'true';
+    if (country && country !== 'All') where.country = country;
+    if (province && province !== 'All') where.province = province;
+    if (city && city !== 'All') where.city = city;
+    if (supplierType && supplierType !== 'All') {
+      where.supplier_type = supplierType.toUpperCase() === 'TRADER' ? 'TRADER' : 'MANUFACTURER';
+    }
+    if (grade && grade !== 'All') where.grade = grade;
+    if (currentStatus && currentStatus !== 'All') where.current_status = currentStatus;
+    if (status && status !== 'All') where.status = status;
+    if (potential && potential !== 'All') where.potential = potential;
+    if (visitedFactory !== undefined && visitedFactory !== 'All') {
+      where.visited_factory = String(visitedFactory).toLowerCase() === 'true' || String(visitedFactory).toLowerCase() === 'yes';
+    }
 
-    const skip = (Number(page) - 1) * Number(limit);
-    const take = Number(limit);
+    if (onlyDuplicates === 'true' || onlyDuplicates === true) {
+      where.id = { in: duplicateInfo.duplicateIds };
+    }
+
+    // Dynamic OrderBy
+    let orderBy: any = { created_at: sortOrder.toLowerCase() === 'asc' ? 'asc' : 'desc' };
+    if (sortBy === 'name') orderBy = { name: sortOrder };
+    else if (sortBy === 'country') orderBy = { country: sortOrder };
+    else if (sortBy === 'province') orderBy = { province: sortOrder };
+    else if (sortBy === 'city') orderBy = { city: sortOrder };
+    else if (sortBy === 'grade') orderBy = { grade: sortOrder };
+    else if (sortBy === 'current_status') orderBy = { current_status: sortOrder };
+
+    const takeVal = Number(limit) > 0 ? Number(limit) : 100;
+    const pageVal = Number(page) > 0 ? Number(page) : 1;
+    const skip = (pageVal - 1) * takeVal;
 
     const [data, total] = await Promise.all([
       this.prisma.supplier.findMany({
         where,
         skip,
-        take,
-        orderBy: { created_at: 'desc' },
+        take: takeVal,
+        orderBy,
         include: {
           contacts: true,
         },
@@ -129,13 +163,136 @@ export class SupplierService {
 
     return {
       data,
-      meta: {
-        total,
-        page: Number(page),
-        limit: Number(limit),
-        totalPages: Math.ceil(total / take),
-      },
+      total,
+      page: pageVal,
+      limit: takeVal,
+      totalPages: Math.ceil(total / takeVal),
+      totalDuplicates: duplicateInfo.totalDuplicates,
+      duplicateIds: duplicateInfo.duplicateIds,
+      duplicateGroups: duplicateInfo.duplicateGroups,
     };
+  }
+
+  async findDuplicates(tenant: TenantContext) {
+    const suppliers = await this.prisma.supplier.findMany({
+      where: { company_id: tenant.companyId, deleted_at: null },
+      select: { id: true, name: true, tax_id: true, country: true, city: true }
+    });
+
+    const nameMap = new Map<string, string[]>();
+    const taxMap = new Map<string, string[]>();
+
+    for (const s of suppliers) {
+      const normName = s.name.trim().toLowerCase();
+      if (!nameMap.has(normName)) nameMap.set(normName, []);
+      nameMap.get(normName)!.push(s.id);
+
+      if (s.tax_id && s.tax_id.trim()) {
+        const normTax = s.tax_id.trim().toLowerCase();
+        if (!taxMap.has(normTax)) taxMap.set(normTax, []);
+        taxMap.get(normTax)!.push(s.id);
+      }
+    }
+
+    const duplicateGroups: { reason: string; key: string; ids: string[] }[] = [];
+    const allDuplicateIds = new Set<string>();
+
+    for (const [name, ids] of nameMap.entries()) {
+      if (ids.length > 1) {
+        duplicateGroups.push({ reason: 'Duplicate Name', key: name, ids });
+        ids.forEach(id => allDuplicateIds.add(id));
+      }
+    }
+
+    for (const [taxId, ids] of taxMap.entries()) {
+      if (ids.length > 1) {
+        duplicateGroups.push({ reason: 'Duplicate Tax ID', key: taxId, ids });
+        ids.forEach(id => allDuplicateIds.add(id));
+      }
+    }
+
+    return {
+      totalDuplicates: allDuplicateIds.size,
+      duplicateGroups,
+      duplicateIds: Array.from(allDuplicateIds),
+    };
+  }
+
+  async mergeSuppliers(tenant: TenantContext, dto: { targetId: string; sourceIds: string[] }) {
+    const { targetId, sourceIds } = dto;
+    if (!targetId || !sourceIds || sourceIds.length === 0) {
+      throw new BadRequestException('Target ID and at least one Source ID are required.');
+    }
+
+    const validSourceIds = Array.from(new Set(sourceIds.filter((id) => id !== targetId)));
+    if (validSourceIds.length === 0) {
+      throw new BadRequestException('No valid source IDs to merge.');
+    }
+
+    return this.txService.run(async (tx) => {
+      const target = await tx.supplier.findFirst({
+        where: { id: targetId, company_id: tenant.companyId, deleted_at: null },
+        include: { contacts: true },
+      });
+      if (!target) throw new NotFoundException(`Target supplier ${targetId} not found.`);
+
+      const sources = await tx.supplier.findMany({
+        where: { id: { in: validSourceIds }, company_id: tenant.companyId, deleted_at: null },
+        include: { contacts: true },
+      });
+
+      const allCategories = Array.from(
+        new Set([...(target.product_categories || []), ...sources.flatMap((s) => s.product_categories || [])]),
+      );
+      const allSubcategories = Array.from(
+        new Set([
+          ...(target.key_strength_subcategories || []),
+          ...sources.flatMap((s) => s.key_strength_subcategories || []),
+        ]),
+      );
+      const allEmails = Array.from(
+        new Set([...(target.emails || []), ...sources.flatMap((s) => s.emails || [])]),
+      );
+
+      for (const source of sources) {
+        if (source.contacts && source.contacts.length > 0) {
+          await tx.supplierContact.updateMany({
+            where: { supplier_id: source.id },
+            data: { supplier_id: targetId },
+          });
+        }
+        await tx.supplier.update({
+          where: { id: source.id },
+          data: { deleted_at: new Date(), updated_by: tenant.userId },
+        });
+      }
+
+      const updatedTarget = await tx.supplier.update({
+        where: { id: targetId },
+        data: {
+          product_categories: allCategories,
+          key_strength_subcategories: allSubcategories,
+          emails: allEmails,
+          updated_by: tenant.userId,
+        },
+        include: { contacts: true },
+      });
+
+      await this.audit.record(
+        {
+          action: 'MERGE',
+          entity: 'Supplier',
+          entityId: targetId,
+          before: target,
+          after: updatedTarget,
+          description: `Merged ${sources.length} supplier(s) into "${target.name}"`,
+        },
+        tenant,
+        tx,
+      );
+
+      return updatedTarget;
+    });
   }
 
   async findOne(id: string, tenant: TenantContext) {

@@ -18,6 +18,19 @@ import {
 import { productApi } from '../../api/productApi';
 import { DuplicateToast, DuplicateNotification } from '../../components/common/DuplicateToast';
 import { Pagination } from '../../components/common/Pagination';
+import { CsvImportModal, FieldSchema } from '../../components/common/CsvImportModal';
+
+const productFieldSchemas: FieldSchema[] = [
+  { key: 'name_tally', label: 'Product Tally Name', required: true, aliases: ['name', 'tally name', 'product name'] },
+  { key: 'name_invoice', label: 'Invoice Name', aliases: ['invoice name'] },
+  { key: 'product_code', label: 'Product Code', required: true, aliases: ['code', 'sku'] },
+  { key: 'category', label: 'Category' },
+  { key: 'subcategory', label: 'Sub Category', aliases: ['sub category', 'sub-category'] },
+  { key: 'brand', label: 'Brand' },
+  { key: 'hsn_code', label: 'HSN Code', aliases: ['hsn'] },
+  { key: 'uom', label: 'UOM', aliases: ['unit'] },
+  { key: 'status', label: 'Status' },
+];
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -356,28 +369,13 @@ export const ProductMasterPage: React.FC = () => {
 
   useEffect(() => { saveFieldOverrides(fieldOverrides); }, [fieldOverrides]);
 
-  const [isLoading, setIsLoading] = useState(true);
-
-  const loadApiProducts = async () => {
-    setIsLoading(true);
-    const data = await productApi.getProducts();
-    if (data && Array.isArray(data)) {
-      setProducts(data);
-    }
-    setIsLoading(false);
-  };
-
-  useEffect(() => {
-    loadApiProducts();
-  }, []);
-
   // Shared toast / alerts
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [duplicateToast, setDuplicateToast] = useState<DuplicateNotification | null>(null);
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => setToast({ msg, type });
   const [ruleAlert, setRuleAlert] = useState<string | null>(null);
 
-  // ── Product view state ──────────────────────────────────────────────────
+  // Product view state
   const [prodView, setProdView] = useState<'list' | 'detail' | 'add' | 'edit'>('list');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [activeFormTab, setActiveFormTab] = useState<'general' | 'packaging' | 'specs' | 'docs'>('general');
@@ -423,23 +421,154 @@ export const ProductMasterPage: React.FC = () => {
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const computedCBM = calcCBM(form.length_cm, form.width_cm, form.height_cm);
 
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase();
-    return products.filter(p => {
-      if (p.status !== statusFilterTab) return false;
-      if (q && !p.name_tally.toLowerCase().includes(q) && !p.product_code.toLowerCase().includes(q) && !p.name_invoice.toLowerCase().includes(q)) return false;
-      if (filterCat && p.category !== filterCat) return false;
-      if (filterSubCat && p.subcategory !== filterSubCat) return false;
-      if (filterBrand && p.brand !== filterBrand) return false;
-      if (filterHSN && p.hsn_code !== filterHSN) return false;
-      if (filterUOM && p.uom !== filterUOM) return false;
-      return true;
-    });
-  }, [products, search, filterCat, filterSubCat, filterBrand, filterHSN, filterUOM, statusFilterTab]);
-
-  // Column Sorting State
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalDuplicates, setTotalDuplicates] = useState(0);
+  const [duplicateIds, setDuplicateIds] = useState<string[]>([]);
+  const [onlyDuplicates, setOnlyDuplicates] = useState(false);
   const [sortField, setSortField] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const loadApiProducts = async (showLoading = true) => {
+    if (showLoading) setIsLoading(true);
+    setLoadError(null);
+    try {
+      const params = {
+        page,
+        limit: pageSize,
+        search,
+        status: statusFilterTab,
+        categoryId: filterCat,
+        subcategoryId: filterSubCat,
+        brandId: filterBrand,
+        onlyDuplicates,
+        sortBy: sortField || 'name_tally',
+        sortOrder: sortDirection,
+      };
+      const res = await productApi.getProducts(params);
+      if (res && Array.isArray(res.data)) {
+        setProducts(res.data);
+        setTotalItems(res.total);
+        setTotalDuplicates(res.totalDuplicates || 0);
+        setDuplicateIds(res.duplicateIds || []);
+      }
+    } catch (err: any) {
+      setLoadError(err?.message || 'Failed to load products.');
+    } finally {
+      if (showLoading) setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadApiProducts(true);
+  }, [
+    page,
+    pageSize,
+    search,
+    statusFilterTab,
+    filterCat,
+    filterSubCat,
+    filterBrand,
+    onlyDuplicates,
+    sortField,
+    sortDirection,
+  ]);
+
+  // 10-Second Live Background Sync
+  useEffect(() => {
+    const syncTimer = setInterval(() => {
+      loadApiProducts(false);
+    }, 10000);
+    return () => clearInterval(syncTimer);
+  }, [
+    page,
+    pageSize,
+    search,
+    statusFilterTab,
+    filterCat,
+    filterSubCat,
+    filterBrand,
+    onlyDuplicates,
+    sortField,
+    sortDirection,
+  ]);
+
+  // Direct server-returned array for rendering
+  const filtered = products;
+  const sortedProducts = products;
+  const paginatedProducts = products;
+
+  const handleProductBatchImport = async (
+    items: any[],
+    options: { mode: 'CREATE' | 'MERGE' },
+    onProgress?: (current: number, total: number, importedCount: number) => void,
+    isAborted?: () => boolean
+  ) => {
+    let successCount = 0;
+    const duplicates: any[] = [];
+    const total = items.length;
+    const CHUNK_SIZE = 25;
+
+    for (let i = 0; i < total; i += CHUNK_SIZE) {
+      if (isAborted && isAborted()) {
+        break; // Instant cancellation
+      }
+      const chunk = items.slice(i, i + CHUNK_SIZE);
+      await Promise.all(
+        chunk.map(async (item) => {
+          if (isAborted && isAborted()) return;
+          const isDup = products.some(
+            (p) =>
+              (p.product_code && p.product_code.trim().toLowerCase() === (item.product_code || '').trim().toLowerCase()) ||
+              (p.name_tally && p.name_tally.trim().toLowerCase() === (item.name_tally || item.name || '').trim().toLowerCase())
+          );
+
+          if (options.mode === 'CREATE') {
+            if (isDup) {
+              duplicates.push(item);
+            } else {
+              try {
+                await productApi.createProduct(item);
+                successCount++;
+              } catch (e) {
+                console.error('Failed to create imported product row', e);
+              }
+            }
+          } else if (options.mode === 'MERGE') {
+            const target = products.find(
+              (p) =>
+                (p.product_code && p.product_code.trim().toLowerCase() === (item.product_code || '').trim().toLowerCase()) ||
+                (p.name_tally && p.name_tally.trim().toLowerCase() === (item.name_tally || item.name || '').trim().toLowerCase())
+            );
+            if (target) {
+              try {
+                await productApi.mergeProducts(target.id, [target.id]);
+                successCount++;
+              } catch (e) {
+                console.error('Failed to merge imported product row', e);
+              }
+            } else {
+              try {
+                await productApi.createProduct(item);
+                successCount++;
+              } catch (e) {
+                console.error('Failed to create imported product row', e);
+              }
+            }
+          }
+        })
+      );
+
+      const processed = Math.min(i + CHUNK_SIZE, total);
+      if (onProgress) {
+        onProgress(processed, total, successCount);
+      }
+    }
+
+    await loadApiProducts(true);
+    return { successCount, duplicatesCount: duplicates.length, duplicateItems: duplicates };
+  };
 
   const handleSort = (field: string) => {
     if (sortField === field) {
@@ -1907,70 +2036,17 @@ export const ProductMasterPage: React.FC = () => {
       {quickCreate && <QuickCreateModal type={quickCreate} categories={categories} onSave={handleQuickSave} onClose={() => setQuickCreate(null)} />}
 
       {/* Import */}
-      {showImport && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 p-6 rounded-2xl w-full max-w-md shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2"><Upload size={16} className="text-blue-600" /> Import Products (CSV / Excel)</h3>
-              <button onClick={() => { setShowImport(false); setImportReport(null); }} className="p-1 bg-slate-100 rounded text-slate-500 hover:text-slate-900 cursor-pointer"><X size={14} /></button>
-            </div>
-            {!importReport ? (
-              <>
-                <div className="text-xs text-slate-600 space-y-2">
-                  <p>Upload a <strong>.csv</strong> or <strong>.xlsx</strong> file. Duplicate Name + Code combinations will be skipped with a report.</p>
-                  <div onClick={() => fileRef.current?.click()} className="border-2 border-dashed border-slate-300 hover:border-blue-400 bg-slate-50 p-8 rounded-xl text-center cursor-pointer space-y-2 transition-all relative">
-                    <FileSpreadsheet size={32} className="mx-auto text-blue-500" />
-                    <p className="font-semibold text-slate-700">Click to select file</p>
-                    <p className="text-[11px] text-slate-400">Supports .csv, .xls, .xlsx</p>
-                    <input ref={fileRef} type="file" accept=".csv,.xls,.xlsx" onChange={handleImportFile} className="hidden" />
-                  </div>
-                  <div className="flex items-center justify-between pt-2">
-                    <a
-                      href="#download-sample"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        const sampleHeaders = 'Product Name (Tally),Product Name (Invoice),Product Code,Category,Sub Category,Brand,HSN Code,VAT Refund %,UOM,Pkg Qty,Pkg Gross Wt (kg),Pkg CBM (m³),Status\n"Continuous Band Sealer FR900","Continuous Band Sealer FR-900","PRD-BAND-SEALER","Chemicals & Machinery","General Ingredients & Machines","Yinglima","84223000",0,"SETS",1,28.5,0.15,"ACTIVE"';
-                        const blob = new Blob([sampleHeaders], { type: 'text/csv' });
-                        const url = window.URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = 'Yinglima_Product_Import_Sample.csv';
-                        a.click();
-                      }}
-                      className="text-xs text-blue-600 font-bold hover:underline flex items-center gap-1"
-                    >
-                      <Download size={13} /> Download CSV Sample Template
-                    </a>
-                  </div>
-                </div>
-                <div className="flex justify-end pt-2 border-t border-slate-100">
-                  <button onClick={() => setShowImport(false)} className="px-4 py-2 bg-slate-100 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-200 cursor-pointer">Cancel</button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="space-y-3 text-xs">
-                  {importReport.added.length > 0 && (
-                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 space-y-1">
-                      <p className="font-bold text-emerald-700 flex items-center gap-1.5"><CheckCircle size={13} /> {importReport.added.length} Imported Successfully</p>
-                      {importReport.added.map((r, i) => <p key={i} className="text-emerald-600 pl-5">• {r}</p>)}
-                    </div>
-                  )}
-                  {importReport.skipped.length > 0 && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1">
-                      <p className="font-bold text-amber-700 flex items-center gap-1.5"><AlertTriangle size={13} /> {importReport.skipped.length} Skipped (Duplicates)</p>
-                      {importReport.skipped.map((r, i) => <p key={i} className="text-amber-600 pl-5">• {r}</p>)}
-                    </div>
-                  )}
-                </div>
-                <div className="flex justify-end pt-2 border-t border-slate-100">
-                  <button onClick={() => { setShowImport(false); setImportReport(null); showToast('Import completed.'); }} className="px-4 py-2 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 cursor-pointer">Done</button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
+      <CsvImportModal
+        isOpen={showImport}
+        title="Import Products (CSV / Excel)"
+        entityName="Product"
+        fieldSchemas={productFieldSchemas}
+        onClose={() => setShowImport(false)}
+        onImportItems={handleProductBatchImport}
+        onComplete={(msg) => {
+          showToast(msg);
+        }}
+      />
 
       {/* Category Add/Edit Modal */}
       {showCatModal && (

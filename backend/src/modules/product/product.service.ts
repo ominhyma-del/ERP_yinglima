@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../core/database/prisma.service';
+import { TransactionService } from '../../core/database/transaction.service';
 import { TenantContext } from '../../core/decorators/tenant.decorator';
 import { CreateProductDto } from './dto/create-product.dto';
 import { RecordStatus } from '@prisma/client';
@@ -12,6 +13,7 @@ export class ProductService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly txService: TransactionService,
   ) { }
 
   async create(dto: CreateProductDto, tenant: TenantContext) {
@@ -75,37 +77,56 @@ export class ProductService {
       subcategoryId,
       brandId,
       status,
+      onlyDuplicates,
+      sortBy = 'name_tally',
+      sortOrder = 'asc',
       page = 1,
-      limit = 1000000,
+      limit = 100,
     } = query;
+
+    const duplicateInfo = await this.findDuplicates(tenant);
 
     const where: any = {
       company_id: tenant.companyId,
       deleted_at: null,
     };
 
-    if (search) {
+    if (search && search.trim()) {
+      const term = search.trim();
       where.OR = [
-        { name_tally: { contains: search, mode: 'insensitive' } },
-        { name_invoice: { contains: search, mode: 'insensitive' } },
-        { product_code: { contains: search, mode: 'insensitive' } },
+        { name_tally: { contains: term, mode: 'insensitive' } },
+        { name_invoice: { contains: term, mode: 'insensitive' } },
+        { product_code: { contains: term, mode: 'insensitive' } },
+        { hsn_code: { contains: term, mode: 'insensitive' } },
       ];
     }
 
-    if (categoryId) where.category_id = categoryId;
-    if (subcategoryId) where.subcategory_id = subcategoryId;
-    if (brandId) where.brand_id = brandId;
-    if (status) where.status = status;
+    if (categoryId && categoryId !== 'All') where.category_id = categoryId;
+    if (subcategoryId && subcategoryId !== 'All') where.subcategory_id = subcategoryId;
+    if (brandId && brandId !== 'All') where.brand_id = brandId;
+    if (status && status !== 'All') where.status = status;
 
-    const skip = (Number(page) - 1) * Number(limit);
-    const take = Number(limit);
+    if (onlyDuplicates === 'true' || onlyDuplicates === true) {
+      where.id = { in: duplicateInfo.duplicateIds };
+    }
+
+    let orderBy: any = { name_tally: sortOrder.toLowerCase() === 'desc' ? 'desc' : 'asc' };
+    if (sortBy === 'product_code') orderBy = { product_code: sortOrder };
+    else if (sortBy === 'name_invoice') orderBy = { name_invoice: sortOrder };
+    else if (sortBy === 'unit_cbm') orderBy = { unit_cbm: sortOrder };
+    else if (sortBy === 'current_stock') orderBy = { current_stock: sortOrder };
+    else if (sortBy === 'created_at') orderBy = { created_at: sortOrder };
+
+    const takeVal = Number(limit) > 0 ? Number(limit) : 100;
+    const pageVal = Number(page) > 0 ? Number(page) : 1;
+    const skip = (pageVal - 1) * takeVal;
 
     const [data, total] = await Promise.all([
       this.prisma.product.findMany({
         where,
         skip,
-        take,
-        orderBy: { name_tally: 'asc' },
+        take: takeVal,
+        orderBy,
         include: {
           category: true,
           subcategory: true,
@@ -117,13 +138,106 @@ export class ProductService {
 
     return {
       data,
-      meta: {
-        total,
-        page: Number(page),
-        limit: Number(limit),
-        totalPages: Math.ceil(total / take),
-      },
+      total,
+      page: pageVal,
+      limit: takeVal,
+      totalPages: Math.ceil(total / takeVal),
+      totalDuplicates: duplicateInfo.totalDuplicates,
+      duplicateIds: duplicateInfo.duplicateIds,
+      duplicateGroups: duplicateInfo.duplicateGroups,
     };
+  }
+
+  async findDuplicates(tenant: TenantContext) {
+    const products = await this.prisma.product.findMany({
+      where: { company_id: tenant.companyId, deleted_at: null },
+      select: { id: true, product_code: true, name_tally: true }
+    });
+
+    const codeMap = new Map<string, string[]>();
+    const nameMap = new Map<string, string[]>();
+
+    for (const p of products) {
+      const normCode = p.product_code.trim().toLowerCase();
+      if (!codeMap.has(normCode)) codeMap.set(normCode, []);
+      codeMap.get(normCode)!.push(p.id);
+
+      const normName = p.name_tally.trim().toLowerCase();
+      if (!nameMap.has(normName)) nameMap.set(normName, []);
+      nameMap.get(normName)!.push(p.id);
+    }
+
+    const duplicateGroups: { reason: string; key: string; ids: string[] }[] = [];
+    const allDuplicateIds = new Set<string>();
+
+    for (const [code, ids] of codeMap.entries()) {
+      if (ids.length > 1) {
+        duplicateGroups.push({ reason: 'Duplicate Product Code', key: code, ids });
+        ids.forEach(id => allDuplicateIds.add(id));
+      }
+    }
+
+    for (const [name, ids] of nameMap.entries()) {
+      if (ids.length > 1) {
+        duplicateGroups.push({ reason: 'Duplicate Product Name', key: name, ids });
+        ids.forEach(id => allDuplicateIds.add(id));
+      }
+    }
+
+    return {
+      totalDuplicates: allDuplicateIds.size,
+      duplicateGroups,
+      duplicateIds: Array.from(allDuplicateIds),
+    };
+  }
+
+  async mergeProducts(tenant: TenantContext, dto: { targetId: string; sourceIds: string[] }) {
+    const { targetId, sourceIds } = dto;
+    if (!targetId || !sourceIds || sourceIds.length === 0) {
+      throw new BadRequestException('Target ID and at least one Source ID are required.');
+    }
+
+    const validSourceIds = Array.from(new Set(sourceIds.filter((id) => id !== targetId)));
+    if (validSourceIds.length === 0) {
+      throw new BadRequestException('No valid source IDs to merge.');
+    }
+
+    return this.txService.run(async (tx) => {
+      const target = await tx.product.findFirst({
+        where: { id: targetId, company_id: tenant.companyId, deleted_at: null },
+      });
+      if (!target) throw new NotFoundException(`Target product ${targetId} not found.`);
+
+      const sources = await tx.product.findMany({
+        where: { id: { in: validSourceIds }, company_id: tenant.companyId, deleted_at: null },
+      });
+
+      for (const source of sources) {
+        await tx.inquiryItem.updateMany({
+          where: { product_id: source.id },
+          data: { product_id: targetId }
+        });
+
+        await tx.product.update({
+          where: { id: source.id },
+          data: { deleted_at: new Date(), updated_by: tenant.userId },
+        });
+      }
+
+      await this.audit.record(
+        {
+          action: 'MERGE',
+          entity: 'Product',
+          entityId: targetId,
+          before: target,
+          description: `Merged ${sources.length} product(s) into "${target.name_tally}"`,
+        },
+        tenant,
+        tx,
+      );
+
+      return target;
+    });
   }
 
   async findOne(id: string, tenant: TenantContext) {

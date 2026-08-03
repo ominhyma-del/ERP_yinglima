@@ -60,6 +60,23 @@ export class SupplierController {
     return this.supplierService.findAll(tenant, query);
   }
 
+  @Get('duplicates')
+  @RequirePermission({ module: 'suppliers', action: 'VIEW' })
+  @ApiOperation({ summary: 'Find duplicate supplier profiles in database' })
+  findDuplicates(@CurrentTenant() tenant: TenantContext) {
+    return this.supplierService.findDuplicates(tenant);
+  }
+
+  @Post('merge')
+  @RequirePermission({ module: 'suppliers', action: 'EDIT' })
+  @ApiOperation({ summary: 'Merge selected duplicate suppliers into a single target profile' })
+  mergeSuppliers(
+    @Body() dto: { targetId: string; sourceIds: string[] },
+    @CurrentTenant() tenant: TenantContext,
+  ) {
+    return this.supplierService.mergeSuppliers(tenant, dto);
+  }
+
   @Get(':id')
   @RequirePermission({ module: 'suppliers', action: 'VIEW' })
   @ApiOperation({ summary: 'Get Supplier profile details by ID' })

@@ -32,51 +32,70 @@ export const buyerApi = {
   // Fetch all buyers from NestJS API (connected to Supabase DB)
   async getBuyers(params?: any) {
     try {
-      const queryParams = { limit: 1000000, ...params };
-      const response = await api.get('/buyers', { params: queryParams });
-      const rawList = response.data?.data || response.data;
-      if (Array.isArray(rawList)) {
-        return rawList.map((b: any) => ({
-          id: b.id,
-          name: b.name,
-          buyer_type: (b.buyer_type || 'MANUFACTURER') === 'TRADER' ? 'Trader' : 'Manufacturer',
-          country: b.country || '',
-          city: b.city || '',
-          address: b.address || '',
-          contact_salutation: (b.contacts && b.contacts[0]?.salutation) || '',
-          contact_name: (b.contacts && b.contacts[0]?.full_name) || '',
-          designation: (b.contacts && b.contacts[0]?.designation) || '',
-          calling_number: (b.contacts && b.contacts[0]?.calling_number) || '',
-          whatsapp_number: (b.contacts && b.contacts[0]?.whatsapp_number) || '',
-          // BUG FIX: see matching note in supplierApi.ts — reads the
-          // company-level `emails` array instead of only ever capturing
-          // the primary contact's single email.
-          emails: Array.isArray(b.emails) && b.emails.length > 0
-            ? b.emails
-            : (b.contacts && b.contacts[0]?.email ? [b.contacts[0].email] : []),
-          tax_id: b.tax_id || '',
-          primary_website: b.website || '',
-          client_grade: b.client_grade || 'Select',
-          current_status: b.current_status || 'NEW',
-          potential: b.potential || 'UNSELECTED',
-          potential_reason: b.potential_reason || '',
-          product_range: b.product_range_supplied || '',
-          currently_buying_from: b.currently_buying_from || '',
-          overall_remarks: b.overall_remarks || '',
-          product_categories: b.product_categories || [],
-          potential_subcategories: b.potential_subcategories || [],
-          created_at: b.created_at ? b.created_at.split('T')[0] : '',
-          contacts: b.contacts || [],
-        }));
-      }
-      return null;
+      const response = await api.get('/buyers', { params });
+      const resData = response.data;
+      const rawList = Array.isArray(resData) ? resData : resData?.data || [];
+
+      const mappedList = rawList.map((b: any) => ({
+        id: b.id,
+        name: b.name,
+        buyer_type: (b.buyer_type || 'MANUFACTURER') === 'TRADER' ? 'Trader' : 'Manufacturer',
+        country: b.country || '',
+        city: b.city || '',
+        address: b.address || '',
+        contact_salutation: (b.contacts && b.contacts[0]?.salutation) || '',
+        contact_name: (b.contacts && b.contacts[0]?.full_name) || '',
+        designation: (b.contacts && b.contacts[0]?.designation) || '',
+        calling_number: (b.contacts && b.contacts[0]?.calling_number) || '',
+        whatsapp_number: (b.contacts && b.contacts[0]?.whatsapp_number) || '',
+        emails: Array.isArray(b.emails) && b.emails.length > 0
+          ? b.emails
+          : (b.contacts && b.contacts[0]?.email ? [b.contacts[0].email] : []),
+        tax_id: b.tax_id || '',
+        primary_website: b.website || '',
+        client_grade: b.client_grade || 'Select',
+        current_status: b.current_status || 'NEW',
+        status: b.status || 'ACTIVE',
+        potential: b.potential || 'UNSELECTED',
+        potential_reason: b.potential_reason || '',
+        product_range: b.product_range_supplied || '',
+        currently_buying_from: b.currently_buying_from || '',
+        overall_remarks: b.overall_remarks || '',
+        product_categories: b.product_categories || [],
+        potential_subcategories: b.potential_subcategories || [],
+        created_at: b.created_at ? b.created_at.split('T')[0] : '',
+        contacts: b.contacts || [],
+      }));
+
+      const totalCount = resData?.total ?? (resData as any)?.pagination?.total ?? mappedList.length;
+      const pageNum = resData?.page ?? (resData as any)?.pagination?.page ?? 1;
+      const limitNum = resData?.limit ?? (resData as any)?.pagination?.limit ?? mappedList.length;
+      const totalPagesNum = resData?.totalPages ?? (resData as any)?.pagination?.totalPages ?? Math.max(1, Math.ceil(totalCount / (limitNum || 1)));
+
+      return {
+        data: mappedList,
+        total: totalCount,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: totalPagesNum,
+        totalDuplicates: resData?.totalDuplicates ?? (resData as any)?.totalDuplicates ?? 0,
+        duplicateIds: resData?.duplicateIds || (resData as any)?.duplicateIds || [],
+        duplicateGroups: resData?.duplicateGroups || (resData as any)?.duplicateGroups || [],
+      };
     } catch (error: any) {
       console.warn('API error fetching buyers:', error);
-      // Same fix as supplierApi.getSuppliers — surface the real backend
-      // message instead of silently returning null, which looked
-      // identical to "zero buyers exist" to the user.
       throw new Error(error?.response?.data?.message || error?.message || 'Failed to load buyers.');
     }
+  },
+
+  async mergeBuyers(targetId: string, sourceIds: string[]) {
+    const response = await api.post('/buyers/merge', { targetId, sourceIds });
+    return response.data;
+  },
+
+  async getDuplicateBuyers() {
+    const response = await api.get('/buyers/duplicates');
+    return response.data;
   },
 
   // Create new Buyer in Supabase DB via NestJS API

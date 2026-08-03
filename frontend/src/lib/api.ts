@@ -62,7 +62,7 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Unwrap standardized NestJS API responses.
+// Unwrap standardized NestJS API responses while preserving total count & pagination metadata.
 function unwrap(response: any) {
   if (
     response.data &&
@@ -70,9 +70,23 @@ function unwrap(response: any) {
     'success' in response.data &&
     'data' in response.data
   ) {
-    const unwrappedData = response.data.data;
-    if (response.data.pagination && Array.isArray(unwrappedData)) {
-      (unwrappedData as any).pagination = response.data.pagination;
+    const orig = response.data;
+    const unwrappedData = orig.data;
+    if (unwrappedData && typeof unwrappedData === 'object') {
+      const total = orig.total ?? orig.pagination?.total ?? (unwrappedData.total || (Array.isArray(unwrappedData) ? unwrappedData.length : 0));
+      const page = orig.page ?? orig.pagination?.page ?? unwrappedData.page ?? 1;
+      const limit = orig.limit ?? orig.pagination?.limit ?? unwrappedData.limit ?? 100;
+      const totalPages = orig.totalPages ?? orig.pagination?.totalPages ?? unwrappedData.totalPages ?? Math.max(1, Math.ceil(total / (limit || 1)));
+
+      if (Array.isArray(unwrappedData)) {
+        (unwrappedData as any).total = total;
+        (unwrappedData as any).page = page;
+        (unwrappedData as any).limit = limit;
+        (unwrappedData as any).totalPages = totalPages;
+        (unwrappedData as any).totalDuplicates = orig.totalDuplicates ?? (unwrappedData as any).totalDuplicates ?? 0;
+        (unwrappedData as any).duplicateIds = orig.duplicateIds || (unwrappedData as any).duplicateIds || [];
+        (unwrappedData as any).pagination = orig.pagination;
+      }
     }
     return { ...response, data: unwrappedData };
   }

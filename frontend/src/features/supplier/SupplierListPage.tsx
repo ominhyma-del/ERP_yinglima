@@ -9,6 +9,23 @@ import { can } from '../team/teamStore';
 import { offlineOutbox } from '../../lib/offlineOutbox';
 import { DuplicateToast, DuplicateNotification } from '../../components/common/DuplicateToast';
 import { Pagination } from '../../components/common/Pagination';
+import { CsvImportModal, FieldSchema } from '../../components/common/CsvImportModal';
+
+const supplierFieldSchemas: FieldSchema[] = [
+  { key: 'name', label: 'Company Name', required: true, aliases: ['company', 'supplier name', 'supplier', 'name'] },
+  { key: 'supplier_type', label: 'Supplier Type', aliases: ['type'] },
+  { key: 'country', label: 'Country' },
+  { key: 'province', label: 'Province' },
+  { key: 'city', label: 'City' },
+  { key: 'contact_name', label: 'Contact Person', aliases: ['contact', 'name'] },
+  { key: 'calling_number', label: 'Phone Number', aliases: ['phone', 'mobile', 'tel'] },
+  { key: 'emails', label: 'Email', aliases: ['email'] },
+  { key: 'tax_id', label: 'Tax ID', aliases: ['tax', 'vat', 'tin'] },
+  { key: 'brand_name', label: 'Brand Name', aliases: ['brand'] },
+  { key: 'grade', label: 'Grade' },
+  { key: 'current_status', label: 'Current Status', aliases: ['status'] },
+  { key: 'potential', label: 'Potential' },
+];
 
 // Country Phone Dial Code Map
 const countryPhoneCodeMap: Record<string, string> = {
@@ -209,37 +226,16 @@ export const SupplierListPage: React.FC = () => {
   const canEdit = can(currentUser as any, 'suppliers', 'edit');
   const canDelete = can(currentUser as any, 'suppliers', 'delete');
 
-  // Initial Suppliers state (100% database driven)
+  // Initial Suppliers state (100% server-side database driven)
   const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalDuplicates, setTotalDuplicates] = useState(0);
+  const [duplicateIds, setDuplicateIds] = useState<string[]>([]);
+  const [onlyDuplicates, setOnlyDuplicates] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  // BUG FIX: previously a failed fetch just left `suppliers` as an empty
-  // array with no indication anything went wrong — an empty list looks
-  // identical to "there are genuinely zero suppliers" to the user. Now a
-  // failed load surfaces the real backend error (e.g. a schema drift
-  // message) as a visible banner instead of silently showing nothing.
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Fetch live suppliers directly from Supabase DB via NestJS API
-  const loadApiSuppliers = async () => {
-    setIsLoading(true);
-    setLoadError(null);
-    try {
-      const data = await supplierApi.getSuppliers();
-      if (data && Array.isArray(data)) {
-        setSuppliers(data);
-      }
-    } catch (err: any) {
-      setLoadError(err?.message || 'Failed to load suppliers. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadApiSuppliers();
-  }, []);
-
-  // Active Top Filter & View States matching Darsh Impex
+  // Active Top Filter & View States
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [subTab, setSubTab] = useState<'Active' | 'Inactive'>('Active');
   const [showImpExpDropdown, setShowImpExpDropdown] = useState(false);
@@ -257,36 +253,101 @@ export const SupplierListPage: React.FC = () => {
   const [filterPotential, setFilterPotential] = useState('All');
   const [filterVisited, setFilterVisited] = useState('All');
 
-  // ACTIVE FILTERED SUPPLIERS IMPLEMENTATION
-  const filteredSuppliers = suppliers.filter((s) => {
-    if (subTab === 'Active' && s.current_status === 'INACTIVE') return false;
-    if (subTab === 'Inactive' && s.current_status !== 'INACTIVE') return false;
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      const nameMatch = s.name.toLowerCase().includes(term);
-      const brandMatch = s.brand_name.toLowerCase().includes(term);
-      const cityMatch = s.city.toLowerCase().includes(term);
-      const catMatch = s.product_categories.some((c) => c.toLowerCase().includes(term));
-      if (!nameMatch && !brandMatch && !cityMatch && !catMatch) return false;
-    }
-
-    if (filterCategory !== 'All' && !s.product_categories.includes(filterCategory)) return false;
-    if (filterSubCategory !== 'All' && !s.key_strength_subcategories.includes(filterSubCategory)) return false;
-    if (filterCountry !== 'All' && s.country !== filterCountry) return false;
-    if (filterProvince !== 'All' && s.province !== filterProvince) return false;
-    if (filterCity !== 'All' && s.city !== filterCity) return false;
-    if (filterSupplierType !== 'All' && s.supplier_type !== filterSupplierType) return false;
-    if (filterGrade !== 'All' && s.grade !== filterGrade) return false;
-    if (filterStatus !== 'All' && s.current_status.toUpperCase() !== filterStatus.toUpperCase()) return false;
-    if (filterPotential !== 'All' && s.potential.toUpperCase() !== filterPotential.toUpperCase()) return false;
-    if (filterVisited !== 'All' && s.visited_factory.toUpperCase() !== filterVisited.toUpperCase()) return false;
-
-    return true;
-  });
-
   // Column Sorting State
   const [sortField, setSortField] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(100);
+
+  // Fetch live suppliers directly from NestJS API (Connected to Supabase DB)
+  const loadApiSuppliers = async (showLoading = true) => {
+    if (showLoading) setIsLoading(true);
+    setLoadError(null);
+    try {
+      const params = {
+        page: currentPage,
+        limit: pageSize,
+        search: searchTerm,
+        subTab,
+        productCategory: filterCategory,
+        keyStrengthSubcategory: filterSubCategory,
+        country: filterCountry,
+        province: filterProvince,
+        city: filterCity,
+        supplierType: filterSupplierType,
+        grade: filterGrade,
+        currentStatus: filterStatus,
+        potential: filterPotential,
+        visitedFactory: filterVisited,
+        onlyDuplicates,
+        sortBy: sortField || 'created_at',
+        sortOrder: sortDirection,
+      };
+
+      const res = await supplierApi.getSuppliers(params);
+      if (res && Array.isArray(res.data)) {
+        setSuppliers(res.data);
+        setTotalItems(res.total);
+        setTotalDuplicates(res.totalDuplicates || 0);
+        setDuplicateIds(res.duplicateIds || []);
+      }
+    } catch (err: any) {
+      setLoadError(err?.message || 'Failed to load suppliers. Please try again.');
+    } finally {
+      if (showLoading) setIsLoading(false);
+    }
+  };
+
+  // Primary Fetch on Query Change
+  useEffect(() => {
+    loadApiSuppliers(true);
+  }, [
+    currentPage,
+    pageSize,
+    searchTerm,
+    filterCategory,
+    filterSubCategory,
+    filterCountry,
+    filterProvince,
+    filterCity,
+    filterSupplierType,
+    filterGrade,
+    filterStatus,
+    filterPotential,
+    filterVisited,
+    subTab,
+    onlyDuplicates,
+    sortField,
+    sortDirection,
+  ]);
+
+  // 10-Second Live Background Sync
+  useEffect(() => {
+    const syncTimer = setInterval(() => {
+      loadApiSuppliers(false);
+    }, 10000);
+    return () => clearInterval(syncTimer);
+  }, [
+    currentPage,
+    pageSize,
+    searchTerm,
+    filterCategory,
+    filterSubCategory,
+    filterCountry,
+    filterProvince,
+    filterCity,
+    filterSupplierType,
+    filterGrade,
+    filterStatus,
+    filterPotential,
+    filterVisited,
+    subTab,
+    onlyDuplicates,
+    sortField,
+    sortDirection,
+  ]);
 
   const handleSort = (field: string) => {
     if (sortField === field) {
@@ -302,35 +363,77 @@ export const SupplierListPage: React.FC = () => {
     }
   };
 
-  const sortedSuppliers = useMemo(() => {
-    if (!sortField) return filteredSuppliers;
-    return [...filteredSuppliers].sort((a, b) => {
-      let valA = a[sortField] ?? '';
-      let valB = b[sortField] ?? '';
+  // Direct server-returned array for rendering
+  const paginatedSuppliers = suppliers;
+  const sortedSuppliers = suppliers;
+  const filteredSuppliers = suppliers;
 
-      if (Array.isArray(valA)) valA = valA.join(', ');
-      if (Array.isArray(valB)) valB = valB.join(', ');
+  const handleSupplierBatchImport = async (
+    items: any[],
+    options: { mode: 'CREATE' | 'MERGE' },
+    onProgress?: (current: number, total: number, importedCount: number) => void,
+    isAborted?: () => boolean
+  ) => {
+    let successCount = 0;
+    const duplicates: any[] = [];
+    const total = items.length;
+    const CHUNK_SIZE = 25;
 
-      if (typeof valA === 'string') valA = valA.toLowerCase();
-      if (typeof valB === 'string') valB = valB.toLowerCase();
+    for (let i = 0; i < total; i += CHUNK_SIZE) {
+      if (isAborted && isAborted()) {
+        break; // Instant cancellation
+      }
+      const chunk = items.slice(i, i + CHUNK_SIZE);
+      await Promise.all(
+        chunk.map(async (item) => {
+          if (isAborted && isAborted()) return;
+          const isDup = suppliers.some(
+            (s) => s.name.trim().toLowerCase() === (item.name || '').trim().toLowerCase()
+          );
 
-      if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
-      if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
-    });
-  }, [filteredSuppliers, sortField, sortDirection]);
+          if (options.mode === 'CREATE') {
+            if (isDup) {
+              duplicates.push(item);
+            } else {
+              try {
+                await supplierApi.createSupplier(item);
+                successCount++;
+              } catch (e) {
+                console.error('Failed to create imported supplier row', e);
+              }
+            }
+          } else if (options.mode === 'MERGE') {
+            const target = suppliers.find(
+              (s) => s.name.trim().toLowerCase() === (item.name || '').trim().toLowerCase()
+            );
+            if (target) {
+              try {
+                await supplierApi.mergeSuppliers(target.id, [target.id]);
+                successCount++;
+              } catch (e) {
+                console.error('Failed to merge imported supplier row', e);
+              }
+            } else {
+              try {
+                await supplierApi.createSupplier(item);
+                successCount++;
+              } catch (e) {
+                console.error('Failed to create imported supplier row', e);
+              }
+            }
+          }
+        })
+      );
 
-  // Pagination State (Max 100 data per page)
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(100);
+      const processed = Math.min(i + CHUNK_SIZE, total);
+      if (onProgress) {
+        onProgress(processed, total, successCount);
+      }
+    }
 
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, filterCategory, filterSubCategory, filterCountry, filterProvince, filterCity, filterSupplierType, filterGrade, filterStatus, filterPotential, filterVisited, subTab]);
-
-  const paginatedSuppliers = useMemo(() => {
-    const startIndex = (currentPage - 1) * pageSize;
-    return sortedSuppliers.slice(startIndex, startIndex + pageSize);
-  }, [sortedSuppliers, currentPage, pageSize]);
+    await loadApiSuppliers(true);
+    return { successCount, duplicatesCount: duplicates.length, duplicateItems: duplicates };
+  };
 
   const renderSortHeader = (label: string, field: string) => {
     const isActive = sortField === field;
@@ -449,32 +552,18 @@ export const SupplierListPage: React.FC = () => {
     setShowMergeModal(true);
   };
 
-  const handleExecuteMerge = () => {
-    if (!targetMergeId) return;
+  const handleExecuteMerge = async () => {
+    if (!targetMergeId || selectedIds.length < 2) return;
     const targetSupplier = suppliers.find((s) => s.id === targetMergeId);
-    if (!targetSupplier) return;
-
-    const mergeItems = suppliers.filter((s) => selectedIds.includes(s.id));
-    const mergedCategories = Array.from(new Set(mergeItems.flatMap((s) => s.product_categories || [])));
-    const mergedSubcats = Array.from(new Set(mergeItems.flatMap((s) => s.key_strength_subcategories || [])));
-
-    setSuppliers((prev) =>
-      prev
-        .map((s) =>
-          s.id === targetMergeId
-            ? {
-              ...s,
-              product_categories: mergedCategories,
-              key_strength_subcategories: mergedSubcats,
-            }
-            : s,
-        )
-        .filter((s) => s.id === targetMergeId || !selectedIds.includes(s.id)),
-    );
-
-    setSelectedIds([]);
-    setShowMergeModal(false);
-    setImportNotification(`Merged ${mergeItems.length} suppliers into "${targetSupplier.name}".`);
+    try {
+      await supplierApi.mergeSuppliers(targetMergeId, selectedIds);
+      setSelectedIds([]);
+      setShowMergeModal(false);
+      setImportNotification(`Successfully merged ${selectedIds.length} suppliers into "${targetSupplier?.name || 'Target Profile'}" in database.`);
+      loadApiSuppliers(true);
+    } catch (err: any) {
+      setImportNotification(err?.message || 'Merge failed. Please try again.');
+    }
   };
 
   const handleResetFilters = () => {
@@ -1065,17 +1154,52 @@ export const SupplierListPage: React.FC = () => {
         )}
       </div>
 
-      {/* LOAD ERROR BANNER — shown when the initial fetch of suppliers
-          failed (e.g. a backend/database error). Previously a failed
-          fetch just left the list empty with no explanation, which was
-          indistinguishable from "there are zero suppliers". */}
+      {/* LIVE SYNC STATUS & TOTAL RECORD COUNT */}
+      <div className="flex items-center justify-between text-xs text-slate-600 bg-slate-50 border border-slate-200 px-4 py-2 rounded-xl shadow-2xs">
+        <div className="flex items-center gap-2 font-semibold text-slate-700">
+          <span className="relative flex h-2.5 w-2.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+          </span>
+          <span>Live Sync Active (10s auto-polling connected to Supabase DB)</span>
+        </div>
+        <div className="font-bold text-slate-800">
+          Total Records: <span className="text-blue-600 font-extrabold">{totalItems.toLocaleString()}</span>
+        </div>
+      </div>
+
+      {/* DUPLICATE WARNING BANNER */}
+      {totalDuplicates > 0 && (
+        <div className="bg-amber-50 border border-amber-300 text-amber-900 p-4 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs">
+          <div className="flex items-center gap-2.5 font-semibold">
+            <AlertCircle size={20} className="text-amber-600 shrink-0" />
+            <span>
+              ⚠️ <strong>Duplicates Detected:</strong> Found <span className="underline font-bold text-amber-950">{totalDuplicates}</span> supplier entries with duplicate names or tax IDs. Select records and click "Merge" to combine them.
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setOnlyDuplicates(!onlyDuplicates)}
+              className={`px-3 py-1.5 rounded-lg font-bold text-xs cursor-pointer transition-all ${
+                onlyDuplicates
+                  ? 'bg-amber-600 text-white shadow-xs'
+                  : 'bg-white border border-amber-300 text-amber-900 hover:bg-amber-100'
+              }`}
+            >
+              {onlyDuplicates ? 'Show All Records' : `Show Duplicates Only (${totalDuplicates})`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* LOAD ERROR BANNER */}
       {loadError && (
         <div className="bg-rose-50 border border-rose-200 text-rose-800 p-4 rounded-xl flex items-center justify-between text-xs shadow-2xs">
           <div className="flex items-center gap-2">
             <AlertCircle size={18} className="text-rose-600 shrink-0" />
             <span className="whitespace-pre-line">{loadError}</span>
           </div>
-          <button onClick={loadApiSuppliers} className="font-bold underline text-rose-900 shrink-0 ml-3 cursor-pointer">Retry</button>
+          <button onClick={() => loadApiSuppliers(true)} className="font-bold underline text-rose-900 shrink-0 ml-3 cursor-pointer">Retry</button>
         </div>
       )}
 
@@ -1387,7 +1511,14 @@ export const SupplierListPage: React.FC = () => {
                             }}
                             className="p-3.5 font-bold text-blue-600 hover:underline cursor-pointer"
                           >
-                            {item.name}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span>{item.name}</span>
+                              {duplicateIds.includes(item.id) && (
+                                <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold px-1.5 py-0.5 rounded-md flex items-center gap-1 shrink-0">
+                                  ⚠️ Duplicate
+                                </span>
+                              )}
+                            </div>
                           </td>
 
                           {/* Product Category (Show max 5, eye button if more) */}
@@ -1531,11 +1662,11 @@ export const SupplierListPage: React.FC = () => {
             {/* PAGINATION FOOTER CONTROL */}
             <Pagination
               currentPage={currentPage}
-              totalItems={sortedSuppliers.length}
+              totalItems={totalItems}
               pageSize={pageSize}
               onPageChange={setCurrentPage}
               onPageSizeChange={setPageSize}
-              pageSizeOptions={[10, 25, 50, 100]}
+              pageSizeOptions={[10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000]}
             />
           </div>
         )}
@@ -2363,193 +2494,18 @@ export const SupplierListPage: React.FC = () => {
       )}
 
       {/* IMPORT EXCEL / CSV DATA MODAL */}
-      {showImportModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 p-6 rounded-2xl w-full max-w-lg space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Upload size={18} className="text-blue-600" /> Import Suppliers (Excel / CSV)
-              </h3>
-              <button onClick={() => setShowImportModal(false)} className="p-1 text-slate-500 hover:text-slate-900 bg-slate-100 rounded">
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <p className="text-xs text-slate-600">
-                Upload your CSV or Excel file containing supplier directory data. Download our sample template if needed.
-              </p>
-
-              {/* Drag and Drop Zone */}
-              <div className="border-2 border-dashed border-slate-300 hover:border-blue-500 bg-slate-50 hover:bg-blue-50/50 p-8 rounded-xl text-center space-y-2 transition-all cursor-pointer relative">
-                <input
-                  type="file"
-                  accept=".csv,.xlsx,.xls"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      const reader = new FileReader();
-                      reader.onload = (event) => {
-                        const content = event.target?.result as string;
-                        const lines = content ? content.split(/\r?\n/).map((l) => l.trim()).filter(Boolean) : [];
-                        
-                        const duplicateNames: string[] = [];
-                        const newItems: any[] = [];
-                        const dataLines = lines.length > 0 && lines[0].toLowerCase().includes('name') ? lines.slice(1) : lines;
-
-                        if (dataLines.length === 0) {
-                          const sampleName = file.name.split('.')[0] + ' Imported Supplier Co.';
-                          const isDup = suppliers.some((s) => s.name.trim().toLowerCase() === sampleName.toLowerCase());
-                          if (isDup) {
-                            duplicateNames.push(sampleName);
-                          } else {
-                            newItems.push({
-                              id: `imp-${Date.now()}`,
-                              name: sampleName,
-                              product_categories: ['Food Ingredients', 'Chemicals'],
-                              supplier_type: 'Manufacturer',
-                              brand_name: 'Imported Brand',
-                              country: 'China',
-                              province: 'Zhejiang',
-                              city: 'Wenzhou',
-                              town: 'Industrial District',
-                              address: '100 Export Highway',
-                              contact_title: 'Mr',
-                              contact_name: 'Chen Wei',
-                              designation: 'Export Manager',
-                              calling_number: '+86 13800112233',
-                              whatsapp_number: '+86 13800112233',
-                              wechat_number: '+86 13800112233',
-                              emails: ['chen@imported-supplier.cn'],
-                              tax_id: 'IMP-TAX-8899',
-                              primary_website: 'www.imported-supplier.cn',
-                              secondary_website: '',
-                              key_strength_subcategories: ['Citric Acid'],
-                              grade: 'A',
-                              current_status: 'NEW',
-                              potential: 'YES',
-                              potential_reason: 'Imported from Excel dataset',
-                              secondary_products: ['Sodium Citrate'],
-                              visited_factory: 'Yes',
-                              visit_remarks: 'Imported via CSV file',
-                              attachments: [],
-                              overall_remarks: 'Imported from file upload',
-                              contacts: [],
-                            });
-                          }
-                        } else {
-                          for (const line of dataLines) {
-                            const parts = line.split(',').map((p) => p.replace(/^"|"$/g, '').trim());
-                            const name = parts[0] || `${file.name.split('.')[0]} Supplier`;
-                            const city = parts[4] || parts[3] || 'Wenzhou';
-
-                            const isDuplicate = suppliers.some(
-                              (s) => s.name.trim().toLowerCase() === name.toLowerCase() && (s.city || '').trim().toLowerCase() === city.toLowerCase()
-                            ) || newItems.some((n) => n.name.trim().toLowerCase() === name.toLowerCase());
-
-                            if (isDuplicate) {
-                              duplicateNames.push(`${name} (${city})`);
-                            } else {
-                              newItems.push({
-                                id: `imp-${Date.now()}-${Math.random()}`,
-                                name,
-                                product_categories: parts[3] ? [parts[3]] : ['Food Ingredients'],
-                                supplier_type: parts[1] || 'Manufacturer',
-                                brand_name: 'Imported Brand',
-                                country: parts[2] || 'China',
-                                province: 'Zhejiang',
-                                city,
-                                town: 'Industrial District',
-                                address: '100 Export Highway',
-                                contact_title: 'Mr',
-                                contact_name: parts[5] || 'Contact Person',
-                                designation: 'Export Manager',
-                                calling_number: parts[6] || '+86 13800112233',
-                                whatsapp_number: parts[6] || '+86 13800112233',
-                                wechat_number: parts[6] || '+86 13800112233',
-                                emails: [parts[7] || 'info@supplier.cn'],
-                                tax_id: 'IMP-TAX-8899',
-                                primary_website: 'www.supplier.cn',
-                                secondary_website: '',
-                                key_strength_subcategories: ['Citric Acid'],
-                                grade: 'A',
-                                current_status: 'NEW',
-                                potential: 'YES',
-                                potential_reason: 'Imported from Excel dataset',
-                                secondary_products: ['Sodium Citrate'],
-                                visited_factory: 'Yes',
-                                visit_remarks: 'Imported via CSV file',
-                                attachments: [],
-                                overall_remarks: 'Imported from file upload',
-                                contacts: [],
-                              });
-                            }
-                          }
-                        }
-
-                        if (duplicateNames.length > 0) {
-                          setDuplicateToast({
-                            title: 'Import Duplicates Prevented',
-                            count: duplicateNames.length,
-                            items: duplicateNames,
-                            message: `${duplicateNames.length} duplicate supplier record(s) were detected and skipped during file import to prevent duplication.`
-                          });
-                        }
-
-                        if (newItems.length > 0) {
-                          setSuppliers([...newItems, ...suppliers]);
-                          setImportNotification(`Imported ${newItems.length} unique supplier profile(s) from "${file.name}"!`);
-                        } else if (duplicateNames.length > 0) {
-                          setImportNotification(`Import complete: 0 new entries added (${duplicateNames.length} duplicate records skipped).`);
-                        }
-
-                        setShowImportModal(false);
-                        setTimeout(() => setImportNotification(null), 5000);
-                      };
-                      reader.readAsText(file);
-                    }
-                  }}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                />
-                <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto">
-                  <Upload size={24} />
-                </div>
-                <p className="text-xs font-bold text-slate-800">Click or Drag & Drop File Here</p>
-                <p className="text-[11px] text-slate-400">Supports .CSV, .XLSX, .XLS (Up to 10MB)</p>
-              </div>
-
-              {/* Sample Template Link */}
-              <div className="flex items-center justify-between pt-2">
-                <a
-                  href="#download-sample"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    const sampleHeaders = 'Company Name,Supplier Type,Country,Province,City,Contact Name,Phone,Email\n"Sample Supplier Ltd","Manufacturer","China","Zhejiang","Wenzhou","Chen Wei","+8613800112233","chen@supplier.cn"';
-                    const blob = new Blob([sampleHeaders], { type: 'text/csv' });
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'Yinglima_Supplier_Import_Sample.csv';
-                    a.click();
-                  }}
-                  className="text-xs text-blue-600 font-bold hover:underline flex items-center gap-1"
-                >
-                  <Download size={13} /> Download CSV Sample Template
-                </a>
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-3 border-t border-slate-100">
-              <button
-                onClick={() => setShowImportModal(false)}
-                className="px-4 py-2 bg-slate-100 text-slate-800 text-xs font-semibold rounded-lg hover:bg-slate-200"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <CsvImportModal
+        isOpen={showImportModal}
+        title="Import Suppliers (CSV / Excel)"
+        entityName="Supplier"
+        fieldSchemas={supplierFieldSchemas}
+        onClose={() => setShowImportModal(false)}
+        onImportItems={handleSupplierBatchImport}
+        onComplete={(msg) => {
+          setImportNotification(msg);
+          setTimeout(() => setImportNotification(null), 5000);
+        }}
+      />
 
       {/* EXPANDED ITEMS MODAL FOR >5 ITEMS */}
       {expandedFieldModal && (

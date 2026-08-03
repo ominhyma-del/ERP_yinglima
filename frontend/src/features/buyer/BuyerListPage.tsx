@@ -36,6 +36,21 @@ import { useAuth } from '../../context/AuthContext';
 import { can } from '../team/teamStore';
 import { DuplicateToast, DuplicateNotification } from '../../components/common/DuplicateToast';
 import { Pagination } from '../../components/common/Pagination';
+import { CsvImportModal, FieldSchema } from '../../components/common/CsvImportModal';
+
+const buyerFieldSchemas: FieldSchema[] = [
+  { key: 'name', label: 'Company Name', required: true, aliases: ['company', 'buyer name', 'buyer', 'name'] },
+  { key: 'buyer_type', label: 'Buyer Type', aliases: ['type'] },
+  { key: 'country', label: 'Country' },
+  { key: 'city', label: 'City' },
+  { key: 'contact_name', label: 'Contact Person', aliases: ['contact', 'name'] },
+  { key: 'calling_number', label: 'Phone Number', aliases: ['phone', 'mobile', 'tel'] },
+  { key: 'emails', label: 'Email', aliases: ['email'] },
+  { key: 'tax_id', label: 'Tax ID', aliases: ['tax', 'vat', 'tin'] },
+  { key: 'current_status', label: 'Current Status', aliases: ['status'] },
+  { key: 'potential', label: 'Potential' },
+  { key: 'client_grade', label: 'Client Grade', aliases: ['grade'] },
+];
 
 // Country Phone Dial Code & Max Digit Length Master
 const countryMaster: Record<string, { code: string; maxDigits: number }> = {
@@ -200,6 +215,10 @@ export const BuyerListPage: React.FC = () => {
 
   // Buyers State (100% DB Driven)
   const [buyers, setBuyers] = useState<any[]>([]);
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalDuplicates, setTotalDuplicates] = useState(0);
+  const [duplicateIds, setDuplicateIds] = useState<string[]>([]);
+  const [onlyDuplicates, setOnlyDuplicates] = useState(false);
 
   // Top Filters
   const [filterDateRange, setFilterDateRange] = useState('');
@@ -211,6 +230,14 @@ export const BuyerListPage: React.FC = () => {
   const [filterPotential, setFilterPotential] = useState('');
   const [filterClientGrade, setFilterClientGrade] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Column Sorting State
+  const [sortField, setSortField] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(100);
 
   // Initial Form Data State
   const initialFormData = {
@@ -257,30 +284,82 @@ export const BuyerListPage: React.FC = () => {
   const canDelete = can(currentUser as any, 'buyers', 'delete');
 
   const [isLoading, setIsLoading] = useState(true);
-  // BUG FIX: same issue as Supplier's list load — a failed fetch used to
-  // leave `buyers` as an empty array with no explanation, indistinguishable
-  // from "zero buyers exist". Now surfaces the real error as a banner.
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Load buyers from NestJS API on mount
-  const loadApiBuyers = async () => {
-    setIsLoading(true);
+  // Load buyers from NestJS API
+  const loadApiBuyers = async (showLoading = true) => {
+    if (showLoading) setIsLoading(true);
     setLoadError(null);
     try {
-      const data = await buyerApi.getBuyers();
-      if (data && Array.isArray(data)) {
-        setBuyers(data);
+      const params = {
+        page: currentPage,
+        limit: pageSize,
+        search: searchQuery,
+        buyerType: filterBuyerType,
+        currentStatus: filterCurrentStatus,
+        productCategory: filterProductCategory,
+        potentialSubcategory: filterProductSubCategory,
+        country: filterCountry,
+        potential: filterPotential,
+        clientGrade: filterClientGrade,
+        onlyDuplicates,
+        sortBy: sortField || 'created_at',
+        sortOrder: sortDirection,
+      };
+
+      const res = await buyerApi.getBuyers(params);
+      if (res && Array.isArray(res.data)) {
+        setBuyers(res.data);
+        setTotalItems(res.total);
+        setTotalDuplicates(res.totalDuplicates || 0);
+        setDuplicateIds(res.duplicateIds || []);
       }
     } catch (err: any) {
       setLoadError(err?.message || 'Failed to load buyers. Please try again.');
     } finally {
-      setIsLoading(false);
+      if (showLoading) setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    loadApiBuyers();
-  }, []);
+    loadApiBuyers(true);
+  }, [
+    currentPage,
+    pageSize,
+    searchQuery,
+    filterBuyerType,
+    filterCurrentStatus,
+    filterProductCategory,
+    filterProductSubCategory,
+    filterCountry,
+    filterPotential,
+    filterClientGrade,
+    onlyDuplicates,
+    sortField,
+    sortDirection,
+  ]);
+
+  // 10-Second Live Background Sync
+  useEffect(() => {
+    const syncTimer = setInterval(() => {
+      loadApiBuyers(false);
+    }, 10000);
+    return () => clearInterval(syncTimer);
+  }, [
+    currentPage,
+    pageSize,
+    searchQuery,
+    filterBuyerType,
+    filterCurrentStatus,
+    filterProductCategory,
+    filterProductSubCategory,
+    filterCountry,
+    filterPotential,
+    filterClientGrade,
+    onlyDuplicates,
+    sortField,
+    sortDirection,
+  ]);
 
   // Filter options for Subcategories based on selected Product Categories
   const availableSubcategories = Array.from(
@@ -495,26 +574,77 @@ export const BuyerListPage: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
-  // Filter Logic matching 8 Exact Filters
-  const filteredBuyers = buyers.filter((b) => {
-    if (searchQuery && !b.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-    if (filterBuyerType && filterBuyerType !== 'All' && b.buyer_type !== filterBuyerType) return false;
-    if (filterCurrentStatus && filterCurrentStatus !== 'All' && b.current_status !== filterCurrentStatus) return false;
-    if (filterCountry && filterCountry !== 'All' && b.country !== filterCountry) return false;
-    if (filterPotential && filterPotential !== 'All' && b.potential !== filterPotential) return false;
-    if (filterClientGrade && filterClientGrade !== 'All' && b.client_grade !== filterClientGrade) return false;
-    if (filterProductCategory && filterProductCategory !== 'All') {
-      if (!b.product_categories || !b.product_categories.includes(filterProductCategory)) return false;
-    }
-    if (filterProductSubCategory && filterProductSubCategory !== 'All') {
-      if (!b.potential_subcategories || !b.potential_subcategories.includes(filterProductSubCategory)) return false;
-    }
-    return true;
-  });
+  // Direct server-returned array for rendering
+  const filteredBuyers = buyers;
+  const sortedBuyers = buyers;
+  const paginatedBuyers = buyers;
 
-  // Column Sorting State
-  const [sortField, setSortField] = useState<string | null>(null);
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const handleBuyerBatchImport = async (
+    items: any[],
+    options: { mode: 'CREATE' | 'MERGE' },
+    onProgress?: (current: number, total: number, importedCount: number) => void,
+    isAborted?: () => boolean
+  ) => {
+    let successCount = 0;
+    const duplicates: any[] = [];
+    const total = items.length;
+    const CHUNK_SIZE = 25;
+
+    for (let i = 0; i < total; i += CHUNK_SIZE) {
+      if (isAborted && isAborted()) {
+        break; // Instant cancellation
+      }
+      const chunk = items.slice(i, i + CHUNK_SIZE);
+      await Promise.all(
+        chunk.map(async (item) => {
+          if (isAborted && isAborted()) return;
+          const isDup = buyers.some(
+            (b) => b.name.trim().toLowerCase() === (item.name || '').trim().toLowerCase()
+          );
+
+          if (options.mode === 'CREATE') {
+            if (isDup) {
+              duplicates.push(item);
+            } else {
+              try {
+                await buyerApi.createBuyer(item);
+                successCount++;
+              } catch (e) {
+                console.error('Failed to create imported buyer row', e);
+              }
+            }
+          } else if (options.mode === 'MERGE') {
+            const target = buyers.find(
+              (b) => b.name.trim().toLowerCase() === (item.name || '').trim().toLowerCase()
+            );
+            if (target) {
+              try {
+                await buyerApi.mergeBuyers(target.id, [target.id]);
+                successCount++;
+              } catch (e) {
+                console.error('Failed to merge imported buyer row', e);
+              }
+            } else {
+              try {
+                await buyerApi.createBuyer(item);
+                successCount++;
+              } catch (e) {
+                console.error('Failed to create imported buyer row', e);
+              }
+            }
+          }
+        })
+      );
+
+      const processed = Math.min(i + CHUNK_SIZE, total);
+      if (onProgress) {
+        onProgress(processed, total, successCount);
+      }
+    }
+
+    await loadApiBuyers(true);
+    return { successCount, duplicatesCount: duplicates.length, duplicateItems: duplicates };
+  };
 
   const handleSort = (field: string) => {
     if (sortField === field) {
@@ -530,35 +660,19 @@ export const BuyerListPage: React.FC = () => {
     }
   };
 
-  const sortedBuyers = useMemo(() => {
-    if (!sortField) return filteredBuyers;
-    return [...filteredBuyers].sort((a, b) => {
-      let valA = a[sortField] ?? '';
-      let valB = b[sortField] ?? '';
-
-      if (Array.isArray(valA)) valA = valA.join(', ');
-      if (Array.isArray(valB)) valB = valB.join(', ');
-
-      if (typeof valA === 'string') valA = valA.toLowerCase();
-      if (typeof valB === 'string') valB = valB.toLowerCase();
-
-      if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
-      if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
-    });
-  }, [filteredBuyers, sortField, sortDirection]);
-
-  // Pagination State (Max 100 data per page)
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(100);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery, filterBuyerType, filterCurrentStatus, filterCountry, filterPotential, filterClientGrade, filterProductCategory, filterProductSubCategory, filterDateRange]);
-
-  const paginatedBuyers = useMemo(() => {
-    const startIndex = (currentPage - 1) * pageSize;
-    return sortedBuyers.slice(startIndex, startIndex + pageSize);
-  }, [sortedBuyers, currentPage, pageSize]);
+  const handleExecuteMerge = async () => {
+    if (!targetMergeId || selectedIds.length < 2) return;
+    const targetBuyer = buyers.find((b) => b.id === targetMergeId);
+    try {
+      await buyerApi.mergeBuyers(targetMergeId, selectedIds);
+      setSelectedIds([]);
+      setShowMergeModal(false);
+      setImportNotification(`Successfully merged ${selectedIds.length} buyers into "${targetBuyer?.name || 'Target Profile'}" in database.`);
+      loadApiBuyers(true);
+    } catch (err: any) {
+      setImportNotification(err?.message || 'Merge failed. Please try again.');
+    }
+  };
 
   const renderSortHeader = (label: string, field: string) => {
     const isActive = sortField === field;
@@ -669,34 +783,6 @@ export const BuyerListPage: React.FC = () => {
     setShowMergeModal(true);
   };
 
-  const handleExecuteMerge = () => {
-    if (!targetMergeId) return;
-    const targetBuyer = buyers.find((b) => b.id === targetMergeId);
-    if (!targetBuyer) return;
-
-    const mergeItems = buyers.filter((b) => selectedIds.includes(b.id));
-    const mergedCategories = Array.from(new Set(mergeItems.flatMap((b) => b.product_categories || [])));
-    const mergedSubcats = Array.from(new Set(mergeItems.flatMap((b) => b.potential_subcategories || [])));
-
-    setBuyers((prev) =>
-      prev
-        .map((b) =>
-          b.id === targetMergeId
-            ? {
-              ...b,
-              product_categories: mergedCategories,
-              potential_subcategories: mergedSubcats,
-            }
-            : b,
-        )
-        .filter((b) => b.id === targetMergeId || !selectedIds.includes(b.id)),
-    );
-
-    setSelectedIds([]);
-    setShowMergeModal(false);
-    setImportNotification(`Merged ${mergeItems.length} buyers into "${targetBuyer.name}".`);
-  };
-
   return (
     <div className="space-y-6">
       {/* DARSH IMPEX TOP TITLE BAR */}
@@ -787,16 +873,52 @@ export const BuyerListPage: React.FC = () => {
         )}
       </div>
 
-      {/* LOAD ERROR BANNER — same fix as SupplierListPage: a failed
-          initial fetch used to leave the list empty with no explanation,
-          indistinguishable from "zero buyers exist". */}
+      {/* LIVE SYNC STATUS & TOTAL RECORD COUNT */}
+      <div className="flex items-center justify-between text-xs text-slate-600 bg-slate-50 border border-slate-200 px-4 py-2 rounded-xl shadow-2xs">
+        <div className="flex items-center gap-2 font-semibold text-slate-700">
+          <span className="relative flex h-2.5 w-2.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+          </span>
+          <span>Live Sync Active (10s auto-polling connected to Supabase DB)</span>
+        </div>
+        <div className="font-bold text-slate-800">
+          Total Records: <span className="text-blue-600 font-extrabold">{totalItems.toLocaleString()}</span>
+        </div>
+      </div>
+
+      {/* DUPLICATE WARNING BANNER */}
+      {totalDuplicates > 0 && (
+        <div className="bg-amber-50 border border-amber-300 text-amber-900 p-4 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs">
+          <div className="flex items-center gap-2.5 font-semibold">
+            <AlertCircle size={20} className="text-amber-600 shrink-0" />
+            <span>
+              ⚠️ <strong>Duplicates Detected:</strong> Found <span className="underline font-bold text-amber-950">{totalDuplicates}</span> buyer entries with duplicate names or tax IDs. Select records and click "Merge" to combine them.
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setOnlyDuplicates(!onlyDuplicates)}
+              className={`px-3 py-1.5 rounded-lg font-bold text-xs cursor-pointer transition-all ${
+                onlyDuplicates
+                  ? 'bg-amber-600 text-white shadow-xs'
+                  : 'bg-white border border-amber-300 text-amber-900 hover:bg-amber-100'
+              }`}
+            >
+              {onlyDuplicates ? 'Show All Records' : `Show Duplicates Only (${totalDuplicates})`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* LOAD ERROR BANNER */}
       {loadError && (
         <div className="bg-rose-50 border border-rose-200 text-rose-800 p-4 rounded-xl flex items-center justify-between text-xs shadow-2xs">
           <div className="flex items-center gap-2">
             <AlertCircle size={18} className="text-rose-600 shrink-0" />
             <span className="whitespace-pre-line">{loadError}</span>
           </div>
-          <button onClick={loadApiBuyers} className="font-bold underline text-rose-900 shrink-0 ml-3 cursor-pointer">Retry</button>
+          <button onClick={() => loadApiBuyers(true)} className="font-bold underline text-rose-900 shrink-0 ml-3 cursor-pointer">Retry</button>
         </div>
       )}
 
@@ -1086,7 +1208,14 @@ export const BuyerListPage: React.FC = () => {
                             }}
                             className="p-3.5 font-bold text-blue-600 hover:underline cursor-pointer"
                           >
-                            {item.name}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span>{item.name}</span>
+                              {duplicateIds.includes(item.id) && (
+                                <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold px-1.5 py-0.5 rounded-md flex items-center gap-1 shrink-0">
+                                  ⚠️ Duplicate
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="p-3.5 text-slate-800">{item.buyer_type}</td>
 
@@ -1247,11 +1376,11 @@ export const BuyerListPage: React.FC = () => {
             {/* PAGINATION FOOTER CONTROL */}
             <Pagination
               currentPage={currentPage}
-              totalItems={sortedBuyers.length}
+              totalItems={totalItems}
               pageSize={pageSize}
               onPageChange={setCurrentPage}
               onPageSizeChange={setPageSize}
-              pageSizeOptions={[10, 25, 50, 100]}
+              pageSizeOptions={[10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000]}
             />
           </div>
         )}
@@ -1966,128 +2095,18 @@ export const BuyerListPage: React.FC = () => {
       <DuplicateToast toast={duplicateToast} onClose={() => setDuplicateToast(null)} />
 
       {/* IMPORT BUYERS EXCEL/CSV MODAL */}
-      {showImportModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 p-6 rounded-2xl w-full max-w-lg space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Upload size={18} className="text-blue-600" /> Import Buyers (Excel / CSV)
-              </h3>
-              <button onClick={() => setShowImportModal(false)} className="p-1 text-slate-500 hover:text-slate-900 bg-slate-100 rounded cursor-pointer">
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <p className="text-xs text-slate-600">
-                Upload your CSV or Excel file containing buyer data. Duplicate records will automatically be detected and skipped.
-              </p>
-
-              <div className="border-2 border-dashed border-slate-300 hover:border-blue-500 bg-slate-50 hover:bg-blue-50/50 p-8 rounded-xl text-center space-y-2 transition-all cursor-pointer relative">
-                <input
-                  type="file"
-                  accept=".csv,.xlsx,.xls"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      const reader = new FileReader();
-                      reader.onload = async (event) => {
-                        const content = event.target?.result as string;
-                        const lines = content ? content.split(/\r?\n/).map((l) => l.trim()).filter(Boolean) : [];
-                        
-                        const duplicateNames: string[] = [];
-                        const newItems: any[] = [];
-                        const dataLines = lines.length > 0 && lines[0].toLowerCase().includes('name') ? lines.slice(1) : lines;
-
-                        if (dataLines.length === 0) {
-                          const sampleName = file.name.split('.')[0] + ' Imported Buyer';
-                          const isDup = buyers.some((b) => b.name.trim().toLowerCase() === sampleName.toLowerCase());
-                          if (isDup) {
-                            duplicateNames.push(sampleName);
-                          } else {
-                            newItems.push({
-                              name: sampleName,
-                              buyer_type: 'Manufacturer',
-                              country: 'Uganda',
-                              city: 'Kampala',
-                              address: 'Industrial Area',
-                              product_categories: ['Food Ingredients'],
-                              potential_subcategories: ['Citric Acid'],
-                              current_status: 'NEW',
-                              potential: 'YES',
-                              client_grade: 'A',
-                              contacts: [{ full_name: 'Primary Contact', calling_number: '+256 700000000', email: 'info@client.co.ug' }],
-                            });
-                          }
-                        } else {
-                          for (const line of dataLines) {
-                            const parts = line.split(',').map((p) => p.replace(/^"|"$/g, '').trim());
-                            const name = parts[0] || `${file.name.split('.')[0]} Buyer`;
-                            const phone = parts[6] || '';
-
-                            const isDuplicate = buyers.some((b) => {
-                              const matchName = b.name.trim().toLowerCase() === name.toLowerCase();
-                              const matchPhone = phone && phone.length > 5 && b.calling_number && b.calling_number.includes(phone);
-                              return matchName || matchPhone;
-                            }) || newItems.some((n) => n.name.trim().toLowerCase() === name.toLowerCase());
-
-                            if (isDuplicate) {
-                              duplicateNames.push(name);
-                            } else {
-                              newItems.push({
-                                name,
-                                buyer_type: parts[1] || 'Manufacturer',
-                                country: parts[4] || 'Uganda',
-                                city: parts[5] || 'Kampala',
-                                address: 'Industrial Area',
-                                product_categories: parts[2] ? [parts[2]] : ['Food Ingredients'],
-                                potential_subcategories: parts[3] ? [parts[3]] : ['Citric Acid'],
-                                current_status: 'NEW',
-                                potential: 'YES',
-                                client_grade: 'A',
-                                contacts: [{ full_name: parts[6] || 'Contact Person', calling_number: parts[7] || '+256 700000000', email: parts[8] || 'info@client.co.ug' }],
-                              });
-                            }
-                          }
-                        }
-
-                        if (duplicateNames.length > 0) {
-                          setDuplicateToast({
-                            title: 'Import Duplicates Prevented',
-                            count: duplicateNames.length,
-                            items: duplicateNames,
-                            message: `${duplicateNames.length} duplicate buyer record(s) were detected and skipped during file import to prevent duplication.`
-                          });
-                        }
-
-                        if (newItems.length > 0) {
-                          for (const item of newItems) {
-                            await buyerApi.createBuyer(item);
-                          }
-                          await loadApiBuyers();
-                          setImportNotification(`Successfully imported ${newItems.length} unique buyer profile(s) from "${file.name}"!`);
-                        } else if (duplicateNames.length > 0) {
-                          setImportNotification(`Import complete: 0 new entries added (${duplicateNames.length} duplicate records skipped).`);
-                        }
-
-                        setShowImportModal(false);
-                        setTimeout(() => setImportNotification(null), 5000);
-                      };
-                      reader.readAsText(file);
-                    }
-                  }}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                />
-                <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto">
-                  <Upload size={24} />
-                </div>
-                <p className="text-xs font-bold text-slate-800">Click or Drag & Drop File Here</p>
-                <p className="text-[11px] text-slate-400">Supports .CSV, .XLSX, .XLS (Up to 10MB)</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <CsvImportModal
+        isOpen={showImportModal}
+        title="Import Buyers (CSV / Excel)"
+        entityName="Buyer"
+        fieldSchemas={buyerFieldSchemas}
+        onClose={() => setShowImportModal(false)}
+        onImportItems={handleBuyerBatchImport}
+        onComplete={(msg) => {
+          setImportNotification(msg);
+          setTimeout(() => setImportNotification(null), 5000);
+        }}
+      />
     </div>
   );
 };
