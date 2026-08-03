@@ -91,6 +91,12 @@ export const supplierApi = {
         page: pageNum,
         limit: limitNum,
         totalPages: totalPagesNum,
+        meta: {
+          total: totalCount,
+          page: pageNum,
+          limit: limitNum,
+          totalPages: totalPagesNum,
+        },
         totalDuplicates: resData?.totalDuplicates ?? (resData as any)?.totalDuplicates ?? 0,
         duplicateIds: resData?.duplicateIds || (resData as any)?.duplicateIds || [],
         duplicateGroups: resData?.duplicateGroups || (resData as any)?.duplicateGroups || [],
@@ -114,11 +120,10 @@ export const supplierApi = {
   // Create new Supplier in Supabase DB via NestJS API
   async createSupplier(data: SupplierDto) {
     try {
-      // Map frontend model to NestJS CreateSupplierDto schema
       const payload = {
         name: data.name,
         supplier_type: (data.supplier_type || 'MANUFACTURER').toUpperCase() === 'TRADER' ? 'TRADER' : 'MANUFACTURER',
-        brand_description: data.brand_name || 'Standard Supplier',
+        brand_description: data.brand_name || '',
         country: data.country || 'China',
         province: data.province || '',
         city: data.city || '',
@@ -127,15 +132,13 @@ export const supplierApi = {
         tax_id: data.tax_id || '',
         primary_website: data.primary_website || '',
         secondary_website: data.secondary_website || '',
-        // Send the full multi-email array (see Supplier.emails in schema),
-        // not just the first entry.
         emails: Array.isArray(data.emails) && data.emails.length > 0 ? data.emails : (data.email ? [data.email] : []),
-        grade: (data.grade || 'A').toUpperCase() === 'B' ? 'B' : (data.grade || 'A').toUpperCase() === 'C' ? 'C' : 'A',
+        grade: data.grade || 'A',
         current_status: (data.current_status || 'NEW').toUpperCase() === 'EXISTING' ? 'EXISTING' : 'NEW',
         potential: (data.potential || 'YES').toUpperCase() === 'NO' ? 'NO' : 'YES',
         potential_reason: data.potential_reason || '',
         secondary_products_desc: Array.isArray(data.secondary_products) ? data.secondary_products.join(', ') : data.secondary_products || '',
-        visited_factory: data.visited_factory === 'YES' || data.visited_factory === true,
+        visited_factory: data.visited_factory === 'YES' || data.visited_factory === true || data.visited_factory === 'Yes',
         visit_remarks: data.visit_remarks || '',
         overall_remarks: data.overall_remarks || '',
         product_categories: data.product_categories || [],
@@ -163,7 +166,29 @@ export const supplierApi = {
     }
   },
 
-  // Update Supplier in Supabase DB
+  // Update Supplier by ID
+  async updateSupplier(id: string, data: SupplierDto) {
+    try {
+      const response = await api.patch(`/suppliers/${id}`, data);
+      return response.data;
+    } catch (error) {
+      console.warn('API error updating supplier:', error);
+      throw error;
+    }
+  },
+
+  // Update Grade or Potential inline
+  async updateGradeOrPotential(id: string, dto: { grade?: any; potential?: any }) {
+    try {
+      const response = await api.patch(`/suppliers/${id}/grade-potential`, dto);
+      return response.data;
+    } catch (error) {
+      console.warn('API error updating grade or potential:', error);
+      return null;
+    }
+  },
+
+  // Update Status
   async updateStatus(id: string, currentStatus: string) {
     try {
       const response = await api.patch(`/suppliers/${id}/status`, { currentStatus });
@@ -174,21 +199,24 @@ export const supplierApi = {
     }
   },
 
-  // Delete Supplier in Supabase DB.
-  // BUG FIX: this used to catch the error and return null, which silently
-  // swallowed the backend's delete-rule-violation message (e.g. "Status is
-  // EXISTING, cannot delete"). Callers had no way to distinguish "deleted
-  // successfully" from "blocked by rule" — both looked like a resolved
-  // promise. Re-throwing lets the caller's try/catch show the real reason.
+  // Bulk import suppliers
+  async bulkImportSuppliers(dtos: SupplierDto[]) {
+    try {
+      const response = await api.post('/suppliers/bulk', dtos);
+      return response.data;
+    } catch (error) {
+      console.warn('API error bulk importing suppliers:', error);
+      throw error;
+    }
+  },
+
+  // Delete Supplier in Supabase DB
   async deleteSupplier(id: string) {
     const response = await api.delete(`/suppliers/${id}`);
     return response.data;
   },
 
-  // Bulk delete selected suppliers.
-  // Returns { deleted: [{id,name}], blocked: [{id,name,reasons}], notFound: [id] }.
-  // Pass forceIds (a subset of ids) + force:true to override specific
-  // blocked records after the user confirms via the "Skip / Force Delete" popup.
+  // Bulk delete selected suppliers
   async bulkDeleteSuppliers(ids: string[], options?: { force?: boolean; forceIds?: string[] }) {
     const response = await api.post('/suppliers/bulk-delete', {
       ids,

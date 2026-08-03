@@ -46,7 +46,12 @@ export class ResponseInterceptor<T> implements NestInterceptor<T, StandardApiRes
         if (res && typeof res === 'object' && !Array.isArray(res)) {
           if ('data' in res && ('pagination' in res || 'total' in res || 'meta' in res)) {
             data = res.data;
-            pagination = res.pagination || res.meta || null;
+            pagination = res.pagination || res.meta || ('total' in res ? {
+              total: res.total,
+              page: res.page,
+              limit: res.limit,
+              totalPages: res.totalPages || Math.ceil(res.total / (res.limit || 1)),
+            } : null);
             message = res.message || message;
           } else if ('message' in res && 'data' in res) {
             message = res.message;
@@ -54,6 +59,7 @@ export class ResponseInterceptor<T> implements NestInterceptor<T, StandardApiRes
             pagination = res.pagination || null;
           }
         }
+
 
         return {
           success: true,

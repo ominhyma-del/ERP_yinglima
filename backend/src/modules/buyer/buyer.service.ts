@@ -249,7 +249,7 @@ export class BuyerService {
         ]),
       );
       const allEmails = Array.from(
-        new Set([...(target.emails || []), ...sources.flatMap((s) => s.emails || [])]),
+        new Set([...((target as any).emails || []), ...sources.flatMap((s: any) => s.emails || [])]),
       );
 
       for (const source of sources) {
@@ -270,11 +270,12 @@ export class BuyerService {
         data: {
           product_categories: allCategories,
           potential_subcategories: allSubcategories,
-          emails: allEmails,
+          emails: allEmails as any,
           updated_by: tenant.userId,
         },
         include: { contacts: true },
       });
+
 
       await this.audit.record(
         {
@@ -339,7 +340,7 @@ export class BuyerService {
         address: dto.address,
         tax_id: dto.tax_id,
         website: dto.website,
-        emails: dto.emails,
+        emails: (dto as any).emails,
         client_grade: dto.client_grade,
         current_status: dto.current_status,
         product_range_supplied: dto.product_range_supplied,

@@ -86,12 +86,16 @@ export class SupplierService {
       limit = 100,
     } = query;
 
-    const duplicateInfo = await this.findDuplicates(tenant);
+    let duplicateInfo: any = { totalDuplicates: 0, duplicateIds: [], duplicateGroups: [] };
+    if (onlyDuplicates === 'true' || onlyDuplicates === true) {
+      duplicateInfo = await this.findDuplicates(tenant);
+    }
 
     const where: any = {
       company_id: tenant.companyId,
       deleted_at: null,
     };
+
 
     if (subTab === 'Active') {
       where.status = RecordStatus.ACTIVE;
@@ -251,7 +255,7 @@ export class SupplierService {
         ]),
       );
       const allEmails = Array.from(
-        new Set([...(target.emails || []), ...sources.flatMap((s) => s.emails || [])]),
+        new Set([...((target as any).emails || []), ...sources.flatMap((s: any) => s.emails || [])]),
       );
 
       for (const source of sources) {
@@ -272,11 +276,12 @@ export class SupplierService {
         data: {
           product_categories: allCategories,
           key_strength_subcategories: allSubcategories,
-          emails: allEmails,
+          emails: allEmails as any,
           updated_by: tenant.userId,
         },
         include: { contacts: true },
       });
+
 
       await this.audit.record(
         {

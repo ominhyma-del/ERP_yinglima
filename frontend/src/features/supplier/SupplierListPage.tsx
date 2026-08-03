@@ -1,31 +1,11 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { TablePagination } from '../../components/TablePagination';
 import { Truck, Plus, Filter, ShieldAlert, ArrowLeft, Download, Upload, FileSpreadsheet, X, CheckCircle, Eye, Trash2, Camera, Phone, Mail, MessageSquare, AlertCircle, Link as LinkIcon, Check, ChevronDown, UserPlus, Edit, Maximize2, FileText, Image as ImageIcon, Video, Search, RotateCcw, ArrowUpDown, ArrowUp, ArrowDown, Layers } from 'lucide-react';
 import { supplierApi } from '../../api/supplierApi';
 import { TableSkeleton } from '../../components/common/SkeletonLoader';
-import { BulkDeleteModal, BulkDeleteResultLike } from '../../components/common/BulkDeleteModal';
-import { MultiEmailInput } from '../../components/common/MultiEmailInput';
 import { useAuth } from '../../context/AuthContext';
 import { can } from '../team/teamStore';
 import { offlineOutbox } from '../../lib/offlineOutbox';
-import { DuplicateToast, DuplicateNotification } from '../../components/common/DuplicateToast';
-import { Pagination } from '../../components/common/Pagination';
-import { CsvImportModal, FieldSchema } from '../../components/common/CsvImportModal';
-
-const supplierFieldSchemas: FieldSchema[] = [
-  { key: 'name', label: 'Company Name', required: true, aliases: ['company', 'supplier name', 'supplier', 'name'] },
-  { key: 'supplier_type', label: 'Supplier Type', aliases: ['type'] },
-  { key: 'country', label: 'Country' },
-  { key: 'province', label: 'Province' },
-  { key: 'city', label: 'City' },
-  { key: 'contact_name', label: 'Contact Person', aliases: ['contact', 'name'] },
-  { key: 'calling_number', label: 'Phone Number', aliases: ['phone', 'mobile', 'tel'] },
-  { key: 'emails', label: 'Email', aliases: ['email'] },
-  { key: 'tax_id', label: 'Tax ID', aliases: ['tax', 'vat', 'tin'] },
-  { key: 'brand_name', label: 'Brand Name', aliases: ['brand'] },
-  { key: 'grade', label: 'Grade' },
-  { key: 'current_status', label: 'Current Status', aliases: ['status'] },
-  { key: 'potential', label: 'Potential' },
-];
 
 // Country Phone Dial Code Map
 const countryPhoneCodeMap: Record<string, string> = {
@@ -103,8 +83,9 @@ const MultiSelectDropdown: React.FC<{
               <div
                 key={option}
                 onClick={() => toggleOption(option)}
-                className={`p-2 rounded flex items-center justify-between cursor-pointer transition-colors ${isSelected ? 'bg-blue-50 text-blue-800 font-bold' : 'hover:bg-slate-50 text-slate-700'
-                  }`}
+                className={`p-2 rounded flex items-center justify-between cursor-pointer transition-colors ${
+                  isSelected ? 'bg-blue-50 text-blue-800 font-bold' : 'hover:bg-slate-50 text-slate-700'
+                }`}
               >
                 <span>{option}</span>
                 {isSelected && <Check size={14} className="text-blue-600" />}
@@ -172,22 +153,19 @@ export const SupplierListPage: React.FC = () => {
   const [showImportModal, setShowImportModal] = useState(false);
   const [showExpandAllModal, setShowExpandAllModal] = useState(false);
   const [importNotification, setImportNotification] = useState<string | null>(null);
-  const [duplicateToast, setDuplicateToast] = useState<DuplicateNotification | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
+  const [importTotal, setImportTotal] = useState(0);
+  const [currentImportItem, setCurrentImportItem] = useState('');
   const [expandedFieldModal, setExpandedFieldModal] = useState<{ title: string; items: string[] } | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   // Form Stage state (Stage 1 & Stage 2)
   const [formStage, setFormStage] = useState<1 | 2>(1);
 
   // On-blur Phone Error states (7 to 11 digits requirement)
   const [phoneErrors, setPhoneErrors] = useState<{ calling?: string; whatsapp?: string; wechat?: string }>({});
-
-  // BUG FIX: the "Add Contacts Form" sub-contact fields (newContact.calling/
-  // .whatsapp/.wechat) previously had no validation at all — someone could
-  // enter a 3-digit or 20-digit number and it would save fine, even though
-  // the spec says these are "same as above" (i.e. same 7-11 digit rule as
-  // the Stage-1 fields). Separate error bucket so Stage-1 and sub-contact
-  // validation don't clobber each other.
-  const [subContactPhoneErrors, setSubContactPhoneErrors] = useState<{ calling?: string; whatsapp?: string; wechat?: string }>({});
 
   // Province and City Master Mapping
   const provinceCityMap: Record<string, string[]> = {
@@ -226,14 +204,10 @@ export const SupplierListPage: React.FC = () => {
   const canEdit = can(currentUser as any, 'suppliers', 'edit');
   const canDelete = can(currentUser as any, 'suppliers', 'delete');
 
-  // Initial Suppliers state (100% server-side database driven)
+  // Initial Suppliers state (100% database driven)
   const [suppliers, setSuppliers] = useState<any[]>([]);
-  const [totalItems, setTotalItems] = useState(0);
-  const [totalDuplicates, setTotalDuplicates] = useState(0);
-  const [duplicateIds, setDuplicateIds] = useState<string[]>([]);
-  const [onlyDuplicates, setOnlyDuplicates] = useState(false);
+  const [totalRecords, setTotalRecords] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Active Top Filter & View States
   const [showFilterPanel, setShowFilterPanel] = useState(false);
@@ -253,101 +227,83 @@ export const SupplierListPage: React.FC = () => {
   const [filterPotential, setFilterPotential] = useState('All');
   const [filterVisited, setFilterVisited] = useState('All');
 
+  // searchTerm ref for debounce
+  const searchTermRef = React.useRef(searchTerm);
+  searchTermRef.current = searchTerm;
+
+  const loadApiSuppliers = async (overrides?: { page?: number; limit?: number }) => {
+    setIsLoading(true);
+    const params: any = {
+      page: overrides?.page ?? currentPage,
+      limit: overrides?.limit ?? pageSize,
+    };
+    if (searchTermRef.current) params.search = searchTermRef.current;
+    if (filterCategory !== 'All') params.productCategory = filterCategory;
+    if (filterSubCategory !== 'All') params.keyStrengthSubcategory = filterSubCategory;
+    if (filterCountry !== 'All') params.country = filterCountry;
+    if (filterProvince !== 'All') params.province = filterProvince;
+    if (filterCity !== 'All') params.city = filterCity;
+    if (filterSupplierType !== 'All') params.supplierType = filterSupplierType.toUpperCase();
+    if (filterGrade !== 'All') params.grade = filterGrade;
+    if (subTab === 'Inactive') {
+      params.currentStatus = 'INACTIVE';
+    } else if (filterStatus !== 'All') {
+      params.currentStatus = filterStatus.toUpperCase();
+    }
+    if (filterPotential !== 'All') params.potential = filterPotential.toUpperCase();
+    if (filterVisited !== 'All') params.visitedFactory = filterVisited === 'Yes' ? 'true' : 'false';
+
+    const result = await supplierApi.getSuppliers(params);
+    if (result) {
+      setSuppliers(result.data);
+      setTotalRecords(result.meta.total);
+    }
+    setIsLoading(false);
+  };
+
+  // Single consolidated fetch effect — prevents 5x redundant parallel requests on mount
+  const isMountedRef = React.useRef(false);
+
+  useEffect(() => {
+    if (!isMountedRef.current) {
+      isMountedRef.current = true;
+      loadApiSuppliers();
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      loadApiSuppliers();
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [
+    currentPage,
+    pageSize,
+    searchTerm,
+    filterCategory,
+    filterSubCategory,
+    filterCountry,
+    filterProvince,
+    filterCity,
+    filterSupplierType,
+    filterGrade,
+    filterStatus,
+    filterPotential,
+    filterVisited,
+    subTab,
+  ]);
+
+
+
+
+  // Server already filtered by subTab (currentStatus), categories, etc.
+  // filteredSuppliers = server-returned page of data (no client filter needed)
+  const filteredSuppliers = suppliers;
+
+
   // Column Sorting State
   const [sortField, setSortField] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-
-  // Pagination State
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(100);
-
-  // Fetch live suppliers directly from NestJS API (Connected to Supabase DB)
-  const loadApiSuppliers = async (showLoading = true) => {
-    if (showLoading) setIsLoading(true);
-    setLoadError(null);
-    try {
-      const params = {
-        page: currentPage,
-        limit: pageSize,
-        search: searchTerm,
-        subTab,
-        productCategory: filterCategory,
-        keyStrengthSubcategory: filterSubCategory,
-        country: filterCountry,
-        province: filterProvince,
-        city: filterCity,
-        supplierType: filterSupplierType,
-        grade: filterGrade,
-        currentStatus: filterStatus,
-        potential: filterPotential,
-        visitedFactory: filterVisited,
-        onlyDuplicates,
-        sortBy: sortField || 'created_at',
-        sortOrder: sortDirection,
-      };
-
-      const res = await supplierApi.getSuppliers(params);
-      if (res && Array.isArray(res.data)) {
-        setSuppliers(res.data);
-        setTotalItems(res.total);
-        setTotalDuplicates(res.totalDuplicates || 0);
-        setDuplicateIds(res.duplicateIds || []);
-      }
-    } catch (err: any) {
-      setLoadError(err?.message || 'Failed to load suppliers. Please try again.');
-    } finally {
-      if (showLoading) setIsLoading(false);
-    }
-  };
-
-  // Primary Fetch on Query Change
-  useEffect(() => {
-    loadApiSuppliers(true);
-  }, [
-    currentPage,
-    pageSize,
-    searchTerm,
-    filterCategory,
-    filterSubCategory,
-    filterCountry,
-    filterProvince,
-    filterCity,
-    filterSupplierType,
-    filterGrade,
-    filterStatus,
-    filterPotential,
-    filterVisited,
-    subTab,
-    onlyDuplicates,
-    sortField,
-    sortDirection,
-  ]);
-
-  // 10-Second Live Background Sync
-  useEffect(() => {
-    const syncTimer = setInterval(() => {
-      loadApiSuppliers(false);
-    }, 10000);
-    return () => clearInterval(syncTimer);
-  }, [
-    currentPage,
-    pageSize,
-    searchTerm,
-    filterCategory,
-    filterSubCategory,
-    filterCountry,
-    filterProvince,
-    filterCity,
-    filterSupplierType,
-    filterGrade,
-    filterStatus,
-    filterPotential,
-    filterVisited,
-    subTab,
-    onlyDuplicates,
-    sortField,
-    sortDirection,
-  ]);
 
   const handleSort = (field: string) => {
     if (sortField === field) {
@@ -363,77 +319,31 @@ export const SupplierListPage: React.FC = () => {
     }
   };
 
-  // Direct server-returned array for rendering
-  const paginatedSuppliers = suppliers;
-  const sortedSuppliers = suppliers;
-  const filteredSuppliers = suppliers;
+  const sortedSuppliers = useMemo(() => {
+    if (!sortField) return filteredSuppliers;
+    return [...filteredSuppliers].sort((a, b) => {
+      let valA = a[sortField] ?? '';
+      let valB = b[sortField] ?? '';
 
-  const handleSupplierBatchImport = async (
-    items: any[],
-    options: { mode: 'CREATE' | 'MERGE' },
-    onProgress?: (current: number, total: number, importedCount: number) => void,
-    isAborted?: () => boolean
-  ) => {
-    let successCount = 0;
-    const duplicates: any[] = [];
-    const total = items.length;
-    const CHUNK_SIZE = 25;
+      if (Array.isArray(valA)) valA = valA.join(', ');
+      if (Array.isArray(valB)) valB = valB.join(', ');
 
-    for (let i = 0; i < total; i += CHUNK_SIZE) {
-      if (isAborted && isAborted()) {
-        break; // Instant cancellation
-      }
-      const chunk = items.slice(i, i + CHUNK_SIZE);
-      await Promise.all(
-        chunk.map(async (item) => {
-          if (isAborted && isAborted()) return;
-          const isDup = suppliers.some(
-            (s) => s.name.trim().toLowerCase() === (item.name || '').trim().toLowerCase()
-          );
+      if (typeof valA === 'string') valA = valA.toLowerCase();
+      if (typeof valB === 'string') valB = valB.toLowerCase();
 
-          if (options.mode === 'CREATE') {
-            if (isDup) {
-              duplicates.push(item);
-            } else {
-              try {
-                await supplierApi.createSupplier(item);
-                successCount++;
-              } catch (e) {
-                console.error('Failed to create imported supplier row', e);
-              }
-            }
-          } else if (options.mode === 'MERGE') {
-            const target = suppliers.find(
-              (s) => s.name.trim().toLowerCase() === (item.name || '').trim().toLowerCase()
-            );
-            if (target) {
-              try {
-                await supplierApi.mergeSuppliers(target.id, [target.id]);
-                successCount++;
-              } catch (e) {
-                console.error('Failed to merge imported supplier row', e);
-              }
-            } else {
-              try {
-                await supplierApi.createSupplier(item);
-                successCount++;
-              } catch (e) {
-                console.error('Failed to create imported supplier row', e);
-              }
-            }
-          }
-        })
-      );
+      if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+      if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [filteredSuppliers, sortField, sortDirection]);
 
-      const processed = Math.min(i + CHUNK_SIZE, total);
-      if (onProgress) {
-        onProgress(processed, total, successCount);
-      }
-    }
 
-    await loadApiSuppliers(true);
-    return { successCount, duplicatesCount: duplicates.length, duplicateItems: duplicates };
-  };
+
+
+  // totalPages uses server totalRecords; paginatedSuppliers = full current page (no client slice)
+  const totalPages = Math.ceil(totalRecords / pageSize) || 1;
+  const paginatedSuppliers = sortedSuppliers;
+
 
   const renderSortHeader = (label: string, field: string) => {
     const isActive = sortField === field;
@@ -483,64 +393,42 @@ export const SupplierListPage: React.FC = () => {
     }
   };
 
-  // BUG FIX: this used to just hide the selected rows from local state
-  // with no backend call at all — no rule check (a mix of Existing/
-  // Potential=Yes suppliers could be "deleted" this way even though the
-  // single-row Delete button correctly refuses them), and nothing was
-  // actually deleted server-side, so the rows would silently reappear on
-  // the next refresh. Now it calls the real bulk-delete endpoint, which
-  // enforces the identical rule as the single-row delete per record, and
-  // surfaces any blocked records via a popup so the user can explicitly
-  // skip or force-delete them.
-  const [bulkDeleteResult, setBulkDeleteResult] = useState<BulkDeleteResultLike | null>(null);
-  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
-
   const handleBulkDelete = async () => {
     if (selectedIds.length === 0) return;
     if (!confirm(`Are you sure you want to delete ${selectedIds.length} selected supplier(s)?`)) return;
 
-    setIsBulkDeleting(true);
-    try {
-      const result = await supplierApi.bulkDeleteSuppliers(selectedIds);
-      applyBulkDeleteOutcome(result);
-    } catch (err: any) {
-      setImportNotification(err?.response?.data?.message || 'Bulk delete failed. Please try again.');
-    } finally {
-      setIsBulkDeleting(false);
-    }
-  };
+    const idsToDelete = [...selectedIds];
+    const successfullyDeleted: string[] = [];
+    const failedToDelete: { name: string; reason: string }[] = [];
 
-  // Shared handling for the result of any bulk-delete call (initial or
-  // force-retry): removes confirmed-deleted rows from local state, keeps
-  // the selection limited to whatever is still blocked, and opens the
-  // Skip/Force popup only if something was actually blocked.
-  const applyBulkDeleteOutcome = (result: BulkDeleteResultLike) => {
-    const deletedIds = new Set(result.deleted.map((d) => d.id));
-    setSuppliers((prev) => prev.filter((s) => !deletedIds.has(s.id)));
-
-    if (result.deleted.length > 0) {
-      setImportNotification(`${result.deleted.length} supplier(s) deleted successfully.`);
+    for (const id of idsToDelete) {
+      const s = suppliers.find((x) => x.id === id);
+      try {
+        await supplierApi.deleteSupplier(id);
+        successfullyDeleted.push(id);
+      } catch (err: any) {
+        const errMsg = err?.response?.data?.message || err?.message || 'Error occurred';
+        failedToDelete.push({
+          name: s?.name || id,
+          reason: Array.isArray(errMsg) ? errMsg.join(', ') : String(errMsg)
+        });
+      }
     }
 
-    if (result.blocked.length > 0) {
-      setSelectedIds(result.blocked.map((b) => b.id));
-      setBulkDeleteResult(result);
-    } else {
-      setSelectedIds([]);
-      setBulkDeleteResult(null);
+    if (successfullyDeleted.length > 0) {
+      setSuppliers((prev) => prev.filter((s) => !successfullyDeleted.includes(s.id)));
+      setImportNotification(`Successfully deleted ${successfullyDeleted.length} supplier(s).`);
     }
-  };
 
-  const handleForceBulkDelete = async (blockedIds: string[]) => {
-    setIsBulkDeleting(true);
-    try {
-      const result = await supplierApi.bulkDeleteSuppliers(blockedIds, { force: true, forceIds: blockedIds });
-      applyBulkDeleteOutcome(result);
-    } catch (err: any) {
-      setImportNotification(err?.response?.data?.message || 'Force delete failed. Please try again.');
-    } finally {
-      setIsBulkDeleting(false);
+    if (failedToDelete.length > 0) {
+      setDeleteWarningModal({
+        isOpen: true,
+        title: 'Bulk Deletion Partially Blocked',
+        message: failedToDelete.map(f => `❌ ${f.name}: ${f.reason}`).join('\n')
+      });
     }
+
+    setSelectedIds([]);
   };
 
   const handleOpenMerge = () => {
@@ -552,18 +440,32 @@ export const SupplierListPage: React.FC = () => {
     setShowMergeModal(true);
   };
 
-  const handleExecuteMerge = async () => {
-    if (!targetMergeId || selectedIds.length < 2) return;
+  const handleExecuteMerge = () => {
+    if (!targetMergeId) return;
     const targetSupplier = suppliers.find((s) => s.id === targetMergeId);
-    try {
-      await supplierApi.mergeSuppliers(targetMergeId, selectedIds);
-      setSelectedIds([]);
-      setShowMergeModal(false);
-      setImportNotification(`Successfully merged ${selectedIds.length} suppliers into "${targetSupplier?.name || 'Target Profile'}" in database.`);
-      loadApiSuppliers(true);
-    } catch (err: any) {
-      setImportNotification(err?.message || 'Merge failed. Please try again.');
-    }
+    if (!targetSupplier) return;
+
+    const mergeItems = suppliers.filter((s) => selectedIds.includes(s.id));
+    const mergedCategories = Array.from(new Set(mergeItems.flatMap((s) => s.product_categories || [])));
+    const mergedSubcats = Array.from(new Set(mergeItems.flatMap((s) => s.key_strength_subcategories || [])));
+
+    setSuppliers((prev) =>
+      prev
+        .map((s) =>
+          s.id === targetMergeId
+            ? {
+                ...s,
+                product_categories: mergedCategories,
+                key_strength_subcategories: mergedSubcats,
+              }
+            : s,
+        )
+        .filter((s) => s.id === targetMergeId || !selectedIds.includes(s.id)),
+    );
+
+    setSelectedIds([]);
+    setShowMergeModal(false);
+    setImportNotification(`Merged ${mergeItems.length} suppliers into "${targetSupplier.name}".`);
   };
 
   const handleResetFilters = () => {
@@ -594,10 +496,10 @@ export const SupplierListPage: React.FC = () => {
     contact_title: 'Mr',
     contact_name: '',
     designation: '',
-    calling_number: '+86 ',
-    whatsapp_number: '+86 ',
-    wechat_number: '+86 ',
-    emails: [] as string[],
+    calling_number: '',
+    whatsapp_number: '',
+    wechat_number: '',
+    email: '',
     tax_id: '',
     primary_website: '',
     secondary_website: '',
@@ -639,26 +541,26 @@ export const SupplierListPage: React.FC = () => {
   const handleOpenEditSupplier = (supplier: any) => {
     setEditingSupplierId(supplier.id);
     setFormData({
-      name: supplier.name,
-      product_categories: supplier.product_categories || ['Machines'],
-      supplier_type: supplier.supplier_type || 'Manufacturer',
+      name: supplier.name || '',
+      product_categories: supplier.product_categories || [],
+      supplier_type: supplier.supplier_type || 'Select',
       brand_name: supplier.brand_name || '',
       country: supplier.country || 'China',
-      province: supplier.province || 'Zhejiang',
-      city: supplier.city || 'Wenzhou',
+      province: supplier.province || 'Select',
+      city: supplier.city || 'Select',
       address: supplier.address || '',
       town: supplier.town || '',
       contact_title: supplier.contact_title || 'Mr',
       contact_name: supplier.contact_name || '',
       designation: supplier.designation || '',
-      calling_number: supplier.calling_number || '+86 ',
-      whatsapp_number: supplier.whatsapp_number || '+86 ',
-      wechat_number: supplier.wechat_number || '+86 ',
-      emails: Array.isArray(supplier.emails) ? supplier.emails : (supplier.email ? [supplier.email] : []),
+      calling_number: supplier.calling_number || '',
+      whatsapp_number: supplier.whatsapp_number || '',
+      wechat_number: supplier.wechat_number || '',
+      email: supplier.emails?.[0] || '',
       tax_id: supplier.tax_id || '',
       primary_website: supplier.primary_website || '',
       secondary_website: supplier.secondary_website || '',
-      key_strength_subcategories: supplier.key_strength_subcategories || ['Band Sealer'],
+      key_strength_subcategories: supplier.key_strength_subcategories || [],
       grade: supplier.grade || 'Select',
       current_status: supplier.current_status || 'Select',
       potential: supplier.potential || 'Select',
@@ -668,7 +570,7 @@ export const SupplierListPage: React.FC = () => {
       visit_remarks: supplier.visit_remarks || '',
       overall_remarks: supplier.overall_remarks || '',
     });
-    setFormContacts(supplier.contacts ? supplier.contacts.slice(1) : []); // Load secondary contacts
+    setFormContacts(supplier.contacts ? supplier.contacts.slice(1) : []);
     setVisitAttachments(supplier.attachments || []);
     setViewMode('add');
     setFormStage(1);
@@ -677,26 +579,19 @@ export const SupplierListPage: React.FC = () => {
 
   // Country Auto-Prefix Phone Code Handler
   const handleFirstFormCountryChange = (newCountry: string) => {
-    const prefix = countryPhoneCodeMap[newCountry] || '+86 ';
     setFormData((prev) => ({
       ...prev,
       country: newCountry,
-      calling_number: prefix + prev.calling_number.replace(/^\+\d+\s?/, ''),
-      whatsapp_number: prefix + prev.whatsapp_number.replace(/^\+\d+\s?/, ''),
-      wechat_number: prefix + prev.wechat_number.replace(/^\+\d+\s?/, ''),
     }));
   };
 
   const handleSubContactCountryChange = (newCountry: string) => {
-    const prefix = countryPhoneCodeMap[newCountry] || '+86 ';
     setNewContact((prev) => ({
       ...prev,
       country: newCountry,
-      calling: prefix + prev.calling.replace(/^\+\d+\s?/, ''),
-      whatsapp: prefix + prev.whatsapp.replace(/^\+\d+\s?/, ''),
-      wechat: prefix + prev.wechat.replace(/^\+\d+\s?/, ''),
     }));
   };
+
 
   // Attachments Handler
   const handleAddAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -718,7 +613,10 @@ export const SupplierListPage: React.FC = () => {
 
   // Validation function on blur (7 to 11 digits requirement)
   const validatePhone = (field: 'calling' | 'whatsapp' | 'wechat', value: string) => {
-    if (!value) return;
+    if (!value || value.trim() === '') {
+      setPhoneErrors((prev) => ({ ...prev, [field]: undefined }));
+      return;
+    }
     const digitsOnly = value.replace(/\D/g, '');
     if (digitsOnly.length < 7 || digitsOnly.length > 11) {
       setPhoneErrors((prev) => ({
@@ -730,41 +628,11 @@ export const SupplierListPage: React.FC = () => {
     }
   };
 
-  // Same 7-11 digit rule as the Stage-1 Calling/WhatsApp/WeChat fields
-  // (validatePhone above), applied to the sub-contact form fields.
-  const validateSubContactPhone = (field: 'calling' | 'whatsapp' | 'wechat', value: string) => {
-    if (!value) {
-      setSubContactPhoneErrors((prev) => ({ ...prev, [field]: undefined }));
-      return true;
-    }
-    const digitsOnly = value.replace(/\D/g, '');
-    if (digitsOnly.length < 7 || digitsOnly.length > 11) {
-      setSubContactPhoneErrors((prev) => ({
-        ...prev,
-        [field]: `Phone number must contain between 7 and 11 digits (Current: ${digitsOnly.length} digits).`,
-      }));
-      return false;
-    }
-    setSubContactPhoneErrors((prev) => ({ ...prev, [field]: undefined }));
-    return true;
-  };
 
   const handleSaveSubContact = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newContact.name) {
       alert('Please enter Person Name for the contact.');
-      return;
-    }
-
-    // BUG FIX: previously these fields could be saved with any number of
-    // digits (or none at all past the country code) since nothing ever
-    // validated them. Re-run the same check used on blur here too, since
-    // a user can click "Save" without ever blurring a field they typed
-    // last into.
-    const callingOk = validateSubContactPhone('calling', newContact.calling);
-    const whatsappOk = validateSubContactPhone('whatsapp', newContact.whatsapp);
-    const wechatOk = validateSubContactPhone('wechat', newContact.wechat);
-    if (!callingOk || !whatsappOk || !wechatOk) {
       return;
     }
 
@@ -788,7 +656,6 @@ export const SupplierListPage: React.FC = () => {
       wechat: '+86 ',
       email: '',
     });
-    setSubContactPhoneErrors({});
   };
 
   const handleEditFormContact = (contact: any) => {
@@ -801,21 +668,23 @@ export const SupplierListPage: React.FC = () => {
   };
 
   // Inline Grade Change in Table
-  const handleInlineGradeChange = (id: string, newGrade: string) => {
+  const handleInlineGradeChange = async (id: string, newGrade: string) => {
     setSuppliers((prev) =>
       prev.map((s) => (s.id === id ? { ...s, grade: newGrade } : s)),
     );
+    await supplierApi.updateGradeOrPotential(id, { grade: newGrade });
   };
 
   // Inline Potential Change in Table
-  const handleInlinePotentialChange = (id: string, newPotential: string) => {
+  const handleInlinePotentialChange = async (id: string, newPotential: string) => {
     setSuppliers((prev) =>
       prev.map((s) => (s.id === id ? { ...s, potential: newPotential } : s)),
     );
+    await supplierApi.updateGradeOrPotential(id, { potential: newPotential });
   };
 
   // 1-Way Status Rule Enforced
-  const handleStatusChange = (id: string, newStatus: string) => {
+  const handleStatusChange = async (id: string, newStatus: string) => {
     const target = suppliers.find((s) => s.id === id);
     if (target?.current_status === 'EXISTING' && newStatus === 'NEW') {
       setShowRuleAlert('ONE_WAY_STATUS');
@@ -825,6 +694,7 @@ export const SupplierListPage: React.FC = () => {
       prev.map((s) => (s.id === id ? { ...s, current_status: newStatus } : s)),
     );
     setShowRuleAlert(null);
+    await supplierApi.updateStatus(id, newStatus);
   };
 
   const [deleteWarningModal, setDeleteWarningModal] = useState<{
@@ -841,7 +711,7 @@ export const SupplierListPage: React.FC = () => {
 
     try {
       await supplierApi.deleteSupplier(id);
-      await loadApiSuppliers();
+      setSuppliers((prev) => prev.filter((s) => s.id !== id));
       setImportNotification(`Supplier "${target.name}" deleted successfully.`);
     } catch (err: any) {
       const errMsg = err?.response?.data?.message || err?.message || 'Supplier cannot be deleted.';
@@ -922,16 +792,11 @@ export const SupplierListPage: React.FC = () => {
     // Check Duplication if creating new supplier
     if (!editingSupplierId) {
       const isDuplicate = suppliers.some(
-        (s) => s.name.trim().toLowerCase() === companyName.toLowerCase() && (s.city || '').trim().toLowerCase() === (formData.city || '').trim().toLowerCase()
+        (s) => s.name.trim().toLowerCase() === companyName.toLowerCase() && s.city.trim().toLowerCase() === formData.city.trim().toLowerCase()
       );
 
       if (isDuplicate) {
-        setDuplicateToast({
-          title: 'Duplicate Supplier Prevented',
-          count: 1,
-          items: [`Company Name: "${companyName}" (City: ${formData.city || 'N/A'})`],
-          message: `Supplier "${companyName}" in city "${formData.city}" already exists in the system.`
-        });
+        setShowRuleAlert(`DUPLICATE_ENTRY: Supplier with company name "${companyName}" in city "${formData.city}" already exists!`);
         return;
       }
     }
@@ -939,70 +804,83 @@ export const SupplierListPage: React.FC = () => {
     const primaryContactObj = {
       id: `c-p-${Date.now()}`,
       title: formData.contact_title,
-      name: `${formData.contact_title} ${formData.contact_name || 'Primary Contact'}`,
-      designation: formData.designation || 'Sales Director',
+      name: `${formData.contact_title} ${formData.contact_name || ''}`.trim(),
+      designation: formData.designation || '',
       territory: 'Export Global',
       country: formData.country,
-      calling: formData.calling_number || '+86 13800000000',
-      whatsapp: formData.whatsapp_number || formData.calling_number || '+86 13800000000',
-      wechat: formData.wechat_number || '+86 13800000000',
-      email: formData.emails[0] || 'info@supplier.com',
+      calling: formData.calling_number || '',
+      whatsapp: formData.whatsapp_number || '',
+      wechat: formData.wechat_number || '',
+      email: formData.email || '',
     };
 
     const updatedSupplierObj = {
       id: editingSupplierId || `s${Date.now()}`,
       name: companyName,
-      product_categories: formData.product_categories.length > 0 ? formData.product_categories : ['Machines'],
+      product_categories: formData.product_categories,
       supplier_type: formData.supplier_type,
-      brand_name: formData.brand_name || 'Yinglima Supplier',
+      brand_name: formData.brand_name || '',
       country: formData.country,
       province: formData.province,
       city: formData.city,
-      town: formData.town || 'Industrial Town',
-      address: formData.address || 'Industrial Zone',
+      town: formData.town || '',
+      address: formData.address || '',
       contact_title: formData.contact_title,
-      contact_name: formData.contact_name || 'Primary Contact',
-      designation: formData.designation || 'Sales Director',
-      calling_number: formData.calling_number || '+86 13800000000',
-      whatsapp_number: formData.whatsapp_number || formData.calling_number || '+86 13800000000',
-      wechat_number: formData.wechat_number || '+86 13800000000',
-      emails: formData.emails.length > 0 ? formData.emails : ['info@supplier.com'],
-      tax_id: formData.tax_id || 'TAX-99887766',
-      primary_website: formData.primary_website || 'www.supplier.com',
-      secondary_website: formData.secondary_website,
-      key_strength_subcategories: formData.key_strength_subcategories.length > 0 ? formData.key_strength_subcategories : ['Band Sealer'],
-      grade: formData.grade === 'Select' ? 'A' : formData.grade,
-      current_status: formData.current_status === 'Select' ? 'NEW' : formData.current_status,
-      potential: formData.potential === 'Select' ? 'YES' : formData.potential,
-      potential_reason: formData.potential_reason,
-      secondary_products: formData.secondary_products ? formData.secondary_products.split(',') : ['Spare Parts'],
+      contact_name: formData.contact_name || '',
+      designation: formData.designation || '',
+      calling_number: formData.calling_number || '',
+      whatsapp_number: formData.whatsapp_number || '',
+      wechat_number: formData.wechat_number || '',
+      emails: formData.email ? [formData.email] : [],
+      tax_id: formData.tax_id || '',
+      primary_website: formData.primary_website || '',
+      secondary_website: formData.secondary_website || '',
+      key_strength_subcategories: formData.key_strength_subcategories,
+      grade: formData.grade,
+      current_status: formData.current_status,
+      potential: formData.potential,
+      potential_reason: formData.potential_reason || '',
+      secondary_products: formData.secondary_products ? (Array.isArray(formData.secondary_products) ? formData.secondary_products : formData.secondary_products.split(',')) : [],
       visited_factory: formData.visited_factory,
-      visit_remarks: formData.visit_remarks,
+      visit_remarks: formData.visit_remarks || '',
       attachments: visitAttachments,
-      overall_remarks: formData.overall_remarks || 'Supplier Profile Updated',
+      overall_remarks: formData.overall_remarks || '',
       contacts: [primaryContactObj, ...formContacts],
     };
 
+
     if (editingSupplierId) {
-      setSuppliers(suppliers.map((s) => (s.id === editingSupplierId ? updatedSupplierObj : s)));
-      setImportNotification(`Successfully updated supplier profile for "${companyName}"!`);
+      try {
+        await supplierApi.updateSupplier(editingSupplierId, updatedSupplierObj);
+        setImportNotification(`Successfully updated supplier profile for "${companyName}"!`);
+      } catch (err: any) {
+        setImportNotification(`Failed to update supplier profile: ${err?.message || err}`);
+      }
+      await loadApiSuppliers();
     } else {
+      // Persist to Supabase Cloud DB via NestJS Backend API with Network Resilience
+      setSuppliers([updatedSupplierObj, ...suppliers]);
       try {
         const res = await supplierApi.createSupplier(updatedSupplierObj);
-        await loadApiSuppliers();
-        setImportNotification(`Successfully created & saved new supplier profile "${companyName}" to Supabase Database!`);
-      } catch (err: any) {
-        const errMsg = err?.response?.data?.message || err?.message || '';
-        if (errMsg.toLowerCase().includes('already exists') || err?.response?.status === 400 || err?.response?.status === 409) {
-          setDuplicateToast({
-            title: 'Duplicate Supplier Blocked by Backend DB',
-            count: 1,
-            items: [`${companyName} (${formData.city || 'China'})`],
-            message: Array.isArray(errMsg) ? errMsg.join(', ') : errMsg || `Supplier "${companyName}" already exists in Supabase DB.`,
+        if (!res) {
+          offlineOutbox.enqueue({
+            url: '/api/suppliers',
+            method: 'POST',
+            payload: updatedSupplierObj,
+            description: `Create Supplier Profile (${companyName})`,
           });
-          return;
+          setImportNotification(`Saved locally! Wi-Fi/network dropped — queued in Outbox to sync automatically.`);
+        } else {
+          setImportNotification(`Successfully created & saved new supplier profile "${companyName}" to Supabase Database!`);
         }
-        await loadApiSuppliers();
+      } catch (err) {
+        offlineOutbox.enqueue({
+          url: '/api/suppliers',
+          method: 'POST',
+          payload: updatedSupplierObj,
+          description: `Create Supplier Profile (${companyName})`,
+        });
+        setImportNotification(`Saved locally! Network connection interrupted — queued in Outbox to sync when online.`);
       }
     }
 
@@ -1018,9 +896,6 @@ export const SupplierListPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* UPPER-LEFT DUPLICATE NOTIFICATION TOAST */}
-      <DuplicateToast toast={duplicateToast} onClose={() => setDuplicateToast(null)} />
-
       {/* DARSH IMPEX TOP TITLE BAR */}
       <div className="flex items-center justify-between">
         <div>
@@ -1036,10 +911,11 @@ export const SupplierListPage: React.FC = () => {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowFilterPanel(!showFilterPanel)}
-              className={`p-2.5 rounded-lg border transition-all cursor-pointer ${showFilterPanel
+              className={`p-2.5 rounded-lg border transition-all cursor-pointer ${
+                showFilterPanel
                   ? 'bg-blue-50 border-blue-200 text-blue-600'
                   : 'bg-white border-slate-300 hover:bg-slate-50 text-slate-700'
-                }`}
+              }`}
               title="Toggle Filters Panel"
             >
               <Filter size={15} />
@@ -1048,10 +924,11 @@ export const SupplierListPage: React.FC = () => {
             {/* Inline Edit Toggle Button */}
             <button
               onClick={() => setInlineEditEnabled(!inlineEditEnabled)}
-              className={`p-2.5 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs text-xs font-bold ${inlineEditEnabled
+              className={`p-2.5 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs text-xs font-bold ${
+                inlineEditEnabled
                   ? 'bg-emerald-600 hover:bg-emerald-700 text-white animate-pulse'
                   : 'bg-white border border-slate-300 hover:bg-slate-100 text-slate-700'
-                }`}
+              }`}
               title="Toggle Inline Editing Mode"
             >
               <Edit size={14} />
@@ -1153,55 +1030,6 @@ export const SupplierListPage: React.FC = () => {
           </button>
         )}
       </div>
-
-      {/* LIVE SYNC STATUS & TOTAL RECORD COUNT */}
-      <div className="flex items-center justify-between text-xs text-slate-600 bg-slate-50 border border-slate-200 px-4 py-2 rounded-xl shadow-2xs">
-        <div className="flex items-center gap-2 font-semibold text-slate-700">
-          <span className="relative flex h-2.5 w-2.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-          </span>
-          <span>Live Sync Active (10s auto-polling connected to Supabase DB)</span>
-        </div>
-        <div className="font-bold text-slate-800">
-          Total Records: <span className="text-blue-600 font-extrabold">{totalItems.toLocaleString()}</span>
-        </div>
-      </div>
-
-      {/* DUPLICATE WARNING BANNER */}
-      {totalDuplicates > 0 && (
-        <div className="bg-amber-50 border border-amber-300 text-amber-900 p-4 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs">
-          <div className="flex items-center gap-2.5 font-semibold">
-            <AlertCircle size={20} className="text-amber-600 shrink-0" />
-            <span>
-              ⚠️ <strong>Duplicates Detected:</strong> Found <span className="underline font-bold text-amber-950">{totalDuplicates}</span> supplier entries with duplicate names or tax IDs. Select records and click "Merge" to combine them.
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setOnlyDuplicates(!onlyDuplicates)}
-              className={`px-3 py-1.5 rounded-lg font-bold text-xs cursor-pointer transition-all ${
-                onlyDuplicates
-                  ? 'bg-amber-600 text-white shadow-xs'
-                  : 'bg-white border border-amber-300 text-amber-900 hover:bg-amber-100'
-              }`}
-            >
-              {onlyDuplicates ? 'Show All Records' : `Show Duplicates Only (${totalDuplicates})`}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* LOAD ERROR BANNER */}
-      {loadError && (
-        <div className="bg-rose-50 border border-rose-200 text-rose-800 p-4 rounded-xl flex items-center justify-between text-xs shadow-2xs">
-          <div className="flex items-center gap-2">
-            <AlertCircle size={18} className="text-rose-600 shrink-0" />
-            <span className="whitespace-pre-line">{loadError}</span>
-          </div>
-          <button onClick={() => loadApiSuppliers(true)} className="font-bold underline text-rose-900 shrink-0 ml-3 cursor-pointer">Retry</button>
-        </div>
-      )}
 
       {/* IMPORT / CREATE TOAST */}
       {importNotification && (
@@ -1376,9 +1204,12 @@ export const SupplierListPage: React.FC = () => {
                     className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-800 p-2 rounded-lg outline-none cursor-pointer"
                   >
                     <option value="All">All</option>
-                    <option value="Wenzhou">Wenzhou</option>
-                    <option value="Weifang">Weifang</option>
-                    <option value="Qingdao">Qingdao</option>
+                    {(filterProvince !== 'All' && provinceCityMap[filterProvince]
+                      ? provinceCityMap[filterProvince]
+                      : Object.values(provinceCityMap).flat()
+                    ).map((ct) => (
+                      <option key={ct} value={ct}>{ct}</option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -1389,19 +1220,21 @@ export const SupplierListPage: React.FC = () => {
           <div className="flex items-center border-b border-slate-200 px-1 gap-8 text-xs font-bold pt-2">
             <button
               onClick={() => setSubTab('Active')}
-              className={`pb-3 border-b-2 transition-all cursor-pointer ${subTab === 'Active'
+              className={`pb-3 border-b-2 transition-all cursor-pointer ${
+                subTab === 'Active'
                   ? 'border-blue-600 text-blue-600 font-extrabold text-sm'
                   : 'border-transparent text-slate-500 hover:text-slate-800'
-                }`}
+              }`}
             >
               Active
             </button>
             <button
               onClick={() => setSubTab('Inactive')}
-              className={`pb-3 border-b-2 transition-all cursor-pointer ${subTab === 'Inactive'
+              className={`pb-3 border-b-2 transition-all cursor-pointer ${
+                subTab === 'Inactive'
                   ? 'border-blue-600 text-blue-600 font-extrabold text-sm'
                   : 'border-transparent text-slate-500 hover:text-slate-800'
-                }`}
+              }`}
             >
               Inactive
             </button>
@@ -1464,212 +1297,203 @@ export const SupplierListPage: React.FC = () => {
           {isLoading ? (
             <TableSkeleton rows={8} />
           ) : (
-            <div className="space-y-4">
-              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs text-slate-700">
-                  <thead className="bg-slate-100 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
-                    <tr>
-                      <th className="p-3.5 text-center w-10">
-                        <input
-                          type="checkbox"
-                          checked={isAllSelected}
-                          onChange={toggleSelectAll}
-                          className="rounded border-slate-300 cursor-pointer w-4 h-4"
-                        />
-                      </th>
-                      {renderSortHeader('Company Name', 'name')}
-                      {renderSortHeader('Product Category (Max 5)', 'product_categories')}
-                      {renderSortHeader('Key Strength Sub Category', 'key_strength_subcategories')}
-                      {renderSortHeader('Secondary Products', 'secondary_products')}
-                      {renderSortHeader('Country', 'country')}
-                      {renderSortHeader('City, Province', 'city')}
-                      {renderSortHeader('Brand', 'brand_name')}
-                      {renderSortHeader('Supplier Type', 'supplier_type')}
-                      {renderSortHeader(`Current Status${inlineEditEnabled ? ' (Editable)' : ''}`, 'current_status')}
-                      {renderSortHeader(`Supplier's Grade${inlineEditEnabled ? ' (Editable)' : ''}`, 'grade')}
-                      {renderSortHeader(`Potential${inlineEditEnabled ? ' (Editable)' : ''}`, 'potential')}
-                      <th className="p-3.5 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-medium">
-                    {paginatedSuppliers.length > 0 ? (
-                      paginatedSuppliers.map((item) => (
-                        <tr key={item.id} className={`transition-colors ${selectedIds.includes(item.id) ? 'bg-blue-50/60' : 'hover:bg-slate-50'}`}>
-                          <td className="p-3.5 text-center">
-                            <input
-                              type="checkbox"
-                              checked={selectedIds.includes(item.id)}
-                              onChange={() => toggleSelectOne(item.id)}
-                              className="rounded border-slate-300 cursor-pointer w-4 h-4"
-                            />
-                          </td>
-                          <td
-                            onClick={() => {
-                              setSelectedSupplier(item);
-                              setViewMode('detail');
-                            }}
-                            className="p-3.5 font-bold text-blue-600 hover:underline cursor-pointer"
-                          >
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span>{item.name}</span>
-                              {duplicateIds.includes(item.id) && (
-                                <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold px-1.5 py-0.5 rounded-md flex items-center gap-1 shrink-0">
-                                  ⚠️ Duplicate
-                                </span>
-                              )}
-                            </div>
-                          </td>
+          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+            <div className="overflow-x-auto max-h-[calc(100vh-280px)] overflow-y-auto">
+              <table className="w-full text-left text-xs text-slate-700 relative border-collapse">
+                <thead className="bg-slate-100 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider sticky top-0 z-20 shadow-xs">
+                  <tr>
+                    <th className="p-3.5 text-center w-10">
+                      <input
+                        type="checkbox"
+                        checked={isAllSelected}
+                        onChange={toggleSelectAll}
+                        className="rounded border-slate-300 cursor-pointer w-4 h-4"
+                      />
+                    </th>
+                    {renderSortHeader('Company Name', 'name')}
+                    {renderSortHeader('Product Category (Max 5)', 'product_categories')}
+                    {renderSortHeader('Key Strength Sub Category', 'key_strength_subcategories')}
+                    {renderSortHeader('Secondary Products', 'secondary_products')}
+                    {renderSortHeader('Country', 'country')}
+                    {renderSortHeader('City, Province', 'city')}
+                    {renderSortHeader('Brand', 'brand_name')}
+                    {renderSortHeader('Supplier Type', 'supplier_type')}
+                    {renderSortHeader(`Current Status${inlineEditEnabled ? ' (Editable)' : ''}`, 'current_status')}
+                    {renderSortHeader(`Supplier's Grade${inlineEditEnabled ? ' (Editable)' : ''}`, 'grade')}
+                    {renderSortHeader(`Potential${inlineEditEnabled ? ' (Editable)' : ''}`, 'potential')}
+                    <th className="p-3.5 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {paginatedSuppliers.length > 0 ? (
+                    paginatedSuppliers.map((item) => (
+                      <tr key={item.id} className={`transition-colors ${selectedIds.includes(item.id) ? 'bg-blue-50/60' : 'hover:bg-slate-50'}`}>
+                        <td className="p-3.5 text-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.includes(item.id)}
+                            onChange={() => toggleSelectOne(item.id)}
+                            className="rounded border-slate-300 cursor-pointer w-4 h-4"
+                          />
+                        </td>
+                        <td
+                          onClick={() => {
+                            setSelectedSupplier(item);
+                            setViewMode('detail');
+                          }}
+                          className="p-3.5 font-bold text-blue-600 hover:underline cursor-pointer"
+                        >
+                          {item.name}
+                        </td>
 
-                          {/* Product Category (Show max 5, eye button if more) */}
-                          <td className="p-3.5">
-                            <div className="flex flex-wrap gap-1 items-center">
-                              {item.product_categories.slice(0, 5).map((cat, i) => (
-                                <span key={i} className="px-1.5 py-0.5 bg-slate-100 text-slate-800 text-[10px] rounded font-semibold">
-                                  {cat}
-                                </span>
-                              ))}
-                              {item.product_categories.length > 5 && (
-                                <button
-                                  onClick={() => setExpandedFieldModal({ title: `${item.name} - All Product Categories`, items: item.product_categories })}
-                                  className="p-1 text-blue-600 hover:bg-blue-50 rounded"
-                                >
-                                  <Eye size={12} />
-                                </button>
-                              )}
-                            </div>
-                          </td>
+                        {/* Product Category (Show max 5, eye button if more) */}
+                        <td className="p-3.5">
+                          <div className="flex flex-wrap gap-1 items-center">
+                            {item.product_categories.slice(0, 5).map((cat, i) => (
+                              <span key={i} className="px-1.5 py-0.5 bg-slate-100 text-slate-800 text-[10px] rounded font-semibold">
+                                {cat}
+                              </span>
+                            ))}
+                            {item.product_categories.length > 5 && (
+                              <button
+                                onClick={() => setExpandedFieldModal({ title: `${item.name} - All Product Categories`, items: item.product_categories })}
+                                className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                              >
+                                <Eye size={12} />
+                              </button>
+                            )}
+                          </div>
+                        </td>
 
-                          {/* Key Strength Sub Category (Show max 5, eye button if more) */}
-                          <td className="p-3.5">
-                            <div className="flex flex-wrap gap-1 items-center">
-                              {item.key_strength_subcategories.slice(0, 5).map((sub, i) => (
-                                <span key={i} className="px-1.5 py-0.5 bg-blue-50 text-blue-800 text-[10px] rounded font-semibold">
-                                  {sub}
-                                </span>
-                              ))}
-                              {item.key_strength_subcategories.length > 5 && (
-                                <button
-                                  onClick={() => setExpandedFieldModal({ title: `${item.name} - All Key Strength Sub Categories`, items: item.key_strength_subcategories })}
-                                  className="p-1 text-blue-600 hover:bg-blue-50 rounded"
-                                >
-                                  <Eye size={12} />
-                                </button>
-                              )}
-                            </div>
-                          </td>
+                        {/* Key Strength Sub Category (Show max 5, eye button if more) */}
+                        <td className="p-3.5">
+                          <div className="flex flex-wrap gap-1 items-center">
+                            {item.key_strength_subcategories.slice(0, 5).map((sub, i) => (
+                              <span key={i} className="px-1.5 py-0.5 bg-blue-50 text-blue-800 text-[10px] rounded font-semibold">
+                                {sub}
+                              </span>
+                            ))}
+                            {item.key_strength_subcategories.length > 5 && (
+                              <button
+                                onClick={() => setExpandedFieldModal({ title: `${item.name} - All Key Strength Sub Categories`, items: item.key_strength_subcategories })}
+                                className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                              >
+                                <Eye size={12} />
+                              </button>
+                            )}
+                          </div>
+                        </td>
 
-                          {/* Secondary Products */}
-                          <td className="p-3.5">
-                            <span className="text-slate-600">
-                              {Array.isArray(item.secondary_products) ? item.secondary_products.join(', ') : item.secondary_products}
+                        {/* Secondary Products */}
+                        <td className="p-3.5">
+                          <span className="text-slate-600">
+                            {Array.isArray(item.secondary_products) ? item.secondary_products.join(', ') : item.secondary_products}
+                          </span>
+                        </td>
+
+                        <td className="p-3.5 font-semibold text-slate-900">{item.country}</td>
+                        <td className="p-3.5">{item.city}, {item.province}</td>
+                        <td className="p-3.5 text-slate-700">{item.brand_name || '-'}</td>
+                        <td className="p-3.5 font-semibold text-slate-800">{item.supplier_type}</td>
+
+                        {/* Current Status */}
+                        <td className="p-3.5">
+                          {inlineEditEnabled ? (
+                            <select
+                              value={item.current_status}
+                              onChange={(e) => handleStatusChange(item.id, e.target.value)}
+                              className="bg-slate-50 border border-slate-200 text-xs text-slate-900 p-1 rounded font-bold cursor-pointer outline-none"
+                            >
+                              <option value="NEW">New</option>
+                              <option value="EXISTING">Existing</option>
+                            </select>
+                          ) : (
+                            <span className={`px-2 py-1 rounded font-bold text-xs uppercase ${
+                              item.current_status === 'EXISTING' ? 'bg-slate-200 text-slate-800' : 'bg-slate-100 text-slate-600'
+                            }`}>
+                              {item.current_status === 'EXISTING' ? 'Existing' : 'New'}
                             </span>
-                          </td>
+                          )}
+                        </td>
 
-                          <td className="p-3.5 font-semibold text-slate-900">{item.country}</td>
-                          <td className="p-3.5">{item.city}, {item.province}</td>
-                          <td className="p-3.5 text-slate-700">{item.brand_name || '-'}</td>
-                          <td className="p-3.5 font-semibold text-slate-800">{item.supplier_type}</td>
-
-                          {/* Current Status */}
-                          <td className="p-3.5">
-                            {inlineEditEnabled ? (
-                              <select
-                                value={item.current_status}
-                                onChange={(e) => handleStatusChange(item.id, e.target.value)}
-                                className="bg-slate-50 border border-slate-200 text-xs text-slate-900 p-1 rounded font-bold cursor-pointer outline-none"
-                              >
-                                <option value="NEW">New</option>
-                                <option value="EXISTING">Existing</option>
-                              </select>
-                            ) : (
-                              <span className={`px-2 py-1 rounded font-bold text-xs uppercase ${item.current_status === 'EXISTING' ? 'bg-slate-200 text-slate-800' : 'bg-slate-100 text-slate-600'
-                                }`}>
-                                {item.current_status === 'EXISTING' ? 'Existing' : 'New'}
-                              </span>
-                            )}
-                          </td>
-
-                          {/* Supplier's Grade */}
-                          <td className="p-3.5">
-                            {inlineEditEnabled ? (
-                              <select
-                                value={item.grade}
-                                onChange={(e) => handleInlineGradeChange(item.id, e.target.value)}
-                                className="bg-blue-50 border border-blue-200 text-blue-800 text-xs p-1 rounded font-bold cursor-pointer outline-none"
-                              >
-                                <option value="A">Grade A</option>
-                                <option value="B">Grade B</option>
-                                <option value="C">Grade C</option>
-                              </select>
-                            ) : (
-                              <span className="px-2 py-1 bg-blue-50 text-blue-800 rounded font-bold text-xs">
-                                Grade {item.grade || 'Select'}
-                              </span>
-                            )}
-                          </td>
-
-                          {/* Potential */}
-                          <td className="p-3.5">
-                            {inlineEditEnabled ? (
-                              <select
-                                value={item.potential}
-                                onChange={(e) => handleInlinePotentialChange(item.id, e.target.value)}
-                                className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs p-1 rounded font-bold cursor-pointer outline-none"
-                              >
-                                <option value="YES">Yes</option>
-                                <option value="NO">No</option>
-                                <option value="UNSELECTED">Select</option>
-                              </select>
-                            ) : (
-                              <span className={`px-2 py-1 rounded font-bold text-xs ${item.potential === 'YES' ? 'bg-emerald-50 text-emerald-800' :
-                                  item.potential === 'NO' ? 'bg-rose-50 text-rose-800' : 'bg-slate-100 text-slate-600'
-                                }`}>
-                                {item.potential === 'YES' ? 'Yes' : item.potential === 'NO' ? 'No' : 'Select'}
-                              </span>
-                            )}
-                          </td>
-
-                          <td className="p-3.5 text-right space-x-1">
-                            {/* EDIT BUTTON LOADS FULL SUPPLIER FORM FOR EDITING (DARSH IMPEX EXACT BEHAVIOR) */}
-                            <button
-                              onClick={() => handleOpenEditSupplier(item)}
-                              className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-[11px] font-bold cursor-pointer"
+                        {/* Supplier's Grade */}
+                        <td className="p-3.5">
+                          {inlineEditEnabled ? (
+                            <select
+                              value={item.grade}
+                              onChange={(e) => handleInlineGradeChange(item.id, e.target.value)}
+                              className="bg-blue-50 border border-blue-200 text-blue-800 text-xs p-1 rounded font-bold cursor-pointer outline-none"
                             >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => handleDelete(item.id)}
-                              className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded text-[11px] font-semibold cursor-pointer"
+                              <option value="A">Grade A</option>
+                              <option value="B">Grade B</option>
+                              <option value="C">Grade C</option>
+                            </select>
+                          ) : (
+                            <span className="px-2 py-1 bg-blue-50 text-blue-800 rounded font-bold text-xs">
+                              Grade {item.grade || 'Select'}
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Potential */}
+                        <td className="p-3.5">
+                          {inlineEditEnabled ? (
+                            <select
+                              value={item.potential}
+                              onChange={(e) => handleInlinePotentialChange(item.id, e.target.value)}
+                              className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs p-1 rounded font-bold cursor-pointer outline-none"
                             >
-                              Delete
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={13} className="p-8 text-center text-slate-400 font-semibold">
-                          No suppliers match the selected filter criteria. Click "Reset" above to show all.
+                              <option value="YES">Yes</option>
+                              <option value="NO">No</option>
+                              <option value="UNSELECTED">Select</option>
+                            </select>
+                          ) : (
+                            <span className={`px-2 py-1 rounded font-bold text-xs ${
+                              item.potential === 'YES' ? 'bg-emerald-50 text-emerald-800' :
+                              item.potential === 'NO' ? 'bg-rose-50 text-rose-800' : 'bg-slate-100 text-slate-600'
+                            }`}>
+                              {item.potential === 'YES' ? 'Yes' : item.potential === 'NO' ? 'No' : 'Select'}
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="p-3.5 text-right space-x-1">
+                          {/* EDIT BUTTON LOADS FULL SUPPLIER FORM FOR EDITING (DARSH IMPEX EXACT BEHAVIOR) */}
+                          <button
+                            onClick={() => handleOpenEditSupplier(item)}
+                            className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-[11px] font-bold cursor-pointer"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDelete(item.id)}
+                            className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded text-[11px] font-semibold cursor-pointer"
+                          >
+                            Delete
+                          </button>
                         </td>
                       </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={13} className="p-8 text-center text-slate-400 font-semibold">
+                        No suppliers match the selected filter criteria. Click "Reset" above to show all.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
-
-            {/* PAGINATION FOOTER CONTROL */}
-            <Pagination
+            <TablePagination
               currentPage={currentPage}
-              totalItems={totalItems}
+              totalPages={totalPages}
               pageSize={pageSize}
+              totalEntries={totalRecords}
               onPageChange={setCurrentPage}
               onPageSizeChange={setPageSize}
-              pageSizeOptions={[10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000]}
             />
           </div>
-        )}
+          )}
         </div>
       )}
 
@@ -1681,16 +1505,18 @@ export const SupplierListPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setFormStage(1)}
-              className={`text-xs font-bold px-4 py-2 rounded-lg transition-colors cursor-pointer ${formStage === 1 ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
-                }`}
+              className={`text-xs font-bold px-4 py-2 rounded-lg transition-colors cursor-pointer ${
+                formStage === 1 ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
+              }`}
             >
               First Data Form (Basic Supplier & Contact Info)
             </button>
             <button
               type="button"
               onClick={() => setFormStage(2)}
-              className={`text-xs font-bold px-4 py-2 rounded-lg transition-colors cursor-pointer ${formStage === 2 ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
-                }`}
+              className={`text-xs font-bold px-4 py-2 rounded-lg transition-colors cursor-pointer ${
+                formStage === 2 ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
+              }`}
             >
               Second Form (Main Data Profile & Factory Visit)
             </button>
@@ -1796,7 +1622,10 @@ export const SupplierListPage: React.FC = () => {
                       className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-medium"
                     >
                       <option value="Select">Select City</option>
-                      {(provinceCityMap[formData.province] || []).map((city) => (
+                      {(formData.province !== 'Select' && provinceCityMap[formData.province]
+                        ? provinceCityMap[formData.province]
+                        : Object.values(provinceCityMap).flat()
+                      ).map((city) => (
                         <option key={city} value={city}>{city}</option>
                       ))}
                     </select>
@@ -1840,54 +1669,69 @@ export const SupplierListPage: React.FC = () => {
                     <label className="text-xs text-slate-700 font-semibold block mb-1">
                       Calling Number (7-11 digits restriction)
                     </label>
-                    <input
-                      type="text"
-                      placeholder="+86 13800138000"
-                      value={formData.calling_number}
-                      onChange={(e) => setFormData({ ...formData, calling_number: e.target.value })}
-                      onBlur={(e) => validatePhone('calling', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-mono"
-                    />
+                    <div className="flex rounded-lg border border-slate-200 bg-slate-50 overflow-hidden focus-within:border-blue-500 focus-within:bg-white">
+                      <span className="bg-slate-200/80 px-3 py-2.5 text-xs text-slate-700 font-bold flex items-center border-r border-slate-200 font-mono select-none">
+                        {countryPhoneCodeMap[formData.country] || '+86 '}
+                      </span>
+                      <input
+                        type="text"
+                        placeholder="700000000"
+                        value={formData.calling_number}
+                        onChange={(e) => setFormData({ ...formData, calling_number: e.target.value })}
+                        onBlur={(e) => validatePhone('calling', e.target.value)}
+                        className="w-full text-xs text-slate-900 p-2.5 outline-none font-mono bg-transparent"
+                      />
+                    </div>
                     {phoneErrors.calling && <p className="text-[10px] text-rose-600 font-bold mt-1">{phoneErrors.calling}</p>}
                   </div>
 
                   {/* Whatsapp Number */}
                   <div>
                     <label className="text-xs text-slate-700 font-semibold block mb-1">Whatsapp Number</label>
-                    <input
-                      type="text"
-                      placeholder="+86 13800138000"
-                      value={formData.whatsapp_number}
-                      onChange={(e) => setFormData({ ...formData, whatsapp_number: e.target.value })}
-                      onBlur={(e) => validatePhone('whatsapp', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-mono"
-                    />
+                    <div className="flex rounded-lg border border-slate-200 bg-slate-50 overflow-hidden focus-within:border-blue-500 focus-within:bg-white">
+                      <span className="bg-slate-200/80 px-3 py-2.5 text-xs text-slate-700 font-bold flex items-center border-r border-slate-200 font-mono select-none">
+                        {countryPhoneCodeMap[formData.country] || '+86 '}
+                      </span>
+                      <input
+                        type="text"
+                        placeholder="700000000"
+                        value={formData.whatsapp_number}
+                        onChange={(e) => setFormData({ ...formData, whatsapp_number: e.target.value })}
+                        onBlur={(e) => validatePhone('whatsapp', e.target.value)}
+                        className="w-full text-xs text-slate-900 p-2.5 outline-none font-mono bg-transparent"
+                      />
+                    </div>
                     {phoneErrors.whatsapp && <p className="text-[10px] text-rose-600 font-bold mt-1">{phoneErrors.whatsapp}</p>}
                   </div>
 
                   {/* Wechat Number */}
                   <div>
                     <label className="text-xs text-slate-700 font-semibold block mb-1">WeChat Number</label>
-                    <input
-                      type="text"
-                      placeholder="+86 13800138000"
-                      value={formData.wechat_number}
-                      onChange={(e) => setFormData({ ...formData, wechat_number: e.target.value })}
-                      onBlur={(e) => validatePhone('wechat', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-mono"
-                    />
+                    <div className="flex rounded-lg border border-slate-200 bg-slate-50 overflow-hidden focus-within:border-blue-500 focus-within:bg-white">
+                      <span className="bg-slate-200/80 px-3 py-2.5 text-xs text-slate-700 font-bold flex items-center border-r border-slate-200 font-mono select-none">
+                        {countryPhoneCodeMap[formData.country] || '+86 '}
+                      </span>
+                      <input
+                        type="text"
+                        placeholder="700000000"
+                        value={formData.wechat_number}
+                        onChange={(e) => setFormData({ ...formData, wechat_number: e.target.value })}
+                        onBlur={(e) => validatePhone('wechat', e.target.value)}
+                        className="w-full text-xs text-slate-900 p-2.5 outline-none font-mono bg-transparent"
+                      />
+                    </div>
                     {phoneErrors.wechat && <p className="text-[10px] text-rose-600 font-bold mt-1">{phoneErrors.wechat}</p>}
                   </div>
 
+
                   <div>
-                    {/* BUG FIX: this was a plain single-value <input> even though
-                        the label says "(Multiple Supported)". Replaced with a
-                        real chip input storing formData.emails as a string[]. */}
-                    <MultiEmailInput
-                      label="Email ID (Multiple Supported)"
-                      emails={formData.emails}
-                      onChange={(emails) => setFormData({ ...formData, emails })}
+                    <label className="text-xs text-slate-700 font-semibold block mb-1">Email ID (Multiple Supported)</label>
+                    <input
+                      type="email"
                       placeholder="john@zhejiangpack.com"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 text-xs text-slate-900 p-2.5 rounded-lg outline-none font-medium"
                     />
                   </div>
                 </div>
@@ -2175,42 +2019,36 @@ export const SupplierListPage: React.FC = () => {
                       </div>
 
                       <div>
-                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Calling Number (7-11 digits restriction)</label>
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Calling Number</label>
                         <input
                           type="text"
                           placeholder="+86 13900000000"
                           value={newContact.calling}
                           onChange={(e) => setNewContact({ ...newContact, calling: e.target.value })}
-                          onBlur={(e) => validateSubContactPhone('calling', e.target.value)}
                           className="w-full bg-white border border-slate-200 text-xs p-2 rounded outline-none font-mono"
                         />
-                        {subContactPhoneErrors.calling && <p className="text-[10px] text-rose-600 font-bold mt-1">{subContactPhoneErrors.calling}</p>}
                       </div>
 
                       <div>
-                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Whatsapp Number (7-11 digits restriction)</label>
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">Whatsapp Number</label>
                         <input
                           type="text"
                           placeholder="+86 13900000000"
                           value={newContact.whatsapp}
                           onChange={(e) => setNewContact({ ...newContact, whatsapp: e.target.value })}
-                          onBlur={(e) => validateSubContactPhone('whatsapp', e.target.value)}
                           className="w-full bg-white border border-slate-200 text-xs p-2 rounded outline-none font-mono"
                         />
-                        {subContactPhoneErrors.whatsapp && <p className="text-[10px] text-rose-600 font-bold mt-1">{subContactPhoneErrors.whatsapp}</p>}
                       </div>
 
                       <div>
-                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">WeChat Number (7-11 digits restriction)</label>
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">WeChat Number</label>
                         <input
                           type="text"
                           placeholder="+86 13900000000"
                           value={newContact.wechat}
                           onChange={(e) => setNewContact({ ...newContact, wechat: e.target.value })}
-                          onBlur={(e) => validateSubContactPhone('wechat', e.target.value)}
                           className="w-full bg-white border border-slate-200 text-xs p-2 rounded outline-none font-mono"
                         />
-                        {subContactPhoneErrors.wechat && <p className="text-[10px] text-rose-600 font-bold mt-1">{subContactPhoneErrors.wechat}</p>}
                       </div>
 
                       <div>
@@ -2237,59 +2075,90 @@ export const SupplierListPage: React.FC = () => {
                   </div>
 
                   {/* ADD CONTACTS LIST TABLE WITH EXACT SPEC HEADINGS & HYPERLINKS */}
-                  {formContacts.length > 0 && (
-                    <div className="bg-white border border-slate-200 rounded-lg overflow-hidden text-xs space-y-2">
-                      <h4 className="p-3 bg-slate-100 font-bold uppercase text-[11px] text-slate-700 border-b border-slate-200">
-                        Add Contacts List
-                      </h4>
-                      <table className="w-full text-left">
-                        <thead className="bg-slate-50 font-bold uppercase text-[10px] text-slate-600">
-                          <tr>
-                            <th className="p-3">Mr. / Mrs / Ms - Person Name / Designation</th>
-                            <th className="p-3">Calling Number / Whatsapp Number</th>
-                            <th className="p-3">Wechat / Email</th>
-                            <th className="p-3">Handling Territory</th>
-                            <th className="p-3 text-right">Action</th>
+                  <div className="bg-white border border-slate-200 rounded-lg overflow-hidden text-xs space-y-2">
+                    <h4 className="p-3 bg-slate-100 font-bold uppercase text-[11px] text-slate-700 border-b border-slate-200 flex items-center justify-between">
+                      <span>Add Contacts List</span>
+                      <span className="text-[10px] text-blue-600 font-semibold bg-blue-50 px-2 py-0.5 rounded">
+                        1 Primary + {formContacts.length} Secondary
+                      </span>
+                    </h4>
+                    <table className="w-full text-left">
+                      <thead className="bg-slate-50 font-bold uppercase text-[10px] text-slate-600">
+                        <tr>
+                          <th className="p-3">Mr. / Mrs / Ms - Person Name / Designation</th>
+                          <th className="p-3">Calling Number / Whatsapp Number</th>
+                          <th className="p-3">Wechat / Email</th>
+                          <th className="p-3">Handling Territory</th>
+                          <th className="p-3 text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-medium">
+                        {/* PINNED PRIMARY CONTACT ROW FROM FORM 1 */}
+                        <tr className="bg-blue-50/50 hover:bg-blue-50">
+                          <td className="p-3">
+                            <div className="flex items-center gap-1.5">
+                              <span className="bg-blue-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded uppercase">Primary</span>
+                              <p className="font-bold text-slate-900">{formData.contact_title} {formData.contact_name || '(Main Contact)'}</p>
+                            </div>
+                            <p className="text-[11px] text-slate-500">{formData.designation || 'Primary Director'}</p>
+                          </td>
+                          <td className="p-3 font-mono">
+                            {formData.calling_number && (
+                              <a href={`tel:${formData.calling_number}`} className="text-blue-600 hover:underline block">Call: {formData.calling_number}</a>
+                            )}
+                            {formData.whatsapp_number && (
+                              <a href={`https://wa.me/${formData.whatsapp_number.replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="text-emerald-600 hover:underline block text-[11px]">WA: {formData.whatsapp_number}</a>
+                            )}
+                          </td>
+                          <td className="p-3 font-mono">
+                            <p className="text-slate-800">WeChat: {formData.wechat_number || 'N/A'}</p>
+                            {formData.email && (
+                              <a href={`mailto:${formData.email}`} className="text-blue-600 hover:underline block text-[11px]">{formData.email}</a>
+                            )}
+                          </td>
+                          <td className="p-3 text-slate-700 font-semibold">Global Export</td>
+                          <td className="p-3 text-right text-[10px] text-slate-400 italic font-semibold">
+                            (Form 1 Main)
+                          </td>
+                        </tr>
+
+                        {/* SECONDARY CONTACTS */}
+                        {formContacts.map((c) => (
+                          <tr key={c.id} className="hover:bg-slate-50">
+                            <td className="p-3">
+                              <p className="font-bold text-slate-900">{c.title} {c.name}</p>
+                              <p className="text-[11px] text-slate-500">{c.designation}</p>
+                            </td>
+                            <td className="p-3 font-mono">
+                              <a href={`tel:${c.calling}`} className="text-blue-600 hover:underline block">Call: {c.calling}</a>
+                              <a href={`https://wa.me/${c.whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="text-emerald-600 hover:underline block text-[11px]">WA: {c.whatsapp}</a>
+                            </td>
+                            <td className="p-3 font-mono">
+                              <p className="text-slate-800">WeChat: {c.wechat}</p>
+                              <a href={`mailto:${c.email}`} className="text-blue-600 hover:underline block text-[11px]">{c.email}</a>
+                            </td>
+                            <td className="p-3 text-slate-700 font-semibold">{c.territory}</td>
+                            <td className="p-3 text-right space-x-1">
+                              <button
+                                type="button"
+                                onClick={() => handleEditFormContact(c)}
+                                className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[10px] font-semibold"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteFormContact(c.id)}
+                                className="px-2 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded text-[10px] font-semibold"
+                              >
+                                Delete
+                              </button>
+                            </td>
                           </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 font-medium">
-                          {formContacts.map((c) => (
-                            <tr key={c.id} className="hover:bg-slate-50">
-                              <td className="p-3">
-                                <p className="font-bold text-slate-900">{c.title} {c.name}</p>
-                                <p className="text-[11px] text-slate-500">{c.designation}</p>
-                              </td>
-                              <td className="p-3 font-mono">
-                                <a href={`tel:${c.calling}`} className="text-blue-600 hover:underline block">Call: {c.calling}</a>
-                                <a href={`https://wa.me/${c.whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="text-emerald-600 hover:underline block text-[11px]">WA: {c.whatsapp}</a>
-                              </td>
-                              <td className="p-3 font-mono">
-                                <p className="text-slate-800">WeChat: {c.wechat}</p>
-                                <a href={`mailto:${c.email}`} className="text-blue-600 hover:underline block text-[11px]">{c.email}</a>
-                              </td>
-                              <td className="p-3 text-slate-700 font-semibold">{c.territory}</td>
-                              <td className="p-3 text-right space-x-1">
-                                <button
-                                  type="button"
-                                  onClick={() => handleEditFormContact(c)}
-                                  className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[10px] font-semibold"
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteFormContact(c.id)}
-                                  className="px-2 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded text-[10px] font-semibold"
-                                >
-                                  Delete
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             )}
@@ -2494,18 +2363,235 @@ export const SupplierListPage: React.FC = () => {
       )}
 
       {/* IMPORT EXCEL / CSV DATA MODAL */}
-      <CsvImportModal
-        isOpen={showImportModal}
-        title="Import Suppliers (CSV / Excel)"
-        entityName="Supplier"
-        fieldSchemas={supplierFieldSchemas}
-        onClose={() => setShowImportModal(false)}
-        onImportItems={handleSupplierBatchImport}
-        onComplete={(msg) => {
-          setImportNotification(msg);
-          setTimeout(() => setImportNotification(null), 5000);
-        }}
-      />
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 p-6 rounded-2xl w-full max-w-lg space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Upload size={18} className="text-blue-600" /> Import Suppliers (Excel / CSV)
+              </h3>
+              <button 
+                onClick={() => !isImporting && setShowImportModal(false)} 
+                disabled={isImporting}
+                className="p-1 text-slate-500 hover:text-slate-900 bg-slate-100 rounded disabled:opacity-50"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {isImporting ? (
+              <div className="space-y-4 py-6 text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+                <div className="space-y-1">
+                  <p className="text-sm font-bold text-slate-800">Importing Supplier Records...</p>
+                  <p className="text-xs text-slate-500 font-semibold">Processing: {currentImportItem}</p>
+                </div>
+                <div className="w-full bg-slate-100 rounded-full h-3 max-w-xs mx-auto overflow-hidden border border-slate-200">
+                  <div 
+                    className="bg-blue-600 h-full rounded-full transition-all duration-300" 
+                    style={{ width: `${(importProgress / (importTotal || 1)) * 100}%` }}
+                  ></div>
+                </div>
+                <p className="text-xs font-bold text-slate-600 font-mono">
+                  {importProgress} of {importTotal} records ({Math.round((importProgress / (importTotal || 1)) * 100)}%)
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-xs text-slate-600">
+                  Upload your CSV or Excel file containing supplier directory data. Download our sample template if needed.
+                </p>
+                <div className="border-2 border-dashed border-slate-300 hover:border-blue-500 bg-slate-50 hover:bg-blue-50/50 p-8 rounded-xl text-center space-y-2 transition-all cursor-pointer relative">
+                <input
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    console.log('--- CSV IMPORT DIAGNOSTICS ---');
+                    console.log('Selected file name:', file?.name);
+                    console.log('Selected file size:', file?.size);
+                    console.log('Selected file type:', file?.type);
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = async (evt) => {
+                        console.log('FileReader loaded successfully!');
+                        const content = evt.target?.result as string;
+                        if (!content) {
+                          console.error('File content is empty');
+                          return;
+                        }
+                        const lines = content.split(/\r?\n/).filter((l) => l.trim().length > 0);
+                        console.log('Total parsed lines from CSV:', lines.length);
+                        if (lines.length <= 1) {
+                          alert('CSV file is empty or missing data rows.');
+                          return;
+                        }
+
+                        // CSV Quote Splitter Helper
+                        const parseCSVLine = (text: string) => {
+                          const result: string[] = [];
+                          let cur = '';
+                          let inQuotes = false;
+                          for (let i = 0; i < text.length; i++) {
+                            const char = text[i];
+                            if (char === '"') {
+                              inQuotes = !inQuotes;
+                            } else if (char === ',' && !inQuotes) {
+                              result.push(cur.trim().replace(/^"|"$/g, ''));
+                              cur = '';
+                            } else {
+                              cur += char;
+                            }
+                          }
+                          result.push(cur.trim().replace(/^"|"$/g, ''));
+                          return result;
+                        };
+                        const supplierPayloads: any[] = [];
+                        const dataLines = lines.slice(1); // Skip header row
+                        console.log('Processing data rows count:', dataLines.length);
+
+                        for (let index = 0; index < dataLines.length; index++) {
+                          const line = dataLines[index];
+                          const cols = parseCSVLine(line);
+                          if (cols.length >= 1 && cols[0]) {
+                            const compName = cols[0];
+                            const supType = cols[1] || 'Manufacturer';
+                            const brand = cols[2] || 'Yinglima Supplier';
+                            const categories = cols[3] ? cols[3].split(';').map((c) => c.trim()) : ['Machines'];
+                            const subcategories = cols[4] ? cols[4].split(';').map((s) => s.trim()) : ['Band Sealer'];
+                            const secProducts = cols[5] || 'Spare Parts';
+                            const country = cols[6] || 'China';
+                            const prov = cols[7] || 'Zhejiang';
+                            const city = cols[8] || 'Wenzhou';
+                            const town = cols[9] || 'Industrial Zone';
+                            const addr = cols[10] || 'Industrial Road';
+                            const contactName = cols[11] || 'Primary Contact';
+                            const calling = cols[12] || '+86 13800138000';
+                            const email = cols[13] || `supplier${index}@yinglima.com`;
+                            const status = cols[14] || 'NEW';
+                            const rawGrade = cols[15] || 'A';
+                            const grade = rawGrade.includes('B') ? 'B' : rawGrade.includes('C') ? 'C' : 'A';
+                            const potential = cols[16] || 'YES';
+                            const visited = cols[17] || 'No';
+                            const remarks = cols[18] || 'Imported via CSV file';
+
+                            const primaryContactObj = {
+                              salutation: 'Mr.',
+                              full_name: contactName,
+                              designation: 'Procurement Specialist',
+                              country: country,
+                              calling_number: calling,
+                              whatsapp_number: calling,
+                              wechat_number: calling,
+                              email: email,
+                            };
+
+                            supplierPayloads.push({
+                              name: compName,
+                              product_categories: categories,
+                              supplier_type: supType,
+                              brand_name: brand,
+                              country: country,
+                              province: prov,
+                              city: city,
+                              town: town,
+                              address: addr,
+                              contact_title: 'Mr.',
+                              contact_name: contactName,
+                              designation: 'Procurement Specialist',
+                              calling_number: calling,
+                              whatsapp_number: calling,
+                              wechat_number: calling,
+                              emails: [email],
+                              tax_id: `TAX-${1000 + index}`,
+                              primary_website: `www.${compName.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`,
+                              secondary_website: '',
+                              key_strength_subcategories: subcategories,
+                              grade: grade,
+                              current_status: status,
+                              potential: potential,
+                              potential_reason: potential === 'NO' ? 'Imported record non-potential' : '',
+                              secondary_products: secProducts,
+                              visited_factory: visited === 'Yes' || visited === 'true',
+                              visit_remarks: remarks,
+                              attachments: [],
+                              overall_remarks: 'Bulk imported CSV record',
+                              contacts: [primaryContactObj],
+                            });
+                          }
+                        }
+
+                        if (supplierPayloads.length > 0) {
+                          setIsImporting(true);
+                          try {
+                            console.log(`Executing bulk import for ${supplierPayloads.length} suppliers...`);
+                            const res = await supplierApi.bulkImportSuppliers(supplierPayloads);
+                            if (res) {
+                              console.log('Bulk import executed successfully, refreshing grid...');
+                              await loadApiSuppliers();
+                              setShowImportModal(false);
+                              setImportNotification(`Successfully bulk imported & synced ${supplierPayloads.length} supplier records!`);
+                              setTimeout(() => setImportNotification(null), 6000);
+                            } else {
+                              alert('Bulk import failed. Please check the backend log.');
+                            }
+                          } catch (err: any) {
+                            console.error('Bulk import error:', err);
+                            alert(`Bulk import error: ${err?.message || String(err)}`);
+                          } finally {
+                            setIsImporting(false);
+                          }
+                        }
+                      };
+
+                      reader.readAsText(file);
+                    }
+                    e.target.value = '';
+                  }}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                />
+                <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto">
+                  <Upload size={24} />
+                </div>
+                <p className="text-xs font-bold text-slate-800">Click or Drag & Drop File Here</p>
+                <p className="text-[11px] text-slate-400">Supports .CSV, .XLSX, .XLS (Up to 10MB)</p>
+              </div>
+
+              {/* Sample Template Link */}
+              <div className="flex items-center justify-between pt-2">
+                <a
+                  href="#download-sample"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    const sampleHeaders = 'Company Name,Supplier Type,Country,Province,City,Contact Name,Phone,Email\n"Sample Supplier Ltd","Manufacturer","China","Zhejiang","Wenzhou","Chen Wei","+8613800112233","chen@supplier.cn"';
+                    const blob = new Blob([sampleHeaders], { type: 'text/csv' });
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'Yinglima_Supplier_Import_Sample.csv';
+                    a.click();
+                  }}
+                  className="text-xs text-blue-600 font-bold hover:underline flex items-center gap-1"
+                >
+                  <Download size={13} /> Download CSV Sample Template
+                </a>
+              </div>
+            </div>
+            )}
+
+            {!isImporting && (
+              <div className="flex justify-end pt-3 border-t border-slate-100">
+                <button
+                  onClick={() => setShowImportModal(false)}
+                  className="px-4 py-2 bg-slate-100 text-slate-800 text-xs font-semibold rounded-lg hover:bg-slate-200"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* EXPANDED ITEMS MODAL FOR >5 ITEMS */}
       {expandedFieldModal && (
@@ -2581,22 +2667,6 @@ export const SupplierListPage: React.FC = () => {
             </div>
           </div>
         </div>
-      )}
-
-      {/* BULK DELETE SKIP/FORCE POPUP — shown when the bulk-delete call
-          reports some selected suppliers were blocked by the delete rule
-          (Status must be NEW and Potential must be NO/unselected) */}
-      {bulkDeleteResult && bulkDeleteResult.blocked.length > 0 && (
-        <BulkDeleteModal
-          entityLabel="supplier"
-          result={bulkDeleteResult}
-          isProcessing={isBulkDeleting}
-          onCancel={() => {
-            setBulkDeleteResult(null);
-            setSelectedIds([]);
-          }}
-          onForceDelete={handleForceBulkDelete}
-        />
       )}
     </div>
   );

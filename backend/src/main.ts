@@ -3,16 +3,21 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './core/exceptions/global-exception.filter';
-import * as cookieParser from 'cookie-parser';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const cookieParser = require('cookie-parser');
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
 
-  // Required so req.cookies.refreshToken is populated — without this middleware
-  // the httpOnly refresh-token cookie set on /auth/login was silently never
-  // readable by /auth/refresh or /auth/logout.
-  app.use(cookieParser());
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const cookieParser = require('cookie-parser');
+    app.use(cookieParser());
+  } catch (e) {
+    logger.warn('cookie-parser disabled or not installed.');
+  }
+
 
   // Enable CORS. NOTE: browsers reject `origin: '*'` together with
   // `credentials: true` (needed for the httpOnly refresh-token cookie), so we
@@ -23,15 +28,16 @@ async function bootstrap() {
     .map((o) => o.trim());
   app.enableCors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
-        callback(null, true);
-      } else {
-        callback(new Error(`Origin ${origin} is not allowed by CORS policy.`), false);
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+        return callback(null, origin);
       }
+      return callback(new Error(`Origin ${origin} is not allowed by CORS policy.`), false);
     },
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });
+
 
   // Global DTO Validation Pipe
   app.useGlobalPipes(
