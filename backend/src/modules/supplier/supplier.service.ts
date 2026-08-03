@@ -276,10 +276,11 @@ export class SupplierService {
         data: {
           product_categories: allCategories,
           key_strength_subcategories: allSubcategories,
-          emails: allEmails as any,
+          emails: allEmails,
           updated_by: tenant.userId,
-        },
+        } as any,
         include: { contacts: true },
+
       });
 
 

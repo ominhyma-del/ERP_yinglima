@@ -270,11 +270,12 @@ export class BuyerService {
         data: {
           product_categories: allCategories,
           potential_subcategories: allSubcategories,
-          emails: allEmails as any,
+          emails: allEmails,
           updated_by: tenant.userId,
-        },
+        } as any,
         include: { contacts: true },
       });
+
 
 
       await this.audit.record(
@@ -362,8 +363,9 @@ export class BuyerService {
             email: c.email,
           })),
         } : undefined,
-      },
+      } as any,
       include: {
+
         contacts: true,
       },
     });
