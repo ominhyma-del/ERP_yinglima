@@ -28,7 +28,11 @@ export class BuyerService {
           ...(primaryContact?.calling_number
             ? [{ contacts: { some: { calling_number: primaryContact.calling_number } } }]
             : []),
+          ...(primaryContact?.whatsapp_number
+            ? [{ contacts: { some: { whatsapp_number: primaryContact.whatsapp_number } } }]
+            : []),
         ],
+
       },
     });
 
